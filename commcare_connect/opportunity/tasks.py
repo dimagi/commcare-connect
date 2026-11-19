@@ -22,7 +22,7 @@ from django.utils.translation import gettext, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
-from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
+from commcare_connect.connect_id_client import fetch_users, queue_message_bulk, send_message
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.jira_service_desk import JiraServiceDeskNotConfigured, attach_temporary_file, create_request
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
@@ -34,7 +34,6 @@ from commcare_connect.opportunity.export import (
     export_empty_payment_table,
     export_user_status_table,
     export_user_visit_review_data,
-    export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -427,7 +426,7 @@ def send_notification_inactive_users():
         message = _get_inactive_message(access)
         if message:
             messages.append(message)
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()
@@ -522,7 +521,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 },
             )
         )
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()
@@ -612,14 +611,6 @@ def download_inaccessibility_request_attachments(self, xform_id: str, attachment
     api_key = request_obj.work_area.opportunity.api_key
     domain = request_obj.work_area.opportunity.deliver_app.cc_domain
     _download_attachments(api_key, domain, xform_id, attachments)
-
-
-@celery_app.task()
-def generate_work_status_export(opportunity_id: int, export_format: str):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
-    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()

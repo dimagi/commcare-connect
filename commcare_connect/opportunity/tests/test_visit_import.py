@@ -18,7 +18,6 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     Payment,
-    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -40,7 +39,6 @@ from commcare_connect.opportunity.visit_import import (
     ImportException,
     ReviewVisitRowData,
     VisitData,
-    _bulk_update_completed_work_status,
     _bulk_update_visit_review_status,
     _exchange_rates_by_payment_date,
     bulk_update_payments,
@@ -96,27 +94,6 @@ class TestBulkUpdateVisitStatus:
         visit.refresh_from_db()
         assert visit.status == VisitValidationStatus.approved.value
         assert visit.status_modified_date == initial_status_modified_date
-
-
-@pytest.mark.django_db
-def test_bulk_update_completed_work_status(opportunity: Opportunity, mobile_user: User):
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
-    payment_unit = PaymentUnit.objects.get(opportunity=opportunity)
-    DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
-
-    completed_works = CompletedWorkFactory.create_batch(5, opportunity_access=access, payment_unit=payment_unit)
-    dataset = Dataset(headers=["instance id", "payment approval", "rejected reason"])
-    dataset.extend([[work.id, CompletedWorkStatus.approved.value, ""] for work in completed_works])
-
-    before_update = now()
-    _bulk_update_completed_work_status(opportunity=opportunity, dataset=dataset)
-    after_update = now()
-
-    updated_work = CompletedWork.objects.filter(opportunity_access=access)
-    for work in updated_work:
-        assert work.status == CompletedWorkStatus.approved.value
-        assert work.status_modified_date is not None
-        assert before_update <= work.status_modified_date <= after_update
 
 
 @pytest.mark.django_db
@@ -718,10 +695,8 @@ def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
     return total_assigned_count
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.rejected])
 def test_network_manager_flagged_visit_review_status(mobile_user: User, opportunity: Opportunity, visit_status):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -748,9 +723,7 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
             assert visit.justification == "justification"
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_nm_flagged_visit_review_status_without_justification(mobile_user: User, opportunity: Opportunity):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -775,7 +748,6 @@ def test_nm_flagged_visit_review_status_without_justification(mobile_user: User,
     assert _ids(msg) == _ids(error_msg)
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "review_status, cw_status",
     [

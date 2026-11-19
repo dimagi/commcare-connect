@@ -154,6 +154,9 @@ def test_criterion_weight_bounds(weight, valid):
     assert form.is_valid() is valid
 
 
-@pytest.mark.parametrize("reason, valid", [("Funding withdrawn", True), ("", False), ("   ", False)])
-def test_closure_needs_a_reason(reason, valid):
+@pytest.mark.parametrize(
+    "reason, valid",
+    [("Funding withdrawn", True), ("", False), ("   ", False), ("x" * 150, True), ("x" * 151, False)],
+)
+def test_closure_reason(reason, valid):
     assert SolicitationClosureForm({"closure_reason": reason}).is_valid() is valid

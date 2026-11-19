@@ -1632,30 +1632,36 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert row_dict["Work Area Group Name"] == "Rev Group"
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
-    def setup_microplanning_flag(self, managed_opportunity, request):
+    def setup_microplanning_flag(self, pm_opportunity, request):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
-    def _url(self, program_manager_org, managed_opportunity):
+    def _url(self, program_manager_org, pm_opportunity):
         return reverse(
             "microplanning:save_assignment",
-            kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
+            kwargs={"org_slug": program_manager_org.slug, "opp_id": pm_opportunity.opportunity_id},
         )
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
-        self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        pm_opportunity,
+        django_capture_on_commit_callbacks,
     ):
-        access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
-        access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa2 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa3 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa4 = WorkAreaFactory(opportunity=managed_opportunity)
+        access_a = OpportunityAccessFactory(opportunity=pm_opportunity)
+        access_b = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa3 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa4 = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         payload = {
@@ -1665,11 +1671,14 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
                 {"assignee_id": access_b.pk, "work_area_ids": [wa4.id]},
             ]
         }
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
-                self._url(program_manager_org, managed_opportunity),
+                self._url(program_manager_org, pm_opportunity),
                 data=json.dumps(payload),
                 content_type="application/json",
             )
@@ -1679,16 +1688,24 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
         assert called_ids == sorted([access_a.pk, access_b.pk])
 
     def test_ignores_assignees_from_other_opportunity(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        pm_opportunity,
+        django_capture_on_commit_callbacks,
     ):
         other_access = OpportunityAccessFactory(opportunity=OpportunityFactory())
         client.force_login(program_manager_org_user_admin)
 
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
-                self._url(program_manager_org, managed_opportunity),
+                self._url(program_manager_org, pm_opportunity),
                 data=json.dumps({"assignments": [{"assignee_id": other_access.pk, "work_area_ids": [1]}]}),
                 content_type="application/json",
             )
@@ -1916,39 +1933,39 @@ class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
 @pytest.mark.django_db
 class TestAssignmentModeContext:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
         return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
 
     def test_worker_list_url_points_to_work_area_assignments_tab(
-        self, client, settings, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, settings, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
         settings.MAPBOX_TOKEN = "test-mapbox-token"
         client.force_login(program_manager_org_user_admin)
 
         response = client.get(
-            self.url(program_manager_org.slug, str(managed_opportunity.opportunity_id)),
+            self.url(program_manager_org.slug, str(pm_opportunity.opportunity_id)),
             {"assignment_mode": "1"},
         )
 
         assert response.status_code == 200
         expected_url = reverse(
             "opportunity:worker_work_areas",
-            args=(program_manager_org.slug, managed_opportunity.opportunity_id),
+            args=(program_manager_org.slug, pm_opportunity.opportunity_id),
         )
         assert response.context["worker_list_url"] == expected_url
 
-    def test_work_area_group_field_accepts_multiple_groups(self, managed_opportunity):
-        group_a = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        group_b = WorkAreaGroupFactory(opportunity=managed_opportunity)
+    def test_work_area_group_field_accepts_multiple_groups(self, pm_opportunity):
+        group_a = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=pm_opportunity)
 
         form = AssignmentModeForm(
             data={"work_area_group": [group_a.id, group_b.id]},
-            opportunity=managed_opportunity,
+            opportunity=pm_opportunity,
         )
 
         assert form.is_valid()
@@ -1969,9 +1986,9 @@ class TestAssignmentAccess:
     """Assignment is open to admins of both the program manager and the network manager org."""
 
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     @pytest.fixture
@@ -1983,11 +2000,11 @@ class TestAssignmentAccess:
         return _login
 
     def test_assignment_mode_button(
-        self, client, settings, login_as, managed_opportunity, org_fixture, user_fixture, allowed
+        self, client, settings, login_as, pm_opportunity, org_fixture, user_fixture, allowed
     ):
         settings.MAPBOX_TOKEN = "test-mapbox-token"
         org = login_as(org_fixture, user_fixture)
-        url = reverse("microplanning:microplanning_home", args=(org.slug, managed_opportunity.opportunity_id))
+        url = reverse("microplanning:microplanning_home", args=(org.slug, pm_opportunity.opportunity_id))
 
         map_response = client.get(url)
         assignment_response = client.get(url, {"assignment_mode": "1"})
@@ -2001,10 +2018,10 @@ class TestAssignmentAccess:
             assert map_response.status_code == 404
             assert assignment_response.status_code == 404
 
-    def test_read_endpoints(self, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+    def test_read_endpoints(self, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         org = login_as(org_fixture, user_fixture)
-        opp_kwargs = {"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id}
+        opp_kwargs = {"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id}
         urls = [
             reverse("microplanning:get_work_areas_for_assignment", kwargs=opp_kwargs),
             reverse(
@@ -2018,17 +2035,15 @@ class TestAssignmentAccess:
             assert client.get(url).status_code == (200 if allowed else 404), url
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
-    def test_save_assignment(
-        self, mock_hq_sync, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
-    ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+    def test_save_assignment(self, mock_hq_sync, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         org = login_as(org_fixture, user_fixture)
 
         response = client.post(
             reverse(
                 "microplanning:save_assignment",
-                kwargs={"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id},
+                kwargs={"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id},
             ),
             data=json.dumps({"assignments": [{"assignee_id": access.id, "work_area_ids": [wa.id]}]}),
             content_type="application/json",
@@ -2044,16 +2059,16 @@ class TestAssignmentAccess:
 
     @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
     def test_unassign_work_areas(
-        self, mock_unassign, client, login_as, managed_opportunity, org_fixture, user_fixture, allowed
+        self, mock_unassign, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed
     ):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         mock_unassign.return_value = {"unassigned_ids": [wa.id], "skipped": 0, "failed_ids": []}
         org = login_as(org_fixture, user_fixture)
 
         response = client.post(
             reverse(
                 "microplanning:unassign_work_areas",
-                kwargs={"org_slug": org.slug, "opp_id": managed_opportunity.opportunity_id},
+                kwargs={"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id},
             ),
             data=json.dumps({"work_area_ids": [wa.id]}),
             content_type="application/json",
@@ -2066,9 +2081,9 @@ class TestAssignmentAccess:
 @pytest.mark.django_db
 class TestInaccessibleModeContext:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity, opportunity):
+    def setup_flag(self, pm_opportunity, opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity, opportunity)
+        flag.opportunities.add(pm_opportunity, opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -2080,7 +2095,7 @@ class TestInaccessibleModeContext:
             pytest.param(
                 "program_manager_org",
                 "program_manager_org_user_admin",
-                "managed_opportunity",
+                "pm_opportunity",
                 id="program_manager",
             ),
             pytest.param("organization", "org_user_admin", "opportunity", id="opportunity_admin"),
@@ -2108,9 +2123,9 @@ class TestInaccessibleModeContext:
 
 class TestGetWorkAreasForAssignment:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -2120,18 +2135,18 @@ class TestGetWorkAreasForAssignment:
         )
 
     def test_returns_union_of_multiple_groups(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
-        group_a = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        group_b = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        other_group = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        wa_a = WorkAreaFactory(opportunity=managed_opportunity, work_area_group=group_a)
-        wa_b = WorkAreaFactory(opportunity=managed_opportunity, work_area_group=group_b)
-        WorkAreaFactory(opportunity=managed_opportunity, work_area_group=other_group)
+        group_a = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        other_group = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        wa_a = WorkAreaFactory(opportunity=pm_opportunity, work_area_group=group_a)
+        wa_b = WorkAreaFactory(opportunity=pm_opportunity, work_area_group=group_b)
+        WorkAreaFactory(opportunity=pm_opportunity, work_area_group=other_group)
         client.force_login(program_manager_org_user_admin)
 
         response = client.get(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             {"group_id": [group_a.id, group_b.id]},
         )
 
@@ -2143,29 +2158,29 @@ class TestGetWorkAreasForAssignment:
         assert group_id_by_wa_id == {wa_a.id: group_a.id, wa_b.id: group_b.id}
 
     def test_no_group_ids_returns_empty(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
-        WorkAreaFactory(opportunity=managed_opportunity)
+        WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
-        response = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id))
+        response = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id))
 
         assert response.status_code == 200
         assert response.json()["work_areas"] == []
         assert response.json()["bounds"] is None
 
     def test_returns_bounds_of_the_selected_groups(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
         """Assignment mode zooms from this, since these work areas bypass the tile filters."""
-        group = WorkAreaGroupFactory(opportunity=managed_opportunity)
-        work_area_at(managed_opportunity, 10, 20, work_area_group=group)
-        work_area_at(managed_opportunity, 12, 22, work_area_group=group)
-        work_area_at(managed_opportunity, 40, 50)  # another group, must not widen the box
+        group = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        work_area_at(pm_opportunity, 10, 20, work_area_group=group)
+        work_area_at(pm_opportunity, 12, 22, work_area_group=group)
+        work_area_at(pm_opportunity, 40, 50)  # another group, must not widen the box
         client.force_login(program_manager_org_user_admin)
 
         response = client.get(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             {"group_id": [group.id]},
         )
 
@@ -2175,9 +2190,9 @@ class TestGetWorkAreasForAssignment:
 @pytest.mark.django_db
 class TestGetFlwWorkAreasForAssignment:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id, assignee_id):
@@ -2187,34 +2202,34 @@ class TestGetFlwWorkAreasForAssignment:
         )
 
     def test_returns_the_assignees_areas_and_their_bounds(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        mine = work_area_at(managed_opportunity, 10, 20, opportunity_access=access)
-        work_area_at(managed_opportunity, 40, 50)  # unassigned, must not widen the box
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        mine = work_area_at(pm_opportunity, 10, 20, opportunity_access=access)
+        work_area_at(pm_opportunity, 40, 50)  # unassigned, must not widen the box
         client.force_login(program_manager_org_user_admin)
 
-        payload = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id, access.id)).json()
+        payload = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id, access.id)).json()
 
         assert [wa["id"] for wa in payload["work_areas"]] == [mine.id]
         assert payload["bounds"] == [10, 20, 11, 21]
 
     def test_no_areas_returns_null_bounds(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
-        payload = client.get(self.url(program_manager_org.slug, managed_opportunity.opportunity_id, access.id)).json()
+        payload = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id, access.id)).json()
 
         assert payload == {"work_areas": [], "bounds": None}
 
 
 class TestSaveAssignment:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -2237,17 +2252,17 @@ class TestSaveAssignment:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa2 = WorkAreaFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [{"assignee_id": access.id, "work_area_ids": [wa1.id, wa2.id]}],
         )
 
@@ -2267,18 +2282,18 @@ class TestSaveAssignment:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
         """If HQ sync fails, the DB assignment must not be committed."""
         mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [{"assignee_id": access.id, "work_area_ids": [wa.id]}],
         )
 
@@ -2299,21 +2314,21 @@ class TestSaveAssignment:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
         payload,
         expected_status,
     ):
         client.force_login(program_manager_org_user_admin)
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, payload)
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, payload)
         assert response.status_code == expected_status
 
 
 @pytest.mark.django_db
 class TestUnassignWorkAreas:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -2336,22 +2351,18 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
-        )
-        wa2 = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
-        )
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED)
         mock_unassign.return_value = {"unassigned_ids": [wa1.id, wa2.id], "skipped": 0, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [wa1.id, wa2.id],
         )
 
@@ -2364,7 +2375,7 @@ class TestUnassignWorkAreas:
         }
         mock_unassign.assert_called_once()
         kwargs = mock_unassign.call_args.kwargs
-        assert kwargs["opportunity"].pk == managed_opportunity.pk
+        assert kwargs["opportunity"].pk == pm_opportunity.pk
         assert kwargs["work_area_ids"] == [wa1.id, wa2.id]
         assert kwargs["user"] == program_manager_org_user_admin
 
@@ -2375,13 +2386,13 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         mock_unassign.return_value = {"unassigned_ids": [], "skipped": 0, "failed_ids": [wa.id]}
         client.force_login(program_manager_org_user_admin)
 
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, [wa.id])
         assert response.status_code == 502
         assert "error" in response.json()
 
@@ -2392,13 +2403,13 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         mock_unassign.return_value = {"unassigned_ids": [], "skipped": 1, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, [wa.id])
         assert response.status_code == 200
         assert response.json() == {"status": "ok", "unassigned_ids": [], "skipped": 1, "failed_ids": []}
 
@@ -2419,22 +2430,22 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
         payload,
         expected_status,
     ):
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data=json.dumps(payload),
             content_type="application/json",
         )
         assert response.status_code == expected_status
 
-    def test_invalid_json_body(self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity):
+    def test_invalid_json_body(self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity):
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data="not-json",
             content_type="application/json",
         )
@@ -2447,12 +2458,12 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
 
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data=json.dumps({"work_area_ids": list(range(1, MAX_UNASSIGN_WORK_AREAS + 2))}),
             content_type="application/json",
         )

@@ -330,5 +330,5 @@ webpack-stats.json
 .claude/worktrees/
 .claude/settings.local.json
 
-# jscpd baseline, rebuilt from HEAD on every commit
+# jscpd baseline cache, rebuilt by --baseline-from-ref
 .jscpd-baseline.json
