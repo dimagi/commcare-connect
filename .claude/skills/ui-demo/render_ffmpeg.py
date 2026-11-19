@@ -145,7 +145,8 @@ def build_frame_assets(out_dir, canvas, pad, bg):
             "-f",
             "lavfi",
             "-i",
-            f"gradients=s={cw}x{ch}:c0={c0}:c1={c1}:x0=0:y0=0:x1={cw}:y1={ch}:type=linear:nb_colors=2:speed=0",
+            # ffmpeg 6 rejects speed=0. Only one frame is rendered, so the gradient doesn't move.
+            f"gradients=s={cw}x{ch}:c0={c0}:c1={c1}:x0=0:y0=0:x1={cw}:y1={ch}:type=linear:nb_colors=2:speed=0.00001",
             "-i",
             str(shadow),
             "-frames:v",
