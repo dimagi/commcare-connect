@@ -3,8 +3,9 @@
 {% load crispy_forms_tags %}
 {% load static %}
 {% block javascript %}
-  {# Not deferred: it defines an x-data helper, so it has to run before Alpine starts. #}
+  {# Not deferred: they define x-data helpers, so they have to run before Alpine starts. #}
   <script src="{% static 'js/solicitation_formset.js' %}"></script>
+  <script src="{% static 'js/date_range.js' %}"></script>
   {{ block.super }}
 {% endblock javascript %}
 {% block step_content %}

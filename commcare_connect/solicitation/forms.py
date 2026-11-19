@@ -142,8 +142,21 @@ class SolicitationForm(forms.ModelForm):
             "description",
             Row("budget_min", "budget_max", "currency", css_class="grid grid-cols-3 gap-2"),
             Row("country", "estimated_scale", "contact_email", css_class="grid grid-cols-3 gap-2"),
+            # The browser limits each date picker so the end date stays after the start date.
             Row(
-                "expected_start_date", "expected_end_date", "application_deadline", css_class="grid grid-cols-3 gap-2"
+                Field(
+                    "expected_start_date",
+                    x_init="start = $el.value",
+                    **{"@input": "start = $el.value", ":max": "dayBeforeEnd()"},
+                ),
+                Field(
+                    "expected_end_date",
+                    x_init="end = $el.value",
+                    **{"@input": "end = $el.value", ":min": "dayAfterStart()"},
+                ),
+                "application_deadline",
+                css_class="grid grid-cols-3 gap-2",
+                x_data="dateRange()",
             ),
             # Picking a program fills in its delivery type; the PM can still change it afterwards.
             Row(
