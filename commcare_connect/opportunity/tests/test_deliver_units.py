@@ -1,7 +1,9 @@
 import importlib
+from unittest.mock import patch
 
 import pytest
 from django.db import IntegrityError, connection, transaction
+from django.db.models import QuerySet
 
 from commcare_connect.form_receiver.processor import get_or_create_deliver_unit
 from commcare_connect.opportunity.forms import DeliverUnitFlagsForm, FormJsonValidationRulesForm
@@ -66,6 +68,16 @@ class TestGetOrCreateForOpportunity:
 
         orphan.refresh_from_db()
         assert orphan.opportunity is None
+
+    def test_adopting_survives_a_unit_inserted_concurrently(self, opportunity):
+        # Simulates a unit for the slug committed by another transaction while the adopting UPDATE runs
+        existing = DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
+        DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=None)
+
+        with patch.object(QuerySet, "update", side_effect=IntegrityError):
+            DeliverUnit.objects.all()._adopt_unit_with_no_opportunity(opportunity, "visit")
+
+        assert DeliverUnit.objects.get_or_create_for_opportunity(opportunity, "visit") == (existing, False)
 
     def test_ignores_units_of_a_previous_deliver_app(self, opportunity):
         old_app_unit = DeliverUnitFactory(app=CommCareAppFactory(), slug="visit", opportunity=opportunity)

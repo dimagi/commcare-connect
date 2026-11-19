@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.db.models import Exists, Q
 
 from commcare_connect.opportunity.models.commcare_app import CommCareApp
@@ -87,13 +87,20 @@ class DeliverUnitQuerySet(models.QuerySet):
             .values_list("pk", flat=True)
             .first()
         )
-        if orphan:
-            # Both conditions are re-checked by the UPDATE itself, so a concurrent caller that already
-            # adopted this unit, or another one for the same slug, wins and this call adopts nothing
-            already_has_unit = self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id, slug=slug)
-            self.filter(pk=orphan, opportunity__isnull=True).filter(~Exists(already_has_unit)).update(
-                opportunity=opportunity
-            )
+        if not orphan:
+            return
+        # Both conditions are re-checked by the UPDATE itself, so a concurrent caller that already
+        # adopted this unit, or another one for the same slug, wins and this call adopts nothing
+        already_has_unit = self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id, slug=slug)
+        try:
+            with transaction.atomic():
+                self.filter(pk=orphan, opportunity__isnull=True).filter(~Exists(already_has_unit)).update(
+                    opportunity=opportunity
+                )
+        except IntegrityError:
+            # A unit for the slug was inserted and committed while this UPDATE ran, which the
+            # NOT EXISTS above can't see. get_or_create then returns that unit.
+            pass
 
 
 class DeliverUnit(models.Model):
