@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import DetailView, FormView, UpdateView
+from django.views.generic import DetailView, FormView, ListView, UpdateView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
@@ -277,3 +277,23 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 
     def form_invalid(self, form):
         return HttpResponseBadRequest()
+
+
+# Public marketplace ---------------------------------------------------------------------------------------------
+
+
+class MarketplaceListView(WaffleSwitchMixin, ListView):
+    """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
+    view here, open to visitors who aren't logged in."""
+
+    waffle_switch = SOLICITATIONS
+    template_name = "solicitation/marketplace_list.html"
+    context_object_name = "solicitations"
+    paginate_by = 12  # fills whole rows of the 1, 2 and 3 column grid
+
+    def get_queryset(self):
+        return (
+            Solicitation.objects.public()
+            .select_related("organization", "country", "delivery_type")
+            .order_by("application_deadline", "pk")
+        )

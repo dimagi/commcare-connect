@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block has_sidebar %}
+  {{ request.user.is_authenticated|yesno:"true,false" }}
+{% endblock has_sidebar %}
+{% block sidenav %}
+  {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
+{% endblock sidenav %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full pb-10">
+    <div>
+      <h1 class="title">{% translate "Marketplace" %}</h1>
+      <p class="hint">{% translate "Requests for proposals and expressions of interest open to applications." %}</p>
+    </div>
+    {% if solicitations %}
+      <ul class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {% for solicitation in solicitations %}
+          <li>{% include "solicitation/partials/marketplace_card.html" %}</li>
+        {% endfor %}
+      </ul>
+      {% if page_obj.has_other_pages %}
+        <nav class="flex items-center justify-center gap-4"
+             aria-label="{% translate "Pagination" %}">
+          {% if page_obj.has_previous %}
+            <a class="button button-sm outline-style"
+               href="{% querystring page=page_obj.previous_page_number %}">{% translate "Previous" %}</a>
+          {% endif %}
+          <span class="text-sm text-gray-500">
+            {% blocktranslate with number=page_obj.number total=page_obj.paginator.num_pages %}Page {{ number }} of {{ total }}{% endblocktranslate %}
+          </span>
+          {% if page_obj.has_next %}
+            <a class="button button-sm outline-style"
+               href="{% querystring page=page_obj.next_page_number %}">{% translate "Next" %}</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <div class="card_bg text-center">
+        <p class="card_description">{% translate "There are no open solicitations right now." %}</p>
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}
