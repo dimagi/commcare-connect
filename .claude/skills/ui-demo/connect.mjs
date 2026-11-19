@@ -144,6 +144,12 @@ export async function pickTomSelect(page, d, id, option) {
     page,
     `.ts-wrapper:has(#${id}-ts-control) .ts-dropdown .option[data-value="${value}"]`,
   );
+  // 5. a multi-select keeps its dropdown open after a pick, over the fields below it, and the record cursor's next
+  //    click lands on an option instead. Closing keeps focus, so the next pick still types straight in
+  await page.evaluate((sel) => {
+    const ts = document.querySelector(sel).tomselect;
+    if (ts.settings.mode === 'multi') ts.close();
+  }, `#${id}`);
 }
 
 // ---------- django admin
