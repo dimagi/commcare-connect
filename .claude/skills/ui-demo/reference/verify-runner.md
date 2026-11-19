@@ -16,6 +16,7 @@ Steps are data. Each step:
 - `captionPos` — optional `'top' | 'bottom'`; default: bottom, auto-flipped to top when the clicked target sits in the bottom 28% of the frame (and the step did not navigate), or when the step's `checkpoint` region overlaps the bottom caption band but not the top one.
 - `checkpoint` — optional CSS selector; on success (verify mode), `ariaSnapshot()` of that region goes into the report for semantic review. 2–3 per flow, scoped to the main content region. Under `--record` its bounding box is saved as the step's `result`, which keeps the caption off the outcome.
 - `failRegion` — optional CSS selector; on failure, `ariaSnapshot()` of that region goes into the report. Defaults to `main, form, [role=main]`.
+- `showEmail` — `false` skips the demo inbox after this step (SKILL.md §2), e.g. when the next step opens the email itself with `d.openEmail` to click its link.
 - `say` — voiceover only: `{ intent, outcome }`, spoken from `actionStart` and from `actionEnd`; `null` mutes either line. `INTRO`/`OUTRO` take `say` as a plain string, spoken over the card. Copied into `steps.json` for `narrate.py`; wording rules in SKILL.md §2.
 
 Runnable examples: `flow.feature-example.mjs` (signed in off camera) and `flow.example.mjs` (login on camera), in this skill's folder.
@@ -47,11 +48,13 @@ await run(
 );
 ```
 
-`run(config, import.meta.url)` options: `BASE` (required), `INTRO`, `OUTRO`, `STEPS`, `preAuth` (async `(page) => …` run before anything is captured — sign in off camera when login is not the feature; skipped when a saved Verify-Run state exists), `firstUrl` (page loaded before the screencast starts so frame 0 is never blank — the feature's page, not the login page, unless login is the story; default `BASE`), `useState` (reuse auth between Verify Runs; **false** for flows that switch identity), `VIEW` (1280×800), `DPR` (2), `FPS` (30), `maxSteps` (12), `failRegion`, `introMs`/`outroMs` (3000).
+`run(config, import.meta.url)` options: `BASE` (required), `INTRO`, `OUTRO`, `STEPS`, `preAuth` (async `(page) => …` run before anything is captured — sign in off camera when login is not the feature; skipped when a saved Verify-Run state exists), `firstUrl` (page loaded before the screencast starts so frame 0 is never blank — the feature's page, not the login page, unless login is the story; default `BASE`), `useState` (reuse auth between Verify Runs; **false** for flows that switch identity), `VIEW` (1280×800), `DPR` (2), `FPS` (30), `maxSteps` (12), `failRegion`, `introMs`/`outroMs` (3000), `showEmails` (true; false turns the demo inbox off for the whole flow).
 
 What it does: Verify Run = headless, plain actions, assertions, `checkpoint` snapshots, warnings (step count, caption/intent length, missing intent, test-looking data) → `output/report.json`, exit 1 on the first failing step with error/URL/title/`failRegion`/screenshot. Record Pass = headed, `deviceScaleFactor` 2 with a doubled screencast size, macOS-arrow cursor overlay driven by a spring (tension 470, mass 3, friction 70; target = click point from tick one, hard snap + 120 ms landing beat), highlight ring 700 ms, click ripple 450 ms, `pressSequentially` at 60 ms/char, caption holds from text length (20 chars/s, 1.5–7 s), intro card as frame 0 and outro card as the last frame, JPEG frames (`onFrame`, quality 100) piped into ffmpeg libx264 ultrafast crf 12 at a wall-clock-slotted constant 30 fps → `output/raw.mp4` + `output/steps.json`. All overlays go through `page.screencast.showOverlay` (never `page.evaluate`; never `showActions`, which blocks every action for its duration).
 
-The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { highlight })`, `d.hover(page, sel)` (glide onto it without clicking — for tooltips, which a click closes), `d.type(page, sel, text, { delay })`, `d.select(page, sel, option)`, `d.check(page, sel)`, `d.goto(page, url)` (waits for network idle), `d.pause(page, ms)` (record-only beat), `d.badge(page, sel, 'NEW')` (sticky tag beside an element; returns a disposable), `d.now()`.
+Emails, in both passes: the demo server (`serve.sh`) saves every email it sends to `output/mail/`, which the runner empties at start. After a step whose action sent email, the runner opens the first recipient's demo inbox, clicks the email, holds it for its reading time (Record Pass only; 25 chars/s, 3–6 s) and goes back to the step's page. The Verify Run's step entry lists the step's `emails` (`to`, `subject`), and warns on test-looking data in their subject or body.
+
+The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { highlight })`, `d.hover(page, sel)` (glide onto it without clicking — for tooltips, which a click closes), `d.type(page, sel, text, { delay })`, `d.select(page, sel, option)`, `d.check(page, sel)`, `d.goto(page, url)` (waits for network idle), `d.pause(page, ms)` (record-only beat), `d.badge(page, sel, 'NEW')` (sticky tag beside an element; returns a disposable), `d.openEmail(page, to, { subject })` (open `to`'s demo inbox and click their newest email, or the newest with `subject` in it; stays there), `d.now()`.
 
 ## `steps.json` (written by the Record Pass)
 
@@ -98,6 +101,8 @@ The `d` helpers passed to `run(page, d)`: `d.click(page, selectorOrLocator, { hi
   ]
 }
 ```
+
+A step that opened the demo inbox also has `email: { start, end, to, subject }`: its window in recording seconds, after `holdEnd`.
 
 `render.py` reads it to place intents in `[actionStart, actionEnd]` and captions in `[actionEnd, holdEnd]`, to speed up `[actionStart, actionEnd]` when `--action-speed > 1`, to flip a caption to the top when `target` sits in the bottom band or `result` would sit under it, and to dim around each `spots` box (cut at the next `navigations` entry). `video.dpr` tells it the raw frames are 2x the CSS size. **Editing `title`/`subtitle`/`captionPos` here and re-rendering is the way to fix caption wording or placement** — no re-record. The same goes for `say`: edit it, re-run `narrate.py` (only changed lines are re-voiced) and `render.py --voiceover`.
 

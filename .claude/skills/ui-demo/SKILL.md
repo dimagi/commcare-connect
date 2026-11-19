@@ -35,7 +35,7 @@ Run `preflight.sh` first (Node 20+, Python 3 venv, ffmpeg with libx264, the repo
 
 Kick off `$SKILL/serve.sh` and `$SKILL/reseed.sh` in the background _before_ reading any code, and draft `flow.mjs` while they run. `curl` readiness right before the first Verify Run.
 
-The workspace is persistent at `<repo>/.ui-demo/`, git-ignored by its own `.gitignore` (`*`): shared `node_modules/` + `venv/` at the root, one subfolder per task (ticket ID verbatim, else a short kebab-case slug) holding `flow.mjs`, the copied `runner.mjs` + `connect.mjs`, and `output/` (`raw.mp4`, `steps.json` durable; `report.json`, `state.json`, `final.mp4`, `poster.png`, `render.json` derived). Every other script runs in place from `$SKILL`.
+The workspace is persistent at `<repo>/.ui-demo/`, git-ignored by its own `.gitignore` (`*`): shared `node_modules/` + `venv/` at the root, one subfolder per task (ticket ID verbatim, else a short kebab-case slug) holding `flow.mjs`, the copied `runner.mjs` + `connect.mjs`, and `output/` (`raw.mp4`, `steps.json` durable; `report.json`, `state.json`, `mail/`, `final.mp4`, `poster.png`, `render.json` derived). Every other script runs in place from `$SKILL`.
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
@@ -53,7 +53,7 @@ fi
 mkdir -p "$TASK_DIR/output" && cd "$TASK_DIR"
 cp "$SKILL"/{runner.mjs,connect.mjs} .   # copied, not run in place: Node resolves `playwright` from the file's own folder
 [ -f flow.mjs ] || cp "$SKILL/flow.feature-example.mjs" flow.mjs   # signed in off camera; flow.example.mjs when signing in is the story
-"$SKILL/serve.sh" 8010 && "$SKILL/reseed.sh"   # runserver (DEBUG off, email → console), realistic data
+"$SKILL/serve.sh" 8010 && "$SKILL/reseed.sh"   # runserver (DEBUG off, email → demo inbox), realistic data
 ```
 
 **Recording a branch you don't have checked out.** `serve.sh` and `reseed.sh` run the code of the checkout `$SKILL` sits in, so serve the branch from a throwaway worktree and keep the task folder under `$REPO/.ui-demo/`:
@@ -90,6 +90,7 @@ Never `test123`, `example.com`, `uitest.local` — viewers translate "demo/test"
 - `caption: [title, subtitle]` — title ≤42 chars, plain language ("Invite sent to Isha", not "Invitation record created"). Subtitle = _why it matters to the user_, not a second description of the screen ("Both will hear when someone joins"). Hold time is derived from text length.
 - A `checkpoint` region on each page whose outcome matters (2–3 per flow), scoped to the main content area; the renderer flips captions off the clicked target and off the checkpoint. `captionPos: 'top'` only to override.
 - `INTRO`/`OUTRO` follow one arc — **problem → walkthrough → result**. Intro names the need ("Know when your invite is accepted"), description says what was missing before (for a bug fix, the broken behaviour). Outro states what is now true ("Isha joined, and both admins know"), not "Done".
+- **Emails show up on their own.** The demo server sends no real email: it keeps each one for a demo inbox at `/demo-inbox/`. After a step that sent email, the runner opens the first recipient's inbox, clicks the new email (its subject, then the email exactly as sent, in an iframe; no sender), holds it long enough to read and goes back to the page the step ended on — in the Verify Run too, so the return trip is verified. Nothing to write. `showEmail: false` on a step skips it, e.g. when the story continues from the email: open it in the next step with `d.openEmail(p, to)` and click its link, which opens in the whole window: `d.click(p, p.frameLocator('iframe[title="Email"]').getByRole('link', { name: 'Accept the invitation' }))`. With `--voiceover`, mention the email in the step's `outcome` line; the inbox has no line of its own.
 - **With `--voiceover`: `say` on every step and on `INTRO`/`OUTRO`** — `say: { intent: '…', outcome: '…' }` on a step, a plain string on a card. The words of a presenter giving the demo live, first person, talking while they click and then reacting to the screen ("Let me start a draft, and I'll set the max budget below the min on purpose" → "And it's caught on save."), not the caption read aloud. One or two short sentences per line; spell numbers as words ("sixty percent"); end each line with a full stop (a trailing comma voices badly). Size the intent line to the action (≈2.7 words/s): a long form fill can carry a sentence of context, a single click gets three words or `null`.
 - Selectors come from code; the Verify Run confirms them. No fixed sleeps.
 
@@ -132,7 +133,7 @@ uv run "$SKILL/narrate.py"                              # output/vo/*.wav + outp
 
 ## 6. Spot-Check
 
-Check `render.json` (`duration_s` plausible vs. Record Pass wall-clock, `over_budget: false`; with a voiceover also `voice_lines` matching `voiceover.json`, `held_s` small next to the duration — large means lines too long for their steps — and `ffprobe` showing an `aac` stream), then sample the first second (intro card visible) and the last second (outro card): `ffmpeg -ss <t> -i output/final.mp4 -frames:v 1 -vf scale=800:-1 frame.png` — always downscale. Each frame shows the expected page, a legible caption not covering its target, and the frame. If a caption covers content, set `captionPos` in `steps.json` and re-render. If something is wrong (duration far off, blank/stale frame), see `reference/troubleshooting.md`. Never deliver an unverified recording.
+Check `render.json` (`duration_s` plausible vs. Record Pass wall-clock, `over_budget: false`; with a voiceover also `voice_lines` matching `voiceover.json`, `held_s` small next to the duration — large means lines too long for their steps — and `ffprobe` showing an `aac` stream), then sample the first second (intro card visible), the last second (outro card) and, for a step with an `email` window in `steps.json`, a frame inside it (the opened email): `ffmpeg -ss <t> -i output/final.mp4 -frames:v 1 -vf scale=800:-1 frame.png` — always downscale. Each frame shows the expected page, a legible caption not covering its target, and the frame. If a caption covers content, set `captionPos` in `steps.json` and re-render. If something is wrong (duration far off, blank/stale frame), see `reference/troubleshooting.md`. Never deliver an unverified recording.
 
 ## 7. Cleanup & deliver
 
@@ -147,4 +148,4 @@ Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `pos
 - `reference/troubleshooting.md` — MCP unavailable, blocked verification, corrupted recording, TomSelect, zsh gotcha.
 - `reference/learnings.md` — measured findings behind the rules.
 - `reference/connect.md` — the seeded people, `connect.mjs` helpers, commcare-connect gotchas.
-- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.
+- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `demo_mail.py` + `demo_urls.py` + `templates/` (the demo inbox), `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `narrate.py` (voiceover), example flows.

@@ -1,6 +1,6 @@
 # commcare-connect demo kit
 
-Everything a Connect demo re-derived every time, done once: demo settings (no Debug Toolbar, email → console only), a realistic idempotent seed, a server script, and a helper library with verified selectors. A new demo is `flow.mjs` = steps + captions (see the two example flows, ~40 lines each).
+Everything a Connect demo re-derived every time, done once: demo settings (no Debug Toolbar, email → a demo inbox, never a real one), a realistic idempotent seed, a server script, and a helper library with verified selectors. A new demo is `flow.mjs` = steps + captions (see the two example flows, ~40 lines each).
 
 Setup and run order: SKILL.md "Setup". `DEMO_PORT=8022 node flow.mjs` if 8010 is taken (pass the same port to `serve.sh`).
 

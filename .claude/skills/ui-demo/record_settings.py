@@ -2,8 +2,9 @@
 Loaded via PYTHONPATH + DJANGO_SETTINGS_MODULE=record_settings.
 
 - DEBUG off → no Debug Toolbar in frame (local.py hardcodes DEBUG = True, so the env var alone does nothing).
-- Email always goes to the console (output/server.log), even if .env points DJANGO_EMAIL_BACKEND at a real SMTP
-  server — a demo must never send mail to the seeded addresses. Demos do not show email on camera.
+- Email never leaves the machine, even if .env points DJANGO_EMAIL_BACKEND at a real SMTP server — a demo must
+  never send mail to the seeded addresses. demo_mail.py prints it to the console (output/server.log) and serves it
+  in a demo inbox at /demo-inbox/, which runner.mjs opens on camera.
 - Celery eager even when .env sets CELERY_TASK_ALWAYS_EAGER=False, so emails sent via tasks fire inline
   without a worker.
 - Static files come straight from the source folders, as they do under DEBUG: no collectstatic, and pages always
@@ -12,11 +13,15 @@ Loaded via PYTHONPATH + DJANGO_SETTINGS_MODULE=record_settings.
   `whitenoise.runserver_nostatic` turns runserver's static serving off.
 """
 
+from pathlib import Path
+
 from config.settings.local import *  # noqa: F403
 
 DEBUG = False
 
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_BACKEND = "demo_mail.EmailBackend"
+ROOT_URLCONF = "demo_urls"
+TEMPLATES[0]["DIRS"] = [*TEMPLATES[0]["DIRS"], str(Path(__file__).parent / "templates")]  # noqa: F405
 
 CELERY_TASK_ALWAYS_EAGER = True
 

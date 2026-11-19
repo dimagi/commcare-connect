@@ -36,6 +36,7 @@ const DEFAULTS = {
   accent: '#ed6a14',
   introMs: 3000,
   outroMs: 3000,
+  showEmails: true, // open the demo inbox after each step that sent email (per step: showEmail: false)
 };
 
 export async function run(config, flowUrl) {
@@ -45,6 +46,8 @@ export async function run(config, flowUrl) {
     cfg.outputDir ?? path.join(path.dirname(fileURLToPath(flowUrl)), 'output');
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const STATE = path.join(OUTPUT_DIR, 'state.json');
+  const MAIL_DIR = path.join(OUTPUT_DIR, 'mail'); // serve.sh's demo_mail.py saves every email the server sends here
+  fs.rmSync(MAIL_DIR, { recursive: true, force: true }); // the inbox shows this run's emails only
 
   let t0 = Date.now();
   const now = () => (Date.now() - t0) / 1000; // recording seconds; t0 is reset when the screencast starts
@@ -74,6 +77,45 @@ export async function run(config, flowUrl) {
         }ms ease-out forwards"></div>`,
       { duration },
     );
+  }
+
+  // ---------- email: the demo inbox (demo_mail.py) shows each email the way its recipient would see it
+  /** After a step that sent email: open the first recipient's inbox, open the email, give the viewer time to read
+   * it, then go back to the page the step ended on. Also runs in the Verify Run, so the return trip is verified. */
+  async function showEmail(page, email) {
+    const back = page.url();
+    const start = now();
+    await d.openEmail(page, email.to[0], { subject: email.subject });
+    await expect(page.locator('[data-opened-email]')).toContainText(
+      email.subject,
+    );
+    const chars = `${email.subject} ${emailText(email)}`.length;
+    await d.pause(
+      page,
+      Math.min(6000, Math.max(3000, (chars / 25 + 1) * 1000)),
+    ); // reading time, as for captions
+    const shown = {
+      start,
+      end: now(),
+      to: email.to[0],
+      subject: email.subject,
+    };
+    await d.goto(page, back);
+    return shown;
+  }
+  function newEmails(before) {
+    const seen = new Set(before);
+    return mailFiles()
+      .filter((f) => !seen.has(f))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(MAIL_DIR, f), 'utf8')));
+  }
+  function mailFiles() {
+    return fs.existsSync(MAIL_DIR)
+      ? fs
+          .readdirSync(MAIL_DIR)
+          .filter((f) => f.endsWith('.json'))
+          .sort()
+      : [];
   }
 
   // ---------- cursor: the macOS arrow as a sticky overlay re-added at each spring tick.
@@ -211,6 +253,18 @@ export async function run(config, flowUrl) {
     async pause(page, ms) {
       if (RECORD) await page.waitForTimeout(ms); // a deliberate beat the viewer needs (e.g. after a toast appears)
     },
+    /** Open `to`'s demo inbox and click their newest email (with `subject` in it, if given). Stays on the email,
+     * so a flow can click a link in it — set `showEmail: false` on the step that sent it. */
+    async openEmail(page, to, { subject } = {}) {
+      await d.goto(page, `${BASE}/demo-inbox/?to=${encodeURIComponent(to)}`);
+      await d.pause(page, 1200); // the new email arrives at the top of the inbox
+      const rows = page.locator('[data-email]');
+      await d.click(
+        page,
+        (subject ? rows.filter({ hasText: subject }) : rows).first(),
+      );
+      await page.waitForLoadState('networkidle').catch(() => {});
+    },
     /** Sticky "NEW" style tag next to an element while a step runs; returns a disposable (record-only). */
     async badge(page, selector, text = 'NEW') {
       if (!RECORD) return { dispose: async () => {} };
@@ -332,16 +386,18 @@ export async function run(config, flowUrl) {
     const wall = Date.now();
     const actionStart = now();
     const urlBefore = page.url();
+    const mailBefore = mailFiles();
     lastTarget = null;
     try {
       await step.run(page, d);
       if (step.assert) await step.assert(page);
       const actionEnd = now();
+      const emails = newEmails(mailBefore); // sent within the request: record_settings runs Celery tasks eagerly
       if (RECORD && step.caption)
         await page.waitForTimeout(holdMs(...step.caption));
       if (RECORD) {
         const [title, subtitle] = step.caption ?? [];
-        stepsLog.push({
+        const logged = {
           name: step.name,
           intent: step.intent ?? null,
           title,
@@ -361,7 +417,22 @@ export async function run(config, flowUrl) {
                 .boundingBox()
                 .catch(() => null)
             : null,
-        });
+        };
+        stepsLog.push(logged);
+      }
+      if (emails.length && cfg.showEmails && step.showEmail !== false) {
+        const shown = await showEmail(page, emails[0]); // after holdEnd: captions and voiceover holds stay put
+        if (RECORD) stepsLog.at(-1).email = shown;
+      }
+      if (!RECORD && emails.length) {
+        entry.emails = emails.map((m) => ({ to: m.to, subject: m.subject }));
+        for (const m of emails) {
+          const hit = `${m.subject} ${emailText(m)}`.match(cfg.testDataRe);
+          if (hit)
+            report.warnings.push(
+              `step ${step.name}: test-looking data in the email "${m.subject}" ("${hit[0]}")`,
+            );
+        }
       }
       if (!RECORD && step.checkpoint) {
         entry.checkpoint = await page
@@ -437,6 +508,16 @@ export async function run(config, flowUrl) {
   console.log(JSON.stringify(report, null, 2));
   process.exit(report.ok ? 0 : 1);
 }
+
+// what the viewer reads: the HTML part without its markup (link targets are not on screen), else the plain text
+const emailText = (m) =>
+  m.html
+    ? m.html
+        .replace(/<(style|head)[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : m.text ?? '';
 
 // ---------- capture: Playwright's own screencast file is VP8 at a fixed 1 Mbit/s, which smears text at 2x. Its JPEG
 // frames go to ffmpeg instead. Chromium only sends a frame when the page repaints, so each slot of the constant-fps
