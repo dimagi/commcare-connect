@@ -241,7 +241,7 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
-class SolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
+class BaseSolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
     """Ends a solicitation with a reason, after which it can't be edited or applied to.
 
     The form is the modal on the list page.
@@ -262,7 +262,7 @@ class SolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, Suc
         return reverse("solicitation:list", args=[self.request.org.slug])
 
 
-class SolicitationCloseView(SolicitationClosureView):
+class SolicitationCloseView(BaseSolicitationClosureView):
     status = Solicitation.Status.CLOSED
     title = _("Close solicitation")
     hint = _("Marks the solicitation closed before its deadline. It can't be edited or reopened afterwards.")
@@ -273,7 +273,7 @@ class SolicitationCloseView(SolicitationClosureView):
         return super().get_queryset().open()
 
 
-class SolicitationCancelView(SolicitationClosureView):
+class SolicitationCancelView(BaseSolicitationClosureView):
     status = Solicitation.Status.CANCELLED
     title = _("Cancel solicitation")
     hint = _("Calls the solicitation off. A cancelled solicitation can't be edited, applied to or reopened.")
