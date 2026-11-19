@@ -86,13 +86,25 @@ class TestListCalls:
             return lambda **kwargs: get_domains_for_user(key, **kwargs)
         return lambda **kwargs: get_applications_for_user_by_domain(key, "dom", **kwargs)
 
-    @pytest.mark.parametrize(
-        "status, access_denied", [(401, True), (403, True), (404, True), (500, False), (504, False)]
-    )
+    @pytest.mark.parametrize("status, access_denied", [(401, True), (403, True), (500, False), (504, False)])
     def test_only_refusals_are_access_denied(self, httpx_mock, fetch, status, access_denied):
         httpx_mock.add_response(status_code=status)
         with pytest.raises(CommCareHQAPIException) as exc_info:
             fetch()
+        assert isinstance(exc_info.value, CommCareHQAccessDenied) is access_denied
+
+    @pytest.mark.parametrize(
+        "fetch_list, access_denied",
+        [
+            # The domain list names no domain, so its 404 means a wrong server URL.
+            (lambda key: get_domains_for_user(key), False),
+            (lambda key: get_applications_for_user_by_domain(key, "dom"), True),
+        ],
+    )
+    def test_404_is_access_denied_only_for_a_domain(self, httpx_mock, key, fetch_list, access_denied):
+        httpx_mock.add_response(status_code=404)
+        with pytest.raises(CommCareHQAPIException) as exc_info:
+            fetch_list(key)
         assert isinstance(exc_info.value, CommCareHQAccessDenied) is access_denied
 
     def test_transport_error_raises_hq_exception(self, httpx_mock, fetch):
