@@ -346,6 +346,8 @@ export async function run(config, flowUrl) {
       );
   }
 
+  if (!RECORD) await page.goto(cfg.firstUrl ?? BASE); // verify from the page the Record Pass starts on
+
   // ---------- record setup: first frame is a real page, then the intro card
   const stepsLog = [];
   let intro = null;
