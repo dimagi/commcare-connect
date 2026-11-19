@@ -63,6 +63,7 @@ nav = [
   { "Deployment" = "deployment.md" },
   { "Architecture decisions" = [
     { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
+    { "ADR-0002: One access model for UI and API" = "adr/0002-one-access-model-for-ui-and-api.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
