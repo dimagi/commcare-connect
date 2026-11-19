@@ -89,15 +89,22 @@
         <p>
           <strong>{{ opportunity.organization.name|default:"" }}</strong>
         </p>
+        {% if main_contact %}
+          <p>
+            {% if main_contact.title %}
+              {% blocktrans with name=main_contact.name title=main_contact.title %}Contact person: {{ name }}, {{ title }}{% endblocktrans %}
+            {% else %}
+              {% blocktrans with name=main_contact.name %}Contact person: {{ name }}{% endblocktrans %}
+            {% endif %}
+          </p>
+        {% endif %}
         {% if opportunity.organization.office_address %}
           <p>{{ opportunity.organization.office_address|linebreaksbr }}</p>
         {% endif %}
         {% if main_contact %}
-          <p>{% trans "Contact" %}: {{ main_contact.name }}</p>
-          {% if main_contact.title %}<p>{{ main_contact.title }}</p>{% endif %}
           <p>
             {{ main_contact.email }}
-            {% if main_contact.phone %}| {{ main_contact.phone }}{% endif %}
+            {% if main_contact.phone %}&middot; {{ main_contact.phone }}{% endif %}
           </p>
         {% endif %}
       </div>
