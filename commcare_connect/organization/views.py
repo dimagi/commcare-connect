@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db import transaction
-from django.http import Http404, HttpResponse, HttpResponseBadRequest
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
@@ -27,6 +27,7 @@ from rest_framework.decorators import api_view
 
 from commcare_connect.opportunity.forms import ExportFormatForm
 from commcare_connect.opportunity.helpers import opportunities_orphaned_by_removal
+from commcare_connect.organization.context_selector import selector_tree
 from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
 from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
@@ -71,6 +72,13 @@ def organization_create(request):
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})
+
+
+@login_required
+@require_GET
+def context_search(request: HttpRequest) -> JsonResponse:
+    """Organizations, programs and opportunities for the header's context selector."""
+    return JsonResponse({"organizations": selector_tree(request.user)})
 
 
 @login_required
