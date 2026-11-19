@@ -251,13 +251,13 @@ class TestOpportunitiesAccessibleToOrg:
 
         assert [opp.id for opp in opportunities_accessible_to_org(organization)] == [opportunity.id]
 
-    def test_several_orgs_reach_what_each_one_reaches(self, opp_orgs, managed_opportunity, program):
+    def test_several_orgs_reach_what_each_one_reaches(self, opp_orgs, pm_opportunity, program):
         """Several orgs together reach every opportunity that any one of them reaches."""
         other_opportunity = OpportunityFactory(program=program, organization=opp_orgs["unrelated"])
 
         accessible = opportunities_accessible_to_orgs([opp_orgs["watcher"], opp_orgs["unrelated"]])
 
-        assert {opp.id for opp in accessible} == {managed_opportunity.id, other_opportunity.id}
+        assert {opp.id for opp in accessible} == {pm_opportunity.id, other_opportunity.id}
 
 
 class TestOpportunityAccessLevelFromRequest:
