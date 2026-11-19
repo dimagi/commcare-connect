@@ -26,6 +26,7 @@ from commcare_connect.flags.switch_names import (
 )
 from commcare_connect.opportunity.models import (
     AudioAttachment,
+    BillToAddress,
     CommCareApp,
     Country,
     CredentialConfiguration,
@@ -2082,3 +2083,55 @@ class DeliveryTypeForm(ManagedOptionForm):
 
     class Meta(ManagedOptionForm.Meta):
         model = DeliveryType
+
+
+class BillToAddressForm(forms.ModelForm):
+    slug_autofill = False
+
+    class Meta:
+        model = BillToAddress
+        fields = ("name", "address", "is_active")
+        widgets = {"address": forms.Textarea(attrs={"rows": 4})}
+        help_texts = {
+            "address": _('Printed line by line under the entity name in the invoice\'s "Bill to" section.'),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        has_invoices = self.instance.pk and self.instance.has_invoices()
+        if has_invoices:
+            self.fields["name"].disabled = True
+            self.fields["address"].disabled = True
+            self.fields["address"].help_text = _(
+                "Used by invoices, so the name and address can't change. To correct them, add a new address and "
+                "deactivate this one."
+            )
+        if self.instance.is_default:
+            self.fields["is_active"].disabled = True
+            self.fields["is_active"].help_text = _(
+                "The default address can't be deactivated. Make another address the default first."
+            )
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = Layout(
+            Field("name"),
+            Field("address"),
+            Field("is_active", css_class=CHECKBOX_CLASS),
+        )
+
+    def clean(self):
+        # Django ignores a disabled field's posted value, so without this a rename on a page opened before the
+        # address was used would be dropped while the save still reports success.
+        cleaned_data = super().clean()
+        for name in ("name", "address"):
+            if self.fields[name].disabled and self._posted_change(name):
+                self.add_error(name, _("Used by an invoice since you opened this page, so it can't change."))
+        return cleaned_data
+
+    def _posted_change(self, name):
+        # A browser leaves disabled fields out of the POST, so a posted value means the page was opened while the
+        # field was still editable. Textareas post \r\n line endings.
+        posted = self.data.get(self.add_prefix(name))
+        saved = getattr(self.instance, name) or ""
+        return posted is not None and posted.replace("\r\n", "\n").strip() != saved.strip()

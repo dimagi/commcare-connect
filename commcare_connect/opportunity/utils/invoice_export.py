@@ -6,7 +6,6 @@ import weasyprint
 from django.core.exceptions import SuspiciousFileOperation
 from django.template.loader import render_to_string
 from django.utils.text import get_valid_filename
-from django.utils.translation import gettext_lazy
 from django_weasyprint.utils import DjangoURLFetcher
 from tablib import Dataset
 
@@ -14,8 +13,6 @@ from commcare_connect.opportunity.models import InvoiceStatus, PaymentInvoice
 from commcare_connect.opportunity.utils.invoice import filter_invoices_by_month
 from commcare_connect.opportunity.utils.invoice_line_items import get_invoice_service_summary
 from commcare_connect.utils.file import neutralize_formula
-
-DIMAGI_ADDRESS = gettext_lazy("Dimagi, Inc.\n245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214")
 
 # Invoices that will never be paid are left out of a whole-month export.
 EXPORT_EXCLUDED_STATUSES = (
@@ -34,7 +31,7 @@ def get_exportable_invoices(opportunity, month_start=None):
     queryset = (
         PaymentInvoice.objects.filter(opportunity=opportunity)
         .exclude(status__in=EXPORT_EXCLUDED_STATUSES)
-        .select_related("opportunity", "exchange_rate", "payment")
+        .select_related("opportunity", "exchange_rate", "payment", "bill_to")
     )
     if month_start:
         queryset = filter_invoices_by_month(queryset, month_start)
@@ -85,7 +82,6 @@ def get_invoice_pdf_context(invoice):
         "invoice": invoice,
         "opportunity": invoice.opportunity,
         "service_summary_lines": get_invoice_service_summary(invoice),
-        "dimagi_address": DIMAGI_ADDRESS,
     }
 
 
