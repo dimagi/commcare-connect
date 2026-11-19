@@ -276,15 +276,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           LABEL: 'deployed: production'
         run: |
-          gh api "repos/${GITHUB_REPOSITORY}/labels/${LABEL// /%20}" --silent 2> /dev/null \
-            || gh api "repos/${GITHUB_REPOSITORY}/labels" -f name="${LABEL}" -f color=0e8a16 \
-              -f description='Merged PR included in a production deploy' --silent
+          gh label create "${LABEL}" --repo "${GITHUB_REPOSITORY}" --force --color 0e8a16 \
+            --description 'Merged PR included in a production deploy' \
+            || echo "::warning::Could not create the ${LABEL} label"
           # Each first-parent commit on main is one PR's merge (or squash) commit; the checkout is shallow
           git fetch --quiet --unshallow --no-tags origin "refs/tags/${PREV_RELEASE}:refs/tags/${PREV_RELEASE}"
           git rev-list --first-parent "${PREV_RELEASE}..${DEPLOY_SHA}" \
             | while read -r sha; do
                 gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" \
-                  --jq '.[] | select(.merged_at != null and .base.ref == "main") | .number' \
+                  --jq '.[] | select(.merged_at != null and .base.ref == env.DEPLOY_BRANCH) | .number' \
                   || echo "::warning::Could not look up the PR for commit ${sha}" >&2
               done \
             | sort -un \
