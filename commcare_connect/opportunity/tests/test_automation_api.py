@@ -20,8 +20,8 @@ from commcare_connect.program.tests.factories import ProgramFactory
 
 
 @pytest.fixture
-def managed_opp_with_deliver_units(program_manager_org, organization):
-    """A managed opportunity with two deliver units, ready for payment unit tests."""
+def opp_with_deliver_units(program_manager_org, organization):
+    """An opportunity with two deliver units, ready for payment unit tests."""
     program = ProgramFactory(organization=program_manager_org)
     hq_server = HQServerFactory()
     learn_app = CommCareAppFactory(organization=organization, hq_server=hq_server)
@@ -40,7 +40,7 @@ def managed_opp_with_deliver_units(program_manager_org, organization):
 
 
 @pytest.fixture
-def active_managed_opportunity(program_manager_org, organization):
+def active_opportunity(program_manager_org, organization):
     program = ProgramFactory(organization=program_manager_org)
     opportunity = OpportunityFactory(program=program, organization=organization, active=True)
     PaymentUnitFactory(opportunity=opportunity)
@@ -49,8 +49,8 @@ def active_managed_opportunity(program_manager_org, organization):
 
 @pytest.mark.django_db
 class TestPaymentUnits:
-    def test_create_payment_units(self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+    def test_create_payment_units(self, api_client, program_manager_org_user_admin, opp_with_deliver_units):
+        opportunity, du1, du2 = opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
         response = _post_payment_units(
             api_client=api_client,
@@ -70,19 +70,17 @@ class TestPaymentUnits:
         assert len(optional) == 1
 
     def test_payment_unit_invalid_deliver_unit(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
         response = _post_payment_units(
             api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[99999])]
         )
         assert response.status_code == 400
 
-    def test_payment_unit_missing_org_amount_for_managed(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
-    ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+    def test_payment_unit_missing_org_amount(self, api_client, program_manager_org_user_admin, opp_with_deliver_units):
+        opportunity, du1, du2 = opp_with_deliver_units
         payment_unit = _payment_unit(required=[du1.id])
         del payment_unit["org_amount"]
         api_client.force_authenticate(program_manager_org_user_admin)
@@ -101,13 +99,13 @@ class TestPaymentUnits:
         self,
         api_client,
         program_manager_org_user_admin,
-        managed_opp_with_deliver_units,
+        opp_with_deliver_units,
         switch_active,
         max_daily_payload,
         expected_status,
         expected_max_daily,
     ):
-        opportunity, du1, _ = managed_opp_with_deliver_units
+        opportunity, du1, _ = opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
         with override_switch(OPTIONAL_DAILY_LIMIT, active=switch_active):
             response = api_client.post(
@@ -133,9 +131,9 @@ class TestPaymentUnits:
         )
 
     def test_payment_unit_rejects_overlap_between_required_and_optional(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
         response = _post_payment_units(
             api_client=api_client,
@@ -156,11 +154,11 @@ class TestPaymentUnits:
         self,
         api_client,
         program_manager_org_user_admin,
-        managed_opp_with_deliver_units,
+        opp_with_deliver_units,
         same_opportunity,
         expected_status,
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         payment_unit_opportunity = opportunity if same_opportunity else OpportunityFactory()
         du1.payment_unit = PaymentUnitFactory(
             opportunity=payment_unit_opportunity, amount=1, org_amount=1, max_total=1
@@ -177,9 +175,9 @@ class TestPaymentUnits:
         assert du1.payment_unit.opportunity == opportunity
 
     def test_payment_unit_rejects_same_du_across_multiple_payment_units_in_request(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         api_client.force_authenticate(program_manager_org_user_admin)
         response = _post_payment_units(
             api_client=api_client,
@@ -192,10 +190,10 @@ class TestPaymentUnits:
         assert response.status_code == 400
 
     def test_payment_units_rejected_when_budget_cannot_cover_claimants(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
         """Adding payment units the budget can't fund for existing claimants is rejected."""
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         opportunity.total_budget = 1500
         opportunity.save()
         # 3 workers have already claimed; a single 100 * (5 + 0) unit needs 500 * 3 = 1500 (ok),
@@ -232,9 +230,9 @@ class TestPaymentUnits:
         assert "budget cannot give the full limit" in str(response.data)
         assert not PaymentUnit.objects.filter(opportunity=opportunity).exists()
 
-    def test_payment_units_cross_tenant_rejected(self, api_client, managed_opp_with_deliver_units):
+    def test_payment_units_cross_tenant_rejected(self, api_client, opp_with_deliver_units):
         """Admin of a different program manager org cannot add payment units to someone else's opportunity."""
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         # Create a separate program manager org — the user there has no relation to opportunity
         from commcare_connect.users.tests.factories import ProgramManagerOrgWithUsersFactory
 
@@ -270,8 +268,8 @@ def _payment_unit(*, required, optional=(), name="Visit"):
 
 @pytest.mark.django_db
 class TestActivateOpportunity:
-    def test_activate_success(self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+    def test_activate_success(self, api_client, program_manager_org_user_admin, opp_with_deliver_units):
+        opportunity, du1, du2 = opp_with_deliver_units
         PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
@@ -297,10 +295,10 @@ class TestActivateOpportunity:
         )
         assert response.status_code == 400
 
-    def test_activate_already_active(self, api_client, program_manager_org_user_admin, active_managed_opportunity):
+    def test_activate_already_active(self, api_client, program_manager_org_user_admin, active_opportunity):
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
-            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/activate/",
+            f"/api/opportunities/{active_opportunity.opportunity_id}/activate/",
         )
         assert response.status_code == 400
 
@@ -308,9 +306,9 @@ class TestActivateOpportunity:
         "end_date", [datetime.date.today() - datetime.timedelta(days=1), None], ids=["ended", "no_end_date"]
     )
     def test_activate_rejected_without_valid_end_date(
-        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units, end_date
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units, end_date
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
         opportunity.end_date = end_date
         opportunity.save(update_fields=["end_date"])
@@ -336,13 +334,13 @@ class TestActivateOpportunity:
         self,
         api_client,
         program_manager_org_user_admin,
-        managed_opp_with_deliver_units,
+        opp_with_deliver_units,
         organization,
         shared_app,
         other_active,
         expected_status,
     ):
-        opportunity, du1, du2 = managed_opp_with_deliver_units
+        opportunity, du1, du2 = opp_with_deliver_units
         PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
         other_apps = {"learn_app": CommCareAppFactory(), "deliver_app": CommCareAppFactory()}
         if shared_app:
@@ -362,39 +360,37 @@ class TestActivateOpportunity:
 class TestInviteUsers:
     @patch("commcare_connect.opportunity.api.views.automation.add_connect_users")
     def test_invite_users_success(
-        self, mock_add_users, api_client, program_manager_org_user_admin, active_managed_opportunity
+        self, mock_add_users, api_client, program_manager_org_user_admin, active_opportunity
     ):
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
-            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            f"/api/opportunities/{active_opportunity.opportunity_id}/invite_users/",
             {"phone_numbers": ["+265999111222", "+265999333444"]},
             format="json",
         )
         assert response.status_code == 202
         assert response.data["invited_count"] == 2
-        mock_add_users.delay.assert_called_once_with(["+265999111222", "+265999333444"], active_managed_opportunity.id)
+        mock_add_users.delay.assert_called_once_with(["+265999111222", "+265999333444"], active_opportunity.id)
 
     @pytest.mark.parametrize("changes", [{"active": False}, {"end_date": None}], ids=["inactive", "no_end_date"])
-    def test_invite_users_rejected(
-        self, api_client, program_manager_org_user_admin, active_managed_opportunity, changes
-    ):
+    def test_invite_users_rejected(self, api_client, program_manager_org_user_admin, active_opportunity, changes):
         for field, value in changes.items():
-            setattr(active_managed_opportunity, field, value)
-        active_managed_opportunity.save(update_fields=list(changes))
+            setattr(active_opportunity, field, value)
+        active_opportunity.save(update_fields=list(changes))
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
-            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            f"/api/opportunities/{active_opportunity.opportunity_id}/invite_users/",
             {"phone_numbers": ["+265999111222"]},
             format="json",
         )
         assert response.status_code == 400
-        opportunity = active_managed_opportunity
+        opportunity = active_opportunity
         assert not (opportunity.userinvite_set.exists() or opportunity.opportunityaccess_set.exists())
 
-    def test_invite_users_empty_list(self, api_client, program_manager_org_user_admin, active_managed_opportunity):
+    def test_invite_users_empty_list(self, api_client, program_manager_org_user_admin, active_opportunity):
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
-            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            f"/api/opportunities/{active_opportunity.opportunity_id}/invite_users/",
             {"phone_numbers": []},
             format="json",
         )

@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import time
 from datetime import timedelta
 from unittest import mock
@@ -9,6 +10,7 @@ import pytest
 from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
+from jwcrypto import jwk, jwt
 from oauth2_provider.models import Application, get_grant_model
 from rest_framework.test import APIClient
 
@@ -194,10 +196,15 @@ class TestUserInfoEndpoint:
         response = client.get(USERINFO_URL)
 
         assert response.status_code == 200, response.content
-        claims = response.json()
-        assert claims["name"] == user.name
-        assert claims["email"] == user.email
-        assert claims["username"] == user.username
+        _assert_user_claims(response.json(), user)
+
+
+def _assert_user_claims(claims, user):
+    """The claims CustomOAuth2Validator releases for the openid scope."""
+    assert claims["sub"] == str(user.pk)
+    assert claims["name"] == user.name
+    assert claims["email"] == user.email
+    assert claims["username"] == user.username
 
 
 class TestScopeEnforcement:
@@ -279,12 +286,16 @@ def _exchange_code(*, application, plaintext_secret, user, scope):
         code_challenge=CODE_CHALLENGE,
         code_challenge_method="S256",
     )
+    return _redeem_code(application=application, plaintext_secret=plaintext_secret, code=grant.code)
+
+
+def _redeem_code(*, application, plaintext_secret, code):
     return APIClient().post(
         TOKEN_URL,
         data=urlencode(
             {
                 "grant_type": "authorization_code",
-                "code": grant.code,
+                "code": code,
                 "code_verifier": CODE_VERIFIER,
                 "redirect_uri": REDIRECT_URI,
                 "client_id": application.client_id,
@@ -295,12 +306,39 @@ def _exchange_code(*, application, plaintext_secret, user, scope):
     )
 
 
-class TestOpenIDConnectSigningAlgorithm:
-    """Applications without an ID token signing algorithm must not 500 on openid requests."""
+def _authorize(client, application):
+    """Request an openid authorization code at /o/authorize/ and return the redirect's query."""
+    response = client.get(
+        reverse("oauth2_provider:authorize"),
+        {
+            "response_type": "code",
+            "client_id": application.client_id,
+            "redirect_uri": REDIRECT_URI,
+            "scope": "openid read",
+            "code_challenge": CODE_CHALLENGE,
+            "code_challenge_method": "S256",
+        },
+    )
+    # Authorize-endpoint results, errors included, are reported by redirecting back to the client
+    # with them in the query string (RFC 6749 section 4.1.2), not with a JSON body.
+    assert response.status_code == 302, response.content
+    location = urlsplit(response["Location"])
+    assert f"{location.scheme}://{location.netloc}{location.path}" == REDIRECT_URI
+    return parse_qs(location.query)
 
-    def test_openid_code_exchange_without_algorithm_returns_client_error(self):
+
+# Apps that cannot sign an ID token: no algorithm, or RS256 while OIDC_RSA_PRIVATE_KEY is unset.
+UNSIGNABLE_ALGORITHMS = pytest.mark.parametrize("algorithm", [Application.NO_ALGORITHM, Application.RS256_ALGORITHM])
+
+
+@pytest.mark.usefixtures("no_rsa_private_key")
+class TestOpenIDConnectSigningAlgorithm:
+    """Applications that cannot sign ID tokens must not 500 on openid requests."""
+
+    @UNSIGNABLE_ALGORITHMS
+    def test_openid_code_exchange_without_signing_key_returns_client_error(self, algorithm):
         plaintext_secret = "no-algorithm-secret"
-        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret=plaintext_secret)
+        application = _oidc_application(algorithm=algorithm, plaintext_secret=plaintext_secret)
 
         response = _exchange_code(
             application=application, plaintext_secret=plaintext_secret, user=UserFactory(), scope="openid read"
@@ -310,39 +348,91 @@ class TestOpenIDConnectSigningAlgorithm:
         assert response["Content-Type"] == "application/json"
         assert response.json()["error"] == "invalid_scope"
 
-    def test_openid_code_exchange_with_algorithm_returns_id_token(self):
-        plaintext_secret = "hs256-secret"
-        application = _oidc_application(algorithm=Application.HS256_ALGORITHM, plaintext_secret=plaintext_secret)
-
-        response = _exchange_code(
-            application=application, plaintext_secret=plaintext_secret, user=UserFactory(), scope="openid read"
-        )
-
-        assert response.status_code == 200, response.content
-        assert response.json()["id_token"]
-
-    def test_openid_authorization_without_algorithm_is_rejected(self, client):
-        application = _oidc_application(algorithm=Application.NO_ALGORITHM, plaintext_secret="authz-secret")
+    @UNSIGNABLE_ALGORITHMS
+    def test_openid_authorization_without_signing_key_is_rejected(self, client, algorithm):
+        application = _oidc_application(algorithm=algorithm, plaintext_secret="authz-secret")
         client.force_login(UserFactory())
 
-        response = client.get(
-            reverse("oauth2_provider:authorize"),
-            {
-                "response_type": "code",
-                "client_id": application.client_id,
-                "redirect_uri": REDIRECT_URI,
-                "scope": "openid read",
-                "code_challenge": CODE_CHALLENGE,
-                "code_challenge_method": "S256",
-            },
-        )
+        query = _authorize(client, application)
 
-        # Authorize-endpoint errors are reported by redirecting back to the client with the
-        # error in the query string (RFC 6749 section 4.1.2.1), not with a JSON body.
-        assert response.status_code == 302, response.content
-        location = urlsplit(response["Location"])
-        assert f"{location.scheme}://{location.netloc}{location.path}" == REDIRECT_URI
-        query = parse_qs(location.query)
         assert query["error"] == ["invalid_scope"]
         assert "code" not in query
         assert not get_grant_model().objects.filter(application=application).exists()
+
+
+@pytest.fixture
+def rsa_private_key(settings):
+    pem = jwk.JWK.generate(kty="RSA", size=2048).export_to_pem(private_key=True, password=None).decode()
+    _set_rsa_private_key(settings, pem)
+    return pem
+
+
+@pytest.fixture
+def no_rsa_private_key(settings):
+    # .env leaks into test settings, so a developer's local key must not decide these tests.
+    _set_rsa_private_key(settings, "")
+
+
+def _set_rsa_private_key(settings, pem):
+    # Assign a new dict so setting_changed fires and django-oauth-toolkit reloads its settings.
+    settings.OAUTH2_PROVIDER = {**settings.OAUTH2_PROVIDER, "OIDC_RSA_PRIVATE_KEY": pem}
+
+
+def _issue_id_token(*, algorithm, plaintext_secret, user):
+    application = _oidc_application(algorithm=algorithm, plaintext_secret=plaintext_secret)
+    response = _exchange_code(
+        application=application, plaintext_secret=plaintext_secret, user=user, scope="openid read"
+    )
+    assert response.status_code == 200, response.content
+    return application, response.json()["id_token"]
+
+
+class TestIDToken:
+    def test_rs256_id_token_verifies_against_published_jwks(self, rsa_private_key):
+        user = UserFactory(name="Jane Doe")
+        application, id_token = _issue_id_token(
+            algorithm=Application.RS256_ALGORITHM, plaintext_secret="rs256-secret", user=user
+        )
+
+        jwks = jwk.JWKSet.from_json(APIClient().get(reverse("oauth2_provider:jwks-info")).content)
+        assert jwks["keys"]
+        assert not any(key.has_private for key in jwks["keys"])
+        token = jwt.JWT(jwt=id_token, key=jwks, algs=["RS256"])
+        claims = json.loads(token.claims)
+
+        assert token.token.jose_header["alg"] == "RS256"
+        assert claims["aud"] == application.client_id
+        _assert_user_claims(claims, user)
+
+    @pytest.mark.usefixtures("no_rsa_private_key")
+    def test_hs256_authorization_code_flow_issues_id_token_signed_with_client_secret(self, client):
+        plaintext_secret = "hs256-secret"
+        application = _oidc_application(algorithm=Application.HS256_ALGORITHM, plaintext_secret=plaintext_secret)
+        user = UserFactory()
+        client.force_login(user)
+
+        query = _authorize(client, application)
+        response = _redeem_code(application=application, plaintext_secret=plaintext_secret, code=query["code"][0])
+
+        assert response.status_code == 200, response.content
+        key = jwk.JWK.from_password(plaintext_secret)
+        claims = json.loads(jwt.JWT(jwt=response.json()["id_token"], key=key, algs=["HS256"]).claims)
+        _assert_user_claims(claims, user)
+
+
+class TestDiscovery:
+    def test_discovery_lists_signing_algorithms_and_claims(self, rsa_private_key):
+        response = APIClient().get(reverse("oauth2_provider:oidc-connect-discovery-info"))
+
+        assert response.status_code == 200, response.content
+        data = response.json()
+        assert "RS256" in data["id_token_signing_alg_values_supported"]
+        assert {"sub", "name", "email", "username"} <= set(data["claims_supported"])
+        assert data["jwks_uri"] == f"http://testserver{reverse('oauth2_provider:jwks-info')}"
+
+    @pytest.mark.usefixtures("no_rsa_private_key")
+    def test_jwks_is_empty_without_rsa_key(self):
+        response = APIClient().get(reverse("oauth2_provider:jwks-info"))
+
+        assert response.status_code == 200, response.content
+        assert response.json() == {"keys": []}
