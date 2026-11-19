@@ -18,6 +18,7 @@
       <li>
         <button type="button"
                 @click="{{ select }}(item)"
+                @dblclick="go(item)"
                 :aria-pressed="(selected.{{ key }} === item).toString()"
                 :class="selected.{{ key }} === item ? 'bg-indigo-50 border-indigo-200' : 'hover:bg-gray-100 border-transparent'"
                 :title="item.end_label"

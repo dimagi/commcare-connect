@@ -122,7 +122,12 @@ function contextSelector() {
     },
 
     apply() {
-      if (this.target) window.location.href = this.target.url;
+      if (this.target) this.go(this.target);
+    },
+
+    // Double-clicking a row opens it, as Apply would.
+    go(item) {
+      window.location.href = item.url;
     },
   };
 }
