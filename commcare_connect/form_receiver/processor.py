@@ -70,19 +70,28 @@ def is_a_uuid(value):
         return False
 
 
-def process_xform(xform: XForm, hq_server: HQServer):
-    """Process a form received from CommCare HQ."""
+def process_xform(xform: XForm, hq_server: HQServer) -> str | None:
+    """Process a form received from CommCare HQ.
+
+    Returns the type of app the form was processed for ("deliver" or "learn"), or None if no active
+    opportunity uses the app.
+    """
     user = get_user(xform)
+    app_type = None
 
     opportunity = get_opportunity(xform.domain, hq_server, deliver_app_id=xform.app_id)
     if opportunity:
         app = opportunity.deliver_app
         process_deliver_form(user, xform, app, opportunity)
+        app_type = "deliver"
 
     opportunity = get_opportunity(xform.domain, hq_server, learn_app_id=xform.app_id)
     if opportunity:
         app = opportunity.learn_app
         process_learn_form(user, xform, app, opportunity)
+        app_type = "learn"
+
+    return app_type
 
 
 def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
