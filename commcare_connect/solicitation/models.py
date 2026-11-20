@@ -3,6 +3,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Avg, Count, F, Q
 from django.db.models.functions import Now
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -163,8 +164,37 @@ class SolicitationInvitation(BaseModel):
         constraints = [models.UniqueConstraint(fields=["solicitation", "organization"], name="one_invitation_per_org")]
 
 
+class SolicitationApplicationQuerySet(models.QuerySet):
+    def newest_first(self):
+        """Most recently submitted first; pk breaks ties so rows don't move between pages."""
+        return self.order_by(F("submitted_date").desc(nulls_last=True), "pk")
+
+    def responses(self):
+        """Applications that count as a response to the solicitation; see NON_RESPONSE_STATUSES."""
+        return self.exclude(status__in=SolicitationApplication.NON_RESPONSE_STATUSES)
+
+    def with_review_summary(self, reviewer_ids):
+        """Annotates each application from its submitted reviews.
+
+        average_score and the <recommendation>_count fields use every submitted review; reviewed_count
+        only counts reviews by reviewer_ids, so it measures progress against the current reviewers.
+        """
+        submitted = Q(reviews__submitted_date__isnull=False)
+        recommendation_counts = {
+            f"{recommendation}_count": Count("reviews", filter=submitted & Q(reviews__recommendation=recommendation))
+            for recommendation in SolicitationApplicationReview.Recommendation
+        }
+        return self.annotate(
+            average_score=Avg("reviews__overall_score", filter=submitted),
+            reviewed_count=Count("reviews", filter=submitted & Q(reviews__reviewer_id__in=reviewer_ids)),
+            **recommendation_counts,
+        )
+
+
 class SolicitationApplication(BaseModel):
     """One submission from an organization in response to a solicitation."""
+
+    objects = SolicitationApplicationQuerySet.as_manager()
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")

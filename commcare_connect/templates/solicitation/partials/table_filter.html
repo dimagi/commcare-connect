@@ -1,0 +1,21 @@
+{% load i18n %}
+{# The filters above a solicitation table, in one row of the page's toolbar. #}
+<form method="get" class="flex items-center gap-3">
+  {# Keep the table's sort and page size when the filters change. #}
+  {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+  {% if request.GET.page_size %}<input type="hidden" name="page_size" value="{{ request.GET.page_size }}">{% endif %}
+  {% for field in filter.form %}
+    {% if field.widget_type == "checkbox" %}
+      {# A toggle switch, with its label beside it. #}
+      <label class="flex items-center gap-2 text-sm whitespace-nowrap">
+        {{ field }}
+        {{ field.label }}
+      </label>
+    {% else %}
+      <label for="{{ field.id_for_label }}" class="text-sm whitespace-nowrap">{{ field.label }}</label>
+      {# base-input fills its container, so the container sets the width. #}
+      <div class="w-60">{{ field }}</div>
+    {% endif %}
+  {% endfor %}
+  <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
+</form>

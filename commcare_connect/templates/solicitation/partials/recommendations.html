@@ -1,0 +1,10 @@
+{# How many submitted reviews made each recommendation. #}
+{% if badges %}
+  <div class="flex flex-wrap gap-1">
+    {% for label, count, badge_class in badges %}
+      <span class="badge badge-sm {{ badge_class }}">{{ label }}: {{ count }}</span>
+    {% endfor %}
+  </div>
+{% else %}
+  —
+{% endif %}

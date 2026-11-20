@@ -1,3 +1,5 @@
+from decimal import ROUND_HALF_UP, Decimal
+
 import django_tables2 as tables
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -5,14 +7,29 @@ from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplicationReview
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
+
+
+def shortlisted_column():
+    return columns.BooleanColumn(verbose_name=_("Shortlisted"), yesno=(_("Yes"), _("No")), attrs=STAT_COLUMN_ATTRS)
+
+
+def application_status_column():
+    """The status as a coloured badge."""
+    return columns.TemplateColumn(
+        verbose_name=_("Status"), template_name="solicitation/partials/application_status_badge.html"
+    )
 
 
 def details_url(record, table):
     if record.is_editable:
         return reverse("solicitation:details", args=(table.request.org.slug, record.solicitation_id))
     return None
+
+
+def applications_url(record, table):
+    return reverse("solicitation:applications", args=(table.request.org.slug, record.solicitation_id))
 
 
 def invitations_url(record, table):
@@ -41,7 +58,9 @@ class SolicitationTable(tables.Table):
     reviewer_count = columns.Column(
         verbose_name=_("Review Team"), linkify=reviewers_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
-    response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
+    response_count = columns.Column(
+        verbose_name=_("Responses"), linkify=applications_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
+    )
     actions = columns.Column(verbose_name="", orderable=False, empty_values=())
 
     class Meta:
@@ -97,3 +116,69 @@ class SolicitationReviewerTable(tables.Table):
 
     class Meta:
         empty_text = _("No reviewers or observers yet.")
+
+
+Recommendation = SolicitationApplicationReview.Recommendation
+RECOMMENDATION_BADGE_CLASSES = {
+    Recommendation.APPROVE: "positive-light",
+    Recommendation.NEEDS_REVISION: "warning-light",
+    Recommendation.REJECT: "negative-light",
+}
+
+
+class SolicitationApplicationTable(tables.Table):
+    """Applications to one solicitation, with how far their review has got.
+
+    Expects rows annotated by SolicitationApplicationQuerySet.with_review_summary and the number of assigned reviewers.
+    """
+
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    submitted_date = DMYTColumn(verbose_name=_("Submitted"))
+    status = application_status_column()
+    shortlisted = shortlisted_column()
+    average_score = columns.Column(verbose_name=_("Avg. score (/100)"), attrs=STAT_COLUMN_ATTRS)
+    recommendations = columns.Column(verbose_name=_("Recommendations"), empty_values=(), orderable=False)
+    review_progress = columns.Column(verbose_name=_("Reviews"), empty_values=(), orderable=False)
+
+    class Meta:
+        empty_text = _("No applications yet.")
+
+    def __init__(self, *args, reviewer_count, **kwargs):
+        self.reviewer_count = reviewer_count
+        super().__init__(*args, **kwargs)
+
+    def render_average_score(self, value):
+        return value.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+
+    def render_recommendations(self, record):
+        badges = (
+            (recommendation.label, getattr(record, f"{recommendation}_count"), badge_class)
+            for recommendation, badge_class in RECOMMENDATION_BADGE_CLASSES.items()
+        )
+        return render_to_string(
+            "solicitation/partials/recommendations.html", {"badges": [badge for badge in badges if badge[1]]}
+        )
+
+    def render_review_progress(self, record):
+        return render_to_string(
+            "solicitation/partials/review_progress.html",
+            {"reviewed_count": record.reviewed_count, "reviewer_count": self.reviewer_count},
+        )
+
+
+class ReceivedApplicationTable(tables.Table):
+    """Applications to any of the organization's solicitations; each links to its solicitation's applications page."""
+
+    solicitation = columns.Column(
+        verbose_name=_("Solicitation"),
+        accessor="solicitation__title",
+        linkify=lambda record, table: applications_url(record.solicitation, table),
+        attrs={"a": {"class": "underline"}},
+    )
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    status = application_status_column()
+    shortlisted = shortlisted_column()
+    submitted_date = DMYTColumn(verbose_name=_("Submitted"))
+
+    class Meta:
+        empty_text = _("Your solicitations haven't received any applications yet.")

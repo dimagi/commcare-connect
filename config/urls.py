@@ -11,7 +11,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from commcare_connect.health import views as health_views
 from commcare_connect.organization.urls import directory_urlpatterns
 from commcare_connect.organization.views import no_organization, organization_create
-from commcare_connect.solicitation.urls import marketplace_urlpatterns
+from commcare_connect.solicitation.urls import marketplace_urlpatterns, received_application_urlpatterns
 
 from . import views
 
@@ -55,6 +55,7 @@ urlpatterns = [
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
     path("a/<slug:org_slug>/solicitations/", include("commcare_connect.solicitation.urls", namespace="solicitation")),
+    path("a/<slug:org_slug>/applications/", include((received_application_urlpatterns, "received_applications"))),
     path(
         "a/<slug:org_slug>/microplanning/", include("commcare_connect.microplanning.urls", namespace="microplanning")
     ),
