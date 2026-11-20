@@ -289,7 +289,7 @@ def _payment_unit_data(opportunity, spec):
 
 def _deliver_units_by_slug(opportunity, slugs):
     """The opportunity's deliver units named by ``slugs``; a slug that names none is a scenario mistake."""
-    available = {du.slug: du for du in DeliverUnit.objects.filter(app=opportunity.deliver_app)}
+    available = {du.slug: du for du in DeliverUnit.objects.for_opportunity(opportunity)}
     unknown = set(slugs) - set(available)
     if unknown:
         raise ValueError(f"No deliver unit {sorted(unknown)} in {opportunity.name}; it has {sorted(available)}.")
@@ -332,7 +332,9 @@ def _verification_data(opportunity, verification_flags, deliver_unit_flags):
     configured = DeliverUnitFlagRules.objects.filter(opportunity=opportunity)
     # The same queryset the view builds the rule forms' initial deliver units from. Their deliver unit field is
     # disabled, so the browser doesn't send it.
-    deliver_units = list(opportunity.deliver_app.deliver_units.exclude(id__in=configured.values_list("deliver_unit")))
+    deliver_units = list(
+        DeliverUnit.objects.for_opportunity(opportunity).exclude(id__in=configured.values_list("deliver_unit"))
+    )
     for index, deliver_unit in enumerate(deliver_units):
         rules = {"duration": 0} | deliver_unit_flags.get(deliver_unit.slug, {})
         data |= {f"deliver_unit-{index}-{key}": _checkbox(value) for key, value in rules.items() if value is not False}
