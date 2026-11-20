@@ -15,7 +15,7 @@ from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
-    BillToAddress,
+    BilledEntity,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
@@ -29,7 +29,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
-    BillToAddressFactory,
+    BilledEntityFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -87,7 +87,7 @@ class TestPaymentInvoice:
                     amount=10,
                     date=datetime.date.today(),
                     invoice_number=generate_invoice_number(),
-                    bill_to=BillToAddress.get_default(),  # bulk_create skips save(), which fills the default
+                    bill_to=BilledEntity.get_default(),  # bulk_create skips save(), which fills the default
                 )
             )
 
@@ -218,49 +218,49 @@ class TestPaymentInvoice:
 
         assert invoice.pm_certification["name"] == expected_name
 
-    def test_new_invoice_gets_default_bill_to(self, default_address):
-        assert PaymentInvoiceFactory().bill_to == default_address
+    def test_new_invoice_gets_default_bill_to(self, default_entity):
+        assert PaymentInvoiceFactory().bill_to == default_entity
 
-    def test_later_save_keeps_bill_to(self, default_address):
+    def test_later_save_keeps_bill_to(self, default_entity):
         invoice = PaymentInvoiceFactory()
-        BillToAddress.objects.update(is_default=False)
-        BillToAddressFactory(is_default=True)
+        BilledEntity.objects.update(is_default=False)
+        BilledEntityFactory(is_default=True)
         invoice.save()  # e.g. a status change must not move the invoice to the new default
         invoice.refresh_from_db()
-        assert invoice.bill_to == default_address
+        assert invoice.bill_to == default_entity
 
     def test_used_bill_to_cannot_be_deleted(self):
         # The database backstop for any delete path.
-        address = BillToAddressFactory()
-        PaymentInvoiceFactory(bill_to=address)
+        entity = BilledEntityFactory()
+        PaymentInvoiceFactory(bill_to=entity)
         with pytest.raises(ProtectedError):
-            address.delete()
+            entity.delete()
 
 
 @pytest.fixture
-def default_address(db):
-    # Seeded by migration 0155 and restored by the ensure_default_bill_to_address autouse fixture.
-    return BillToAddress.objects.get(is_default=True)
+def default_entity(db):
+    # Seeded by migration 0157 and restored by the ensure_default_billed_entity autouse fixture.
+    return BilledEntity.objects.get(is_default=True)
 
 
 @pytest.mark.django_db
-class TestBillToAddress:
+class TestBilledEntity:
     @pytest.mark.parametrize(
         "target, changes, constraint",
         [
-            ("other", {"is_default": True}, "unique_default_bill_to_address"),
-            ("default", {"is_active": False}, "default_bill_to_address_is_active"),
+            ("other", {"is_default": True}, "unique_default_billed_entity"),
+            ("default", {"is_active": False}, "default_billed_entity_is_active"),
         ],
     )
-    def test_constraints(self, default_address, target, changes, constraint):
-        address = default_address if target == "default" else BillToAddressFactory()
+    def test_constraints(self, default_entity, target, changes, constraint):
+        entity = default_entity if target == "default" else BilledEntityFactory()
         with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
-            BillToAddress.objects.filter(pk=address.pk).update(**changes)
+            BilledEntity.objects.filter(pk=entity.pk).update(**changes)
 
-    def test_get_default_without_default_fails_clearly(self, default_address):
-        BillToAddress.objects.update(is_default=False)
-        with pytest.raises(ImproperlyConfigured, match="No default Bill To address"):
-            BillToAddress.get_default()
+    def test_get_default_without_default_fails_clearly(self, default_entity):
+        BilledEntity.objects.update(is_default=False)
+        with pytest.raises(ImproperlyConfigured, match="No default billed entity"):
+            BilledEntity.get_default()
 
 
 @pytest.mark.django_db
