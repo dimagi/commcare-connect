@@ -264,19 +264,19 @@ class TestBilledEntity:
 
     @pytest.mark.parametrize("which, expected", [("unused", False), ("used", True), ("default", True)])
     def test_is_in_use(self, default_entity, which, expected):
-        address = default_entity if which == "default" else BilledEntityFactory()
+        entity = default_entity if which == "default" else BilledEntityFactory()
         if which == "used":
-            PaymentInvoiceFactory(bill_to=address)
-        assert address.is_in_use() is expected
+            PaymentInvoiceFactory(bill_to=entity)
+        assert entity.is_in_use() is expected
 
     def test_make_default_moves_the_flag(self, default_entity):
-        address = BilledEntityFactory()
-        address.make_default(modified_by="admin@example.com")
-        assert address.modified_by == "admin@example.com"  # the instance matches what was written
+        entity = BilledEntityFactory()
+        entity.make_default(modified_by="admin@example.com")
+        assert entity.modified_by == "admin@example.com"  # the instance matches what was written
         default_entity.refresh_from_db()
-        address.refresh_from_db()
-        assert address.is_default and not default_entity.is_default
-        assert address.modified_by == default_entity.modified_by == "admin@example.com"
+        entity.refresh_from_db()
+        assert entity.is_default and not default_entity.is_default
+        assert entity.modified_by == default_entity.modified_by == "admin@example.com"
 
 
 @pytest.mark.django_db

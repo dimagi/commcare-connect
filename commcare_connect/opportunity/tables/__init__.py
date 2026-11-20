@@ -747,14 +747,14 @@ class DeliveryTypeTable(ManagedOptionTable):
         model = DeliveryType
 
 
-class BillToAddressTable(ManagedOptionTable):
+class BilledEntityTable(ManagedOptionTable):
     name = columns.Column(verbose_name=gettext_lazy("Entity name"))
     address = columns.Column(
         verbose_name=gettext_lazy("Address"), orderable=False, attrs={"td": {"class": "whitespace-normal"}}
     )
     invoice_count = columns.Column(verbose_name=gettext_lazy("Invoices"), attrs=STAT_COLUMN_ATTRS)
     is_default = columns.TemplateColumn(
-        verbose_name=gettext_lazy("Default"), template_name="users/bill_to_addresses/default_column.html"
+        verbose_name=gettext_lazy("Default"), template_name="users/billed_entities/default_column.html"
     )
     is_active = columns.BooleanColumn(verbose_name=gettext_lazy("Active"), attrs=STAT_COLUMN_ATTRS)
 

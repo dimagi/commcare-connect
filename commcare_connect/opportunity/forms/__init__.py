@@ -1785,7 +1785,7 @@ class DeliveryTypeForm(ManagedOptionForm):
         model = DeliveryType
 
 
-class BillToAddressForm(forms.ModelForm):
+class BilledEntityForm(forms.ModelForm):
     slug_autofill = False
 
     class Meta:
@@ -1803,13 +1803,13 @@ class BillToAddressForm(forms.ModelForm):
             self.fields["name"].disabled = True
             self.fields["address"].disabled = True
             self.fields["address"].help_text = _(
-                "Used by invoices, so the name and address can't change. To correct them, add a new address and "
+                "Used by invoices, so the name and address can't change. To correct them, add a new entity and "
                 "deactivate this one."
             )
         if self.instance.is_default:
             self.fields["is_active"].disabled = True
             self.fields["is_active"].help_text = _(
-                "The default address can't be deactivated. Make another address the default first."
+                "The default entity can't be deactivated. Make another entity the default first."
             )
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1822,7 +1822,7 @@ class BillToAddressForm(forms.ModelForm):
 
     def clean(self):
         # Django ignores a disabled field's posted value, so without this a rename on a page opened before the
-        # address was used would be dropped while the save still reports success.
+        # entity was used would be dropped while the save still reports success.
         cleaned_data = super().clean()
         for name in ("name", "address"):
             if self.fields[name].disabled and self._posted_change(name):

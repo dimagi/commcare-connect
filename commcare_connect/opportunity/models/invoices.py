@@ -44,8 +44,8 @@ class InvoiceStatus(models.TextChoices):
 class BilledEntity(BaseModel):
     """An entity an invoice can be billed to.
 
-    Once an invoice uses an address, its name and address are frozen so issued invoices never change.
-    BillToAddressForm enforces this; nothing at the model or database level does, so any new write path must too.
+    Once an invoice uses an entity, its name and address are frozen so issued invoices never change.
+    BilledEntityForm enforces this; nothing at the model or database level does, so any new write path must too.
     """
 
     name = models.CharField(max_length=255)
@@ -72,7 +72,7 @@ class BilledEntity(BaseModel):
 
     @classmethod
     def in_use_condition(cls):
-        """True for the default and for addresses any invoice uses; usable in filter() and annotate()."""
+        """True for the default and for entities any invoice uses; usable in filter() and annotate()."""
         return Q(is_default=True) | Exists(PaymentInvoice.objects.filter(bill_to=OuterRef("pk")))
 
     def is_in_use(self):
