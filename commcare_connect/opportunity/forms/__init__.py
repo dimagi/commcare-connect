@@ -17,6 +17,11 @@ from django.utils.translation import gettext_lazy as _
 from jsonpath_ng.exceptions import JSONPathError
 from waffle import switch_is_active
 
+from commcare_connect.commcarehq.const import (
+    APP_DOMAIN_PLACEHOLDER_CHOICE,
+    APP_PLACEHOLDER_CHOICE,
+    DOMAIN_PLACEHOLDER_CHOICE,
+)
 from commcare_connect.flags.switch_names import (
     AUTOMATIC_VISIT_VERIFICATION,
     ENABLE_PROGRAM_ACCESS_REDESIGN,
@@ -58,8 +63,6 @@ FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Afri
 
 CHECKBOX_CLASS = "simple-toggle"
 
-DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
-APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
 API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
 
 
@@ -519,7 +522,7 @@ class OpportunityInitForm(forms.ModelForm):
             ),
         )
         self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("learn"))
+            widget=forms.Select(choices=[APP_DOMAIN_PLACEHOLDER_CHOICE], attrs=get_app_select_attrs("learn"))
         )
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
@@ -531,7 +534,7 @@ class OpportunityInitForm(forms.ModelForm):
             ),
         )
         self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("deliver"))
+            widget=forms.Select(choices=[APP_DOMAIN_PLACEHOLDER_CHOICE], attrs=get_app_select_attrs("deliver"))
         )
 
         self.fields["api_key"] = forms.Field(
