@@ -525,7 +525,7 @@ docs = [{ name = "zensical", specifier = ">=0.1.1" }]
 production = [
     { name = "django-allow-cidr", specifier = ">=0.7.1" },
     { name = "django-anymail", extras = ["amazon-ses"], specifier = ">=10.1" },
-    { name = "django-storages", extras = ["boto3"], specifier = ">=1.13.2" },
+    { name = "django-storages", extras = ["boto3"], specifier = ">=1.14.6" },
     { name = "gunicorn", extras = ["gevent"], specifier = ">=21.2.0" },
     { name = "psycopg2", specifier = ">=2.9.13" },
 ]
