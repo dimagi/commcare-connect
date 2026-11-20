@@ -219,6 +219,20 @@ def ensure_currency_country_data(db):
     migration_module.load_currency_and_country_data(django_apps, schema_editor=None)
 
 
+@pytest.fixture(autouse=True)
+def ensure_default_billed_entity(db):
+    # transaction=True tests flush the row migration 0157 seeds, and invoices can't be created without a default.
+    # Same text as the seed, so the PDF still matches the old hardcoded address after a flush.
+    BilledEntity = django_apps.get_model("opportunity", "BilledEntity")
+    BilledEntity.objects.get_or_create(
+        is_default=True,
+        defaults={
+            "name": "Dimagi, Inc.",
+            "address": "245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214",
+        },
+    )
+
+
 @pytest.fixture
 def anonymous_request(rf):
     """Builds a RequestFactory request with the user, session and messages that templates and allauth expect."""

@@ -34,6 +34,8 @@ SERVICE_DELIVERY = PaymentInvoice.InvoiceType.service_delivery
 # What the invoice pay view tells the user when it has paid something; it says nothing when it has not.
 PAID_MESSAGE = gettext("Invoice(s) successfully marked as paid.")
 INPUT_TAG = re.compile(r"<input\b[^>]*>")
+SELECT_TAG = re.compile(r"<select\b([^>]*)>(.*?)</select>", re.S)
+SELECTED_OPTION = re.compile(r"<option\b[^>]*\bvalue=\"([^\"]*)\"[^>]*\bselected\b")
 
 
 class PaymentSteps:
@@ -82,7 +84,9 @@ class PaymentSteps:
         browser = self.browser(self.nm_admin)
         create_url = reverse("opportunity:invoice_create", args=_nm_url_args(opportunity))
         with self.step():
-            initial = _input_values(browser.get(create_url, invoice_type=SERVICE_DELIVERY))
+            page = browser.get(create_url, invoice_type=SERVICE_DELIVERY)
+            initial = _input_values(page)
+            selected = _selected_values(page)
             start_date = datetime.date.fromisoformat(initial["start_date"])
             # The page previews its suggested window as it loads, and again once the end date is changed.
             preview = _preview_invoice(browser, opportunity, start_date, initial["end_date"])
@@ -99,6 +103,7 @@ class PaymentSteps:
                 f"{create_url}?invoice_type={SERVICE_DELIVERY}",
                 {
                     "invoice_number": initial["invoice_number"],
+                    "bill_to": selected["bill_to"],
                     "title": "",
                     "date": initial["date"],
                     "start_date": start_date.isoformat(),
@@ -187,6 +192,16 @@ def _input_values(page):
         name, value = re.search(r'\bname="([^"]*)"', tag), re.search(r'\bvalue="([^"]*)"', tag)
         if name:
             values[name.group(1)] = unescape(value.group(1)) if value else ""
+    return values
+
+
+def _selected_values(page):
+    """The selected option of each named ``<select>`` on ``page``, as the browser would submit it untouched."""
+    values = {}
+    for attrs, options in SELECT_TAG.findall(page.content.decode()):
+        name, selected = re.search(r'\bname="([^"]*)"', attrs), SELECTED_OPTION.search(options)
+        if name and selected:
+            values[name.group(1)] = unescape(selected.group(1))
     return values
 
 
