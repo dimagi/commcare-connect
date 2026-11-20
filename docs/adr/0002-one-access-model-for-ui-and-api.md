@@ -6,7 +6,9 @@
 
 ## Context
 
-Connect decides who may see or change a program or opportunity in three different ways. The UI combines the URL's organization's relationship to the resource with the user's role in that organization. The automation API accepts an admin of the delivering organization or of the program's organization. The data export API accepts any member of a related organization, ignoring role and watchers. As a result, delivering-organization admins can add payment units and activate opportunities through the API although the UI forbids it, while admins of the supervising organization or the funder, and all watchers, are refused through the API.
+Connect decides who may see or change a program or opportunity in four different ways. The UI combines the URL's organization's relationship to the resource with the user's role in that organization. The automation API accepts an admin of the delivering organization or of the program's organization. The data export API's reads accept any member of a related organization, ignoring role and watchers. Its writes accept an admin of any organization with admin access to the opportunity, and require the `write` scope. As a result, delivering-organization admins can add payment units and activate opportunities through the automation API although the UI forbids it, admins of the supervising organization and the funder are refused by it, and watchers can't read through the data export API.
+
+The data export writes already decide access from the user and the opportunity alone, with no acting organization, through `user_is_opportunity_admin` and `user_is_opportunity_pm`. This decision extends that approach to every surface.
 
 API requests have no organization in their URL, so the UI's check can't be reused as it is. The API is to grow until it can read every table and do anything the UI can, so every new endpoint would inherit whichever check it copies.
 
