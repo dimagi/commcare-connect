@@ -1,0 +1,28 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+{# Loaded into the list page's modal to close or cancel; posting back swaps it for itself with any errors. #}
+<div class="header">
+  {# The id is the one organization/directory/form_modal.html labels its dialog by. #}
+  <h2 id="directory-form-title" class="title">{{ view.title }}</h2>
+  <button type="button"
+          class="button-icon"
+          @click="formOpen = false"
+          aria-label="{% translate 'Close dialog' %}">
+    <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+  </button>
+</div>
+<form hx-post="{{ request.path }}"
+      hx-target="#directory-form"
+      hx-disabled-elt="find button[type='submit']">
+  <div class="content">
+    <p class="font-medium">{{ object.title }}</p>
+    <p class="hint">{{ view.hint }}</p>
+    {{ form|crispy }}
+  </div>
+  <div class="footer">
+    <button type="button"
+            class="button button-md outline-style"
+            @click="formOpen = false">{% translate "Go back" %}</button>
+    <button type="submit" class="button button-md negative-dark">{{ view.title }}</button>
+  </div>
+</form>

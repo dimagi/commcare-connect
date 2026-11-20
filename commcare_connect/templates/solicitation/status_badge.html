@@ -10,3 +10,8 @@
     <span class="badge badge-sm label">{{ status.label }}</span>
   {% endif %}
 {% endwith %}
+{% if record.closure_reason %}
+  <i class="fa-solid fa-circle-info text-gray-400"
+     x-tooltip.raw="{{ record.closure_reason }}"
+     aria-label="{{ record.closure_reason }}"></i>
+{% endif %}
