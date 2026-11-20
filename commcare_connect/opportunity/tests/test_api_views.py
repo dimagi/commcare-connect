@@ -348,15 +348,6 @@ def test_payment_unit_serializer_keeps_null_daily_limit(opportunity):
 
 
 @pytest.mark.django_db
-def test_commcare_app_serializer_install_url_fetches_latest_version(opportunity):
-    app = opportunity.learn_app
-
-    assert CommCareAppSerializer(app).data["install_url"] == (
-        f"{app.hq_server.url}/a/{app.cc_domain}/apps/download/{app.cc_app_id}/media_profile.ccpr?latest=true"
-    )
-
-
-@pytest.mark.django_db
 def test_opportunity_list_endpoint_excludes_archived(
     mobile_user_with_connect_link: User,
     api_client: APIClient,

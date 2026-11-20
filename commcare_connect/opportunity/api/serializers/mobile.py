@@ -49,7 +49,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
         ]
 
     def get_install_url(self, obj):
-        return f"{obj.hq_server.url}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr?latest=true"
+        return f"{obj.hq_server.url}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr"
 
     def get_passing_score(self, obj):
         if obj.passing_score is None:
