@@ -197,7 +197,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["end_date"].widget.attrs["max"] = localdate() - datetime.timedelta(days=1)
 
-        self._prepare_bill_to_field()
         self.prepare_fields()
 
         self.helper = FormHelper(self)
@@ -205,6 +204,15 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.helper.form_tag = False
 
     def prepare_fields(self):
+        # First: on the review page this swaps in a text field, which the read-only step below must also lock.
+        self._prepare_bill_to_field()
+        self._prepare_mode_and_initials()
+        if self.is_service_delivery:
+            self._prepare_service_delivery_fields()
+        else:
+            self._prepare_custom_fields()
+
+    def _prepare_mode_and_initials(self):
         if self.read_only:
             self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
             for field in self.fields.values():
@@ -219,64 +227,63 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.status = self.instance.status
             self.fields["status"].initial = self.instance.get_status_display()
 
-        if self.is_service_delivery:
-            self.fields["amount"].label = gettext("Amount ({currency_code})").format(
-                currency_code=self.opportunity.currency_code or "Local Currency"
-            )
-            self.fields["amount"].help_text = gettext("Local currency is determined by the opportunity.")
+    def _prepare_service_delivery_fields(self):
+        self.fields["amount"].label = gettext("Amount ({currency_code})").format(
+            currency_code=self.opportunity.currency_code or "Local Currency"
+        )
+        self.fields["amount"].help_text = gettext("Local currency is determined by the opportunity.")
 
-            self.fields["late_delta_units"].label = header_with_tooltip(
-                format_html(
-                    '{} <i class="fa-solid fa-circle-info text-gray-400"></i>', gettext("Additional Deliveries")
-                ),
-                gettext(
-                    "Additional deliveries for previously billed work. These were delivered or approved "
-                    "after the previous invoice was issued and are included on this invoice."
-                ),
-            )
-            self.fields["late_delta_units"].initial = self.late_delta_units
+        self.fields["late_delta_units"].label = header_with_tooltip(
+            format_html('{} <i class="fa-solid fa-circle-info text-gray-400"></i>', gettext("Additional Deliveries")),
+            gettext(
+                "Additional deliveries for previously billed work. These were delivered or approved "
+                "after the previous invoice was issued and are included on this invoice."
+            ),
+        )
+        self.fields["late_delta_units"].initial = self.late_delta_units
 
-            if (
-                self.read_only
-                and self.instance.pk
-                and self.instance.exchange_rate_id
-                and self.instance.amount_usd is not None
-            ):
-                self.fields["amount_usd"].label = value_with_icon_tooltip(
-                    self.fields["amount_usd"].label, self._amount_usd_tooltip_html(), theme="dark"
-                )
-
-            self.fields["description"].widget.attrs.update(
-                {
-                    "placeholder": gettext("Describe service delivery details, references, or notes..."),
-                }
+        if (
+            self.read_only
+            and self.instance.pk
+            and self.instance.exchange_rate_id
+            and self.instance.amount_usd is not None
+        ):
+            self.fields["amount_usd"].label = value_with_icon_tooltip(
+                self.fields["amount_usd"].label, self._amount_usd_tooltip_html(), theme="dark"
             )
 
-            if self.instance.pk:
-                self.fields["start_date"].initial = str(self.instance.start_date)
-                self.fields["end_date"].initial = str(self.instance.end_date)
-            else:
-                start_date = get_start_date_for_invoice(self.opportunity)
-                self.fields["start_date"].initial = str(start_date)
-                self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
+        self.fields["description"].widget.attrs.update(
+            {
+                "placeholder": gettext("Describe service delivery details, references, or notes..."),
+            }
+        )
 
-            if self.read_only and self.status == InvoiceStatus.PENDING_NM_REVIEW and not self.is_opportunity_pm:
-                self.fields["description"].widget.attrs.pop("readonly", None)
+        if self.instance.pk:
+            self.fields["start_date"].initial = str(self.instance.start_date)
+            self.fields["end_date"].initial = str(self.instance.end_date)
         else:
-            self.fields["usd_currency"].widget.attrs.update(
-                {
-                    "x-ref": "currencyToggle",
-                    "x-on:change": "currency = $event.target.checked; convert(true)",
-                }
-            )
-            self.fields["description"].required = True
-            self.fields["description"].label = gettext("Justification")
-            self.fields["description"].widget.attrs.update(
-                {
-                    "placeholder": gettext("Provide a justification for this expense..."),
-                }
-            )
-            self.fields["date_of_expense"].required = True
+            start_date = get_start_date_for_invoice(self.opportunity)
+            self.fields["start_date"].initial = str(start_date)
+            self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
+
+        if self.read_only and self.status == InvoiceStatus.PENDING_NM_REVIEW and not self.is_opportunity_pm:
+            self.fields["description"].widget.attrs.pop("readonly", None)
+
+    def _prepare_custom_fields(self):
+        self.fields["usd_currency"].widget.attrs.update(
+            {
+                "x-ref": "currencyToggle",
+                "x-on:change": "currency = $event.target.checked; convert(true)",
+            }
+        )
+        self.fields["description"].required = True
+        self.fields["description"].label = gettext("Justification")
+        self.fields["description"].widget.attrs.update(
+            {
+                "placeholder": gettext("Provide a justification for this expense..."),
+            }
+        )
+        self.fields["date_of_expense"].required = True
 
     def _prepare_bill_to_field(self):
         if self.read_only:
