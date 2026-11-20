@@ -4,25 +4,25 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.opportunity.forms import BillToAddressForm
-from commcare_connect.opportunity.models import BillToAddress
-from commcare_connect.opportunity.tests.factories import BillToAddressFactory, PaymentInvoiceFactory
+from commcare_connect.opportunity.models import BilledEntity
+from commcare_connect.opportunity.tests.factories import BilledEntityFactory, PaymentInvoiceFactory
 
 
 @pytest.fixture
 def default_address(db):
-    return BillToAddress.objects.get(is_default=True)
+    return BilledEntity.objects.get(is_default=True)
 
 
 @pytest.fixture
 def used_address(db):
-    address = BillToAddressFactory(name="Dimagi South Africa", address="1 Long St\nCape Town")
+    address = BilledEntityFactory(name="Dimagi South Africa", address="1 Long St\nCape Town")
     PaymentInvoiceFactory(bill_to=address)
     return address
 
 
 @pytest.fixture
 def unused_address(db):
-    return BillToAddressFactory()
+    return BilledEntityFactory()
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ class TestBillToAddressForm:
 
     @pytest.mark.parametrize("used", [True, False])
     def test_name_and_address_lock_once_used(self, used):
-        address = BillToAddressFactory()
+        address = BilledEntityFactory()
         if used:
             PaymentInvoiceFactory(bill_to=address)
         form = BillToAddressForm(instance=address)
@@ -59,7 +59,7 @@ class TestBillToAddressForm:
         assert form.fields["address"].disabled is used
 
     def test_unused_address_can_be_renamed(self):
-        address = BillToAddressFactory(name="Dimagi South Africa")
+        address = BilledEntityFactory(name="Dimagi South Africa")
         form = BillToAddressForm(instance=address, data=_data(name="Renamed", is_active=""))
         assert form.is_valid(), form.errors
         saved = form.save()
@@ -111,7 +111,7 @@ class TestBillToAddressViews:
         assert getattr(user_client, method)(reverse(f"users:bill_to_address_{action}", args=args)).status_code == 403
 
     def test_list_counts_and_in_use(self, settings_client, default_address, used_address):
-        unused = BillToAddressFactory()
+        unused = BilledEntityFactory()
         response = settings_client.get(reverse("users:bill_to_address_list"))
         assert response.status_code == 200
         rows = {r.record.pk: r.record for r in response.context["table"].rows}
@@ -120,14 +120,14 @@ class TestBillToAddressViews:
         assert rows[unused.pk].invoice_count == 0 and not rows[unused.pk].in_use
 
     def test_make_default_button_only_on_other_active_addresses(self, settings_client, default_address):
-        expected = {BillToAddressFactory(): True, BillToAddressFactory(is_active=False): False, default_address: False}
+        expected = {BilledEntityFactory(): True, BilledEntityFactory(is_active=False): False, default_address: False}
         content = settings_client.get(reverse("users:bill_to_address_list")).content.decode()
         for address, shown in expected.items():
             assert (reverse("users:bill_to_address_make_default", args=[address.pk]) in content) is shown
 
     @pytest.mark.parametrize("is_active", [True, False])
     def test_make_default(self, settings_client, is_active):
-        address = BillToAddressFactory(is_active=is_active)
+        address = BilledEntityFactory(is_active=is_active)
         response = settings_client.post(reverse("users:bill_to_address_make_default", args=[address.pk]))
         assert response.headers["Location"] == reverse("users:bill_to_address_list")
         address.refresh_from_db()
@@ -136,7 +136,7 @@ class TestBillToAddressViews:
     def test_create_records_author(self, settings_client, settings_admin):
         response = settings_client.post(reverse("users:bill_to_address_create"), _data(), HTTP_HX_REQUEST="true")
         assert response.headers["HX-Redirect"] == reverse("users:bill_to_address_list")
-        created = BillToAddress.objects.get(name="Dimagi South Africa")
+        created = BilledEntity.objects.get(name="Dimagi South Africa")
         assert created.created_by == settings_admin.email == created.modified_by
 
     def test_edit_form_renders(self, settings_client, used_address):
@@ -147,15 +147,15 @@ class TestBillToAddressViews:
         assert "Used by invoices" in response.content.decode()
 
     def test_edit_locks_address_before_checking_use(self, settings_client):
-        address = BillToAddressFactory()
+        address = BilledEntityFactory()
         with CaptureQueriesContext(connection) as queries:
             settings_client.post(
                 reverse("users:bill_to_address_update", args=[address.pk]), _data(), HTTP_HX_REQUEST="true"
             )
         sql = [q["sql"] for q in queries.captured_queries]
-        lock = next((i for i, q in enumerate(sql) if "FOR UPDATE" in q and "billtoaddress" in q), None)
+        lock = next((i for i, q in enumerate(sql) if "FOR UPDATE" in q and "billedentity" in q), None)
         in_use_check = next((i for i, q in enumerate(sql) if "opportunity_paymentinvoice" in q), None)
-        assert lock is not None, "expected a locking SELECT ... FOR UPDATE on billtoaddress"
+        assert lock is not None, "expected a locking SELECT ... FOR UPDATE on billedentity"
         assert in_use_check is not None, "expected a query referencing opportunity_paymentinvoice"
         assert lock < in_use_check
 
@@ -166,7 +166,7 @@ class TestBillToAddressViews:
     def test_delete(self, settings_client, request, address_fixture, deleted):
         address = request.getfixturevalue(address_fixture)
         settings_client.post(reverse("users:bill_to_address_delete", args=[address.pk]))
-        assert BillToAddress.objects.filter(pk=address.pk).exists() is not deleted
+        assert BilledEntity.objects.filter(pk=address.pk).exists() is not deleted
 
     def test_add_form_has_no_slug_autofill(self, settings_client):
         response = settings_client.get(reverse("users:bill_to_address_create"), HTTP_HX_REQUEST="true")

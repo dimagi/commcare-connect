@@ -14,7 +14,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import (
-    BillToAddress,
+    BilledEntity,
     ExchangeRate,
     InvoiceFinanceRequest,
     InvoiceStatus,
@@ -159,7 +159,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     )
     # Not in Meta.fields: read-only mode swaps in a text field, and ModelForm would otherwise put the FK's pk in
     # self.initial for it. empty_label=None because the initial value is only set after construction.
-    bill_to = forms.ModelChoiceField(label=_("Bill to"), queryset=BillToAddress.objects.none(), empty_label=None)
+    bill_to = forms.ModelChoiceField(label=_("Bill to"), queryset=BilledEntity.objects.none(), empty_label=None)
 
     class Meta:
         model = PaymentInvoice
@@ -287,10 +287,10 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 initial=f"{self.instance.bill_to.name}\n{self.instance.bill_to.address}",
             )
             return
-        # Always non-empty: the default can't be deactivated (see BillToAddress).
-        addresses = BillToAddress.objects.filter(is_active=True).order_by("-is_default", "name")
-        self.fields["bill_to"].queryset = addresses
-        self.fields["bill_to"].initial = addresses.filter(is_default=True).first()
+        # Always non-empty: the default can't be deactivated (see BilledEntity).
+        entities = BilledEntity.objects.filter(is_active=True).order_by("-is_default", "name")
+        self.fields["bill_to"].queryset = entities
+        self.fields["bill_to"].initial = entities.filter(is_default=True).first()
 
     def _amount_usd_tooltip_html(self):
         return render_to_string("opportunity/partials/amount_usd_tooltip.html")

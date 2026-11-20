@@ -35,7 +35,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.forms import BillToAddressForm, DeliveryTypeForm
 from commcare_connect.opportunity.models import (
-    BillToAddress,
+    BilledEntity,
     DeliveryType,
     HQApiKey,
     Opportunity,
@@ -441,7 +441,7 @@ def internal_features(request):
 
 
 class BillToAddressMixin:
-    model = BillToAddress
+    model = BilledEntity
     form_class = BillToAddressForm
     url_prefix = "users:bill_to_address"
     in_use_message = _("'%(name)s' is the default or is used by invoices, so it can't be deleted.")
@@ -462,9 +462,9 @@ class BillToAddressListView(BillToAddressMixin, ManagedOptionListView):
     table_class = BillToAddressTable
 
     def get_queryset(self):
-        return BillToAddress.objects.annotate(
+        return BilledEntity.objects.annotate(
             invoice_count=Count("invoices"),
-            in_use=BillToAddress.in_use_condition(),
+            in_use=BilledEntity.in_use_condition(),
         ).order_by("-is_default", "-is_active", "name")
 
 
@@ -488,8 +488,8 @@ class BillToAddressMakeDefaultView(BillToAddressMixin, ManagedOptionMixin, View)
 
     def post(self, request, pk):
         # Locks every row (the table is tiny) so concurrent swaps queue instead of tripping the one-default constraint.
-        list(BillToAddress.objects.select_for_update().order_by("pk"))
-        address = get_object_or_404(BillToAddress, pk=pk)
+        list(BilledEntity.objects.select_for_update().order_by("pk"))
+        address = get_object_or_404(BilledEntity, pk=pk)
         if not address.is_active:
             messages.error(request, _("'%(name)s' is inactive, so it can't be the default.") % {"name": address.name})
         else:

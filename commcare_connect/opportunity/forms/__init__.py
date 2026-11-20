@@ -25,7 +25,7 @@ from commcare_connect.flags.switch_names import (
 )
 from commcare_connect.opportunity.models import (
     AudioAttachment,
-    BillToAddress,
+    BilledEntity,
     CommCareApp,
     Country,
     CredentialConfiguration,
@@ -1789,7 +1789,7 @@ class BillToAddressForm(forms.ModelForm):
     slug_autofill = False
 
     class Meta:
-        model = BillToAddress
+        model = BilledEntity
         fields = ("name", "address", "is_active")
         widgets = {"address": forms.Textarea(attrs={"rows": 4})}
         help_texts = {

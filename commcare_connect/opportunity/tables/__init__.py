@@ -12,7 +12,7 @@ from django.utils.translation import gettext_lazy
 from django_tables2 import columns
 
 from commcare_connect.opportunity.models import (
-    BillToAddress,
+    BilledEntity,
     DeliverUnit,
     DeliveryType,
     LearnModule,
@@ -759,7 +759,7 @@ class BillToAddressTable(ManagedOptionTable):
     is_active = columns.BooleanColumn(verbose_name=gettext_lazy("Active"), attrs=STAT_COLUMN_ATTRS)
 
     class Meta(ManagedOptionTable.Meta):
-        model = BillToAddress
+        model = BilledEntity
         fields = ("name", "address", "invoice_count", "is_default", "is_active")
         exclude = ("slug", "description")
         sequence = (*fields, "actions")
