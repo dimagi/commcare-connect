@@ -1,0 +1,50 @@
+{% load i18n %}
+<div class="flex flex-col min-w-0">
+  <div class="flex items-center justify-between px-4 pt-3 pb-2">
+    <p class="text-sm font-medium text-brand-deep-purple">{{ title }}</p>
+    <div class="flex items-center gap-3">
+      <span x-show="{{ items }}.length"
+            class="text-xs text-gray-400"
+            x-text="`(${ {{ items }}.length })`"></span>
+      {% if see_all %}
+        <a x-show="seeAllUrl"
+           :href="seeAllUrl"
+           class="text-xs text-brand-indigo hover:underline">{% translate "See all" %}</a>
+      {% endif %}
+    </div>
+  </div>
+  <ul class="px-2 pb-2 h-80 overflow-y-auto flex flex-col gap-0.5">
+    <template x-for="item in {{ items }}" :key="item.id">
+      <li>
+        <button type="button"
+                @click="{{ select }}(item)"
+                @dblclick="go(item)"
+                :aria-pressed="(selected.{{ key }} === item).toString()"
+                :class="{ 'bg-indigo-50 border-indigo-200': selected.{{ key }} === item, 'hover:bg-gray-100 border-transparent': selected.{{ key }} !== item }"
+                :title="item.end_label"
+                class="w-full flex items-start gap-2 p-2 rounded text-left border">
+          {% if key != "org" %}
+            <span :class="item.active ? 'status-active' : 'status-inactive'"
+                  class="mt-1.5 shrink-0"></span>
+          {% endif %}
+          <span class="min-w-0">
+            <span class="flex items-start gap-2">
+              <span class="text-sm font-medium text-brand-deep-purple break-words"
+                    x-text="item.name"></span>
+              <span x-show="item.test" class="badge badge-sm badge-amber shrink-0">{% translate "Test" %}</span>
+            </span>
+            {% if key == "org" %}<span class="block text-xs text-gray-400" x-text="item.type"></span>{% endif %}
+            <span class="block text-xs text-gray-400" x-text="item.visit_summary"></span>
+          </span>
+        </button>
+      </li>
+    </template>
+    {% if parent %}
+      <li x-show="!{{ parent }}" class="hint p-2 leading-relaxed">{{ waiting }}</li>
+      <li x-show="{{ parent }} && !query && !{{ items }}.length"
+          class="hint p-2 leading-relaxed">{{ empty }}</li>
+    {% endif %}
+    <li x-show="{% if parent %}{{ parent }} && {% endif %}query && !{{ items }}.length"
+        class="hint p-2 leading-relaxed">{% translate "Nothing matches your search." %}</li>
+  </ul>
+</div>

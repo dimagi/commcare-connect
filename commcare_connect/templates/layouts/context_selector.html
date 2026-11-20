@@ -1,0 +1,103 @@
+{% load static i18n organization_extras %}
+{# Header selector for organization, program and opportunity. State lives in static/js/context_selector.js. #}
+{% if request.org and request.org_membership %}
+  {% page_context as page %}
+  {% firstof request.org.slug as current_org %}
+{% endif %}
+{% if request.memberships %}
+  <script src="{% static 'js/context_selector.js' %}"></script>
+  <div x-data="contextSelector"
+       data-url="{% url 'context_search' %}"
+       data-org="{{ current_org }}"
+       data-program="{{ page.program.program_id }}"
+       data-opportunity="{{ page.opportunity.opportunity_id }}"
+       @click.outside="open = false"
+       @keydown.escape.window="open = false"
+       class="relative mx-4">
+    <button type="button"
+            @click="toggle()"
+            :aria-expanded="open.toString()"
+            aria-haspopup="dialog"
+            class="flex items-center gap-3 rounded-lg px-3 py-1.5 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-deep-purple/30">
+      <div class="text-left">
+        {% if current_org %}
+          <p class="flex items-center gap-2 text-sm font-medium text-brand-deep-purple">
+            <span class="max-w-48 truncate">{{ request.org.name }}</span>
+            {% if request.org.is_test %}
+              <span class="badge badge-sm badge-amber">{% translate "Test" %}</span>
+            {% endif %}
+          </p>
+        {% else %}
+          <p class="text-sm font-medium text-brand-deep-purple">{% translate "Select Organization" %}</p>
+        {% endif %}
+      </div>
+      <i :class="open && 'rotate-180'"
+         class="fa-solid fa-chevron-down text-xs text-brand-deep-purple transition-all"></i>
+    </button>
+    <div x-show="open"
+         x-transition.opacity
+         x-cloak
+         role="dialog"
+         aria-label="{% translate 'Select context' %}"
+         class="fixed top-14 right-4 w-[min(860px,calc(100vw-6rem))] bg-white shadow-lg rounded-lg z-50 flex flex-col">
+      <div class="flex flex-wrap items-center justify-between gap-4 p-4 border-b border-gray-100">
+        <div class="relative flex-1 min-w-48">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+          <input type="search"
+                 x-model="query"
+                 placeholder="{% translate 'Search organizations, programs and opportunities' %}"
+                 aria-label="{% translate 'Search' %}"
+                 class="w-full pl-9 pr-3 py-2 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-deep-purple/30">
+        </div>
+      </div>
+      <div x-show="status === 'loading'" class="p-8 text-center hint">{% translate "Loading…" %}</div>
+      <div x-show="status === 'error'"
+           class="p-8 text-center text-sm text-gray-600">
+        {% translate "Couldn't load your organizations." %}
+        <button type="button"
+                class="text-brand-indigo hover:underline"
+                @click="load()">{% translate "Try again" %}</button>
+      </div>
+      <div x-show="status === 'loaded'"
+           class="grid grid-cols-3 divide-x divide-gray-100">
+        {% translate "Organizations" as org_title %}
+        {% include "layouts/_context_selector_column.html" with title=org_title key="org" items="orgList" select="selectOrg" only %}
+        {% translate "Programs" as program_title %}
+        {% translate "Select an organization to see its programs." as program_waiting %}
+        {% translate "No programs here." as program_empty %}
+        {% include "layouts/_context_selector_column.html" with title=program_title key="program" items="programList" select="selectProgram" parent="selected.org" waiting=program_waiting empty=program_empty only %}
+        {% translate "Opportunities" as opportunity_title %}
+        {% translate "Select a program to see its opportunities." as opportunity_waiting %}
+        {% translate "No opportunities here." as opportunity_empty %}
+        {% include "layouts/_context_selector_column.html" with title=opportunity_title key="opportunity" items="opportunityList" select="selectOpportunity" parent="selected.program" waiting=opportunity_waiting empty=opportunity_empty see_all=True only %}
+      </div>
+      <div class="flex items-center justify-between gap-4 px-4 py-3 border-t border-gray-100">
+        <p class="min-w-0 text-sm text-gray-500">
+          {% translate "Selected:" %}
+          <template x-for="(item, index) in selectedPath" :key="index">
+            <span>
+              <i x-show="index > 0"
+                 class="fa-solid fa-arrow-right text-[10px] text-gray-400 mx-1"></i>
+              <span class="font-medium text-brand-deep-purple" x-text="item.name"></span>
+            </span>
+          </template>
+          <span x-show="!target" class="text-gray-400">{% translate "Nothing selected" %}</span>
+        </p>
+        <div class="flex items-center gap-2 shrink-0">
+          {% if perms.users.workspace_entity_management_access %}
+            <a class="button button-sm outline-style"
+               href="{% url 'organization_create' %}">{% translate "Create Organization" %}</a>
+          {% endif %}
+          <button type="button" class="button button-sm outline-style" @click="clear()">{% translate "Clear" %}</button>
+          <button type="button"
+                  class="button button-sm primary-dark"
+                  :disabled="!target"
+                  @click="apply()">{% translate "Apply" %}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% elif perms.users.workspace_entity_management_access %}
+  <a class="mx-4 text-sm font-medium text-brand-deep-purple"
+     href="{% url 'organization_create' %}">{% translate "Create Organization" %}</a>
+{% endif %}
