@@ -1,6 +1,5 @@
 import re
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
@@ -426,12 +425,6 @@ class TestSolicitationClosure:
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         assert "Funding withdrawn" in response.content.decode()
-
-
-@pytest.fixture
-def mock_send_mail():
-    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-        yield mock
 
 
 @pytest.fixture

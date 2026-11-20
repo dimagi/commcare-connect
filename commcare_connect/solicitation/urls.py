@@ -1,6 +1,6 @@
 from django.urls import path
 
-from commcare_connect.solicitation.views import applications, management, marketplace, participants
+from commcare_connect.solicitation.views import applications, apply, management, marketplace, participants
 
 app_name = "solicitation"
 urlpatterns = [
@@ -44,6 +44,7 @@ marketplace_urlpatterns = [
         view=marketplace.MarketplaceAttachmentView.as_view(),
         name="attachment",
     ),
+    path("<uuid:solicitation_id>/apply/", view=apply.SolicitationApplyView.as_view(), name="apply"),
 ]
 
 # The applications a posting organization's solicitations received.

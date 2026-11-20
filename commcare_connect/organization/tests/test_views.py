@@ -1,7 +1,7 @@
 import re
 from datetime import timedelta
 from unittest.mock import patch
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -200,6 +200,24 @@ class TestOrganizationCreateView:
         membership = UserOrganizationMembership.objects.get(user=user, organization=org)
         assert membership.role == UserOrganizationMembership.Role.ADMIN
         assert org.verified is False
+
+    @pytest.mark.parametrize(
+        "next_url, expected",
+        [
+            ("/solicitations/apply/", "/solicitations/apply/"),
+            # Only a URL on this site is followed; anything else goes to the usual page.
+            ("https://example.com/", None),
+            ("", None),
+        ],
+    )
+    def test_next_url_is_followed_when_safe(self, client, user, next_url, expected):
+        org_name = f"Applying Organization {user.pk}"
+        client.force_login(user)
+
+        response = client.post(f"{self.url()}?{urlencode({'next': next_url})}", data={"name": org_name})
+
+        org = Organization.objects.get(name=org_name)
+        assert response.url == (expected or reverse("opportunity:list", args=(org.slug,)))
 
     def test_profile_fields_are_saved(self, client, user):
         client.force_login(user)

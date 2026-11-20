@@ -36,7 +36,8 @@ that runs from about six weeks ago to now. All but `solicitations` also build op
   and an invoice whose line items split the work by payment unit.
 - `solicitations`: RFPs and EOIs in every state: public and open across countries, delivery types and deadlines
   (enough to fill more than one page), private with the network manager invited, a draft, one past its deadline
-  but not yet closed, and one the hourly task has closed. A Celery worker running beat (`-B`) closes the expired
+  but not yet closed, and one the hourly task has closed. The network manager has submitted an application to the
+  private one and saved a draft application to a public one. A Celery worker running beat (`-B`) closes the expired
   one within the hour. Needs the `solicitations` switch on (`./manage.py waffle_switch solicitations on --create`).
 
 `--small` builds the fewest records that still show every state; that is what CI builds.
@@ -86,7 +87,7 @@ Steps call the same code the pages do, so they break when that code changes, and
 - **A page's request changes** (a renamed field, a new required field, a different URL or success response):
   update the step's POST to match what the page now sends.
 - **A new feature needs local data**: whoever first needs it adds the step. Areas with no steps yet include tasks,
-  microplanning, audit, solicitation applications and reviews, and the reports.
+  microplanning, audit, solicitation reviews, and the reports.
 - **A new state should be easy to reach**: extend the shared scenario for that area, or add a new one if no area
   fits.
 

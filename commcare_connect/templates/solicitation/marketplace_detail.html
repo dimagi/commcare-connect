@@ -7,8 +7,28 @@
       <div>
         <div class="flex flex-wrap items-center gap-2">
           <h1 class="title">{{ solicitation.title }}</h1>
+          {% for application in applications %}
+            {% if applications|length > 1 %}<span class="hint">{{ application.organization.name }}:</span>{% endif %}
+            {% include "solicitation/partials/application_status_badge.html" with record=application %}
+          {% endfor %}
         </div>
         <p class="hint">{{ solicitation.organization.name }} · {{ solicitation.get_type_display }}</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        {% for application in applications %}
+          <a class="button button-md outline-style"
+             href="{{ application.applicant_url }}">
+            {% if applications|length > 1 %}
+              {% blocktranslate with organization=application.organization.name %}View {{ organization }}'s application{% endblocktranslate %}
+            {% else %}
+              {% translate "View application" %}
+            {% endif %}
+          </a>
+        {% endfor %}
+        {# Logged-out visitors log in or sign up first, then come back to the application. #}
+        {% if apply_url %}
+          <a class="button button-md primary-dark" href="{{ apply_url }}">{% translate "Apply" %}</a>
+        {% endif %}
       </div>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

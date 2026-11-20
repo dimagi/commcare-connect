@@ -1,0 +1,11 @@
+{% extends "email/base.html" %}
+{% block content %}
+  <p>Hi {{ application.submitter_name }},</p>
+  <p>
+    {{ application.organization.name }}'s application to "{{ application.solicitation.title }}" was submitted on {{ application.submitted_date|date:"F j, Y H:i T" }}.
+  </p>
+  <p>
+    <a href="{{ application_url }}">Follow its status</a>
+  </p>
+  <p>For questions, contact {{ application.solicitation.contact_email }}.</p>
+{% endblock %}

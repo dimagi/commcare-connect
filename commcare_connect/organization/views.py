@@ -57,6 +57,10 @@ def organization_create(request):
         if form.cleaned_data.get("skip_membership"):
             return redirect("organization:home", org.slug)
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        # Set when another flow sent the user here to create an organization, such as applying to a solicitation.
+        next_url = request.GET.get("next", "")
+        if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            return redirect(next_url)
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})

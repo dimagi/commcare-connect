@@ -1,5 +1,6 @@
 import datetime
 import re
+from urllib.parse import urlencode
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -13,15 +14,16 @@ from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.opportunity.models import Country
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.solicitation.filters import MarketplaceFilterSet
-from commcare_connect.solicitation.models import Solicitation, SolicitationAttachment
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationAttachment
 from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
     SolicitationFactory,
     SolicitationInvitationFactory,
     SolicitationQuestionFactory,
 )
 from commcare_connect.solicitation.tests.test_solicitation_statuses import DEADLINE_CASES
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -105,6 +107,42 @@ def test_queries_do_not_grow_with_the_number_of_cards(client):
     one_card = queries_for_page()
     for _ in range(4):
         card()
+
+    assert queries_for_page() == one_card
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_cards_link_to_the_current_organizations_applications(client, org_user_admin, organization):
+    applied, not_applied = listed(), listed()
+    application = SolicitationApplicationFactory(
+        solicitation=applied, organization=organization, status=SolicitationApplication.Status.SUBMITTED
+    )
+    SolicitationApplicationFactory(solicitation=not_applied, status=SolicitationApplication.Status.SUBMITTED)
+    client.force_login(org_user_admin)
+
+    content = client.get(MARKETPLACE_URL).content.decode()
+
+    assert content.count("View application") == 1
+    assert f'href="{application.applicant_url}"' in content
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_queries_do_not_grow_with_the_number_of_applications(client, org_user_admin, organization):
+    client.force_login(org_user_admin)
+
+    def queries_for_page():
+        with CaptureQueriesContext(connection) as queries:
+            client.get(MARKETPLACE_URL)
+        return len(queries)
+
+    def applied_card():
+        SolicitationApplicationFactory(solicitation=listed(), organization=organization)
+
+    applied_card()
+    queries_for_page()
+    one_card = queries_for_page()
+    for _ in range(4):
+        applied_card()
 
     assert queries_for_page() == one_card
 
@@ -285,6 +323,86 @@ def test_detail_shows_scope_but_not_questions_or_criteria(client):
     assert "Reach 5,000 households." in content
     assert "Describe your team" not in content
     assert "Past performance" not in content
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize(
+    "status, shows_apply",
+    [
+        (None, True),
+        (SolicitationApplication.Status.DRAFT, False),
+        (SolicitationApplication.Status.SUBMITTED, False),
+        (SolicitationApplication.Status.WITHDRAWN, False),
+    ],
+)
+def test_detail_offers_apply_until_the_organization_has_applied(
+    client, org_user_admin, organization, status, shows_apply
+):
+    solicitation = listed()
+    application = None
+    if status is not None:
+        application = SolicitationApplicationFactory(
+            solicitation=solicitation, organization=organization, status=status
+        )
+    client.force_login(org_user_admin)
+
+    content = client.get(detail_url(solicitation)).content.decode()
+
+    assert (">Apply</a>" in content) == shows_apply
+    assert (application is not None and application.applicant_url in content) == (not shows_apply)
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize(
+    "status, label",
+    [
+        (SolicitationApplication.Status.DRAFT, "Draft"),
+        (SolicitationApplication.Status.SUBMITTED, "Submitted"),
+        (SolicitationApplication.Status.WITHDRAWN, "Withdrawn"),
+    ],
+)
+def test_detail_shows_the_application_status(client, org_user_admin, organization, status, label):
+    solicitation = listed()
+    SolicitationApplicationFactory(solicitation=solicitation, organization=organization, status=status)
+    client.force_login(org_user_admin)
+
+    content = client.get(detail_url(solicitation)).content.decode()
+
+    assert re.search(rf'<span class="badge[^"]*">{label}</span>', content)
+
+
+def apply_href(solicitation, **params):
+    url = reverse("marketplace:apply", args=[solicitation.solicitation_id])
+    return f'href="{url}?{urlencode(params)}"' if params else f'href="{url}"'
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("has_applied", [False, True])
+def test_apply_uses_the_organization_the_user_is_in_until_it_has_applied(
+    client, org_user_admin, organization, has_applied
+):
+    """Once the current organization has applied, Apply leads to picking another of the user's organizations."""
+    solicitation = listed()
+    if has_applied:
+        SolicitationApplicationFactory(
+            solicitation=solicitation, organization=organization, status=SolicitationApplication.Status.SUBMITTED
+        )
+    MembershipFactory(user=org_user_admin, role="admin")
+    client.force_login(org_user_admin)
+
+    content = client.get(detail_url(solicitation)).content.decode()
+
+    expected = apply_href(solicitation) if has_applied else apply_href(solicitation, organization=organization.slug)
+    assert expected in content
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_apply_asks_logged_out_visitors_to_log_in_then_pick(client):
+    solicitation = listed()
+
+    content = client.get(detail_url(solicitation)).content.decode()
+
+    assert apply_href(solicitation) in content
 
 
 def invite(solicitation, organization, invited):

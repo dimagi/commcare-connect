@@ -1,0 +1,8 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi {{ application.submitter_name }},
+
+{{ application.organization.name }}'s application to "{{ application.solicitation.title }}" was submitted on {{ application.submitted_date|date:"F j, Y H:i T" }}.
+
+Follow its status here: {{ application_url }}
+
+For questions, contact {{ application.solicitation.contact_email }}.{% endblock %}

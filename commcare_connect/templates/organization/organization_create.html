@@ -16,7 +16,7 @@
 {% endblock title %}
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto">
-    <form action="{% url 'organization_create' %}"
+    <form action="{% url 'organization_create' %}{% if request.GET.next %}?next={{ request.GET.next|urlencode }}{% endif %}"
           method="post"
           novalidate
           x-data="organizationWizard()"

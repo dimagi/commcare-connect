@@ -1,35 +1,47 @@
 {% load i18n %}
-<article class="card_bg flex flex-col gap-3 h-full">
-  <div class="flex items-start justify-between gap-2">
-    <h2 class="card_title">{{ solicitation.title }}</h2>
-    <span class="badge badge-sm badge-indigo"
-          title="{{ solicitation.get_type_display }}">{{ solicitation.type|upper }}</span>
-  </div>
-  <p class="card_description">{{ solicitation.organization.name }}</p>
-  <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-    {% if solicitation.country %}
-      <dt class="text-gray-500">{% translate "Country" %}</dt>
-      <dd>
-        {{ solicitation.country.name }}
-      </dd>
-    {% endif %}
-    {% if solicitation.delivery_type %}
-      <dt class="text-gray-500">{% translate "Delivery type" %}</dt>
-      <dd>
-        {{ solicitation.delivery_type.name }}
-      </dd>
-    {% endif %}
-    {% include "solicitation/partials/budget.html" %}
-    <dt class="text-gray-500">{% translate "Deadline" %}</dt>
-    <dd>
-      <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i" }} UTC</time>
-    </dd>
-  </dl>
-  {# Closed solicitations leave the marketplace, so only an open one links there. #}
-  {% if solicitation.is_open %}
-    <div class="mt-auto flex flex-wrap items-center gap-2">
-      <a class="button button-sm outline-style"
-         href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{% translate "See details" %}</a>
+{# own_applications is set on the marketplace list: the application of the organization the user is in. #}
+{% with application=solicitation.own_applications.0 %}
+  <article class="card_bg flex flex-col gap-3 h-full">
+    <div class="flex items-start justify-between gap-2">
+      <h2 class="card_title">{{ solicitation.title }}</h2>
+      <div class="flex items-center gap-1">
+        {% if application %}
+          {% include "solicitation/partials/application_status_badge.html" with record=application %}
+        {% endif %}
+        <span class="badge badge-sm badge-indigo"
+              title="{{ solicitation.get_type_display }}">{{ solicitation.type|upper }}</span>
+      </div>
     </div>
-  {% endif %}
-</article>
+    <p class="card_description">{{ solicitation.organization.name }}</p>
+    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+      {% if solicitation.country %}
+        <dt class="text-gray-500">{% translate "Country" %}</dt>
+        <dd>
+          {{ solicitation.country.name }}
+        </dd>
+      {% endif %}
+      {% if solicitation.delivery_type %}
+        <dt class="text-gray-500">{% translate "Delivery type" %}</dt>
+        <dd>
+          {{ solicitation.delivery_type.name }}
+        </dd>
+      {% endif %}
+      {% include "solicitation/partials/budget.html" %}
+      <dt class="text-gray-500">{% translate "Deadline" %}</dt>
+      <dd>
+        <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i" }} UTC</time>
+      </dd>
+    </dl>
+    {# Closed solicitations leave the marketplace, so only an open one links there. #}
+    {% if solicitation.is_open %}
+      <div class="mt-auto flex flex-wrap items-center gap-2">
+        <a class="button button-sm outline-style"
+           href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{% translate "See details" %}</a>
+        {% if application %}
+          <a class="button button-sm primary-dark"
+             href="{{ application.applicant_url }}">{% translate "View application" %}</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </article>
+{% endwith %}

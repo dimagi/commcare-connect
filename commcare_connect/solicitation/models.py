@@ -1,3 +1,4 @@
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.conf import settings
@@ -5,11 +6,12 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Avg, Count, Exists, F, OuterRef, Q
 from django.db.models.functions import Now
+from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import Country, Currency, DeliveryType
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.utils.db import BaseModel
 
@@ -110,6 +112,16 @@ class Solicitation(BaseModel):
     def structure_locked(self):
         """Questions and criteria are fixed once the solicitation leaves draft, so applicants answer the same form."""
         return self.status != self.Status.DRAFT
+
+    def applicant_organizations(self, user):
+        """The organizations ``user`` can apply as: those they administer, other than the poster. A private
+        solicitation only takes applications from the organizations it invited."""
+        organizations = Organization.objects.filter(
+            memberships__user=user, memberships__role=UserOrganizationMembership.Role.ADMIN
+        ).exclude(pk=self.organization_id)
+        if not self.public:
+            organizations = organizations.filter(solicitation_invitations__solicitation=self)
+        return organizations
 
 
 class SolicitationEvaluationCriterion(BaseModel):
@@ -239,6 +251,12 @@ class SolicitationApplication(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["solicitation", "organization"], name="one_application_per_org")
         ]
+
+    @property
+    def applicant_url(self):
+        """Where the applying organization follows this application: its Apply page, which shows it once sent."""
+        url = reverse("marketplace:apply", args=[self.solicitation.solicitation_id])
+        return f"{url}?{urlencode({'organization': self.organization.slug})}"
 
 
 class SolicitationApplicationAnswer(BaseModel):

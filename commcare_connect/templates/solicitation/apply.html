@@ -1,0 +1,144 @@
+{% extends "solicitation/marketplace_base.html" %}
+{% load i18n static crispy_forms_field %}
+{% block title %}
+  {% blocktranslate with title=solicitation.title %}Apply: {{ title }}{% endblocktranslate %}
+{% endblock title %}
+{% block javascript %}
+  {# Not deferred: it defines an x-data helper, so it has to run before Alpine starts. #}
+  <script src="{% static 'js/application_progress.js' %}"></script>
+  {{ block.super }}
+{% endblock javascript %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full pb-8">
+    {% include "components/breadcrumbs.html" with path=path %}
+    {# One centred column, so the page reads like filling in a form. #}
+    <div class="w-full max-w-3xl mx-auto flex flex-col gap-6 min-w-0">
+      <header class="flex flex-col gap-2">
+        <div>
+          <span class="badge badge-sm badge-indigo">{{ solicitation.get_type_display }}</span>
+        </div>
+        <h1 class="card_title">
+          {% blocktranslate with title=solicitation.title %}Apply to {{ title }}{% endblocktranslate %}
+        </h1>
+        <div class="card_description flex flex-wrap items-center gap-x-5 gap-y-2">
+          <span>{% translate "Posted by" %} <span class="title-sm">{{ solicitation.organization.name }}</span></span>
+          {% if not closed %}
+            <span class="inline-flex flex-wrap items-center gap-2">
+              {% translate "Closes" %}
+              <span class="title-sm">{{ solicitation.application_deadline|date:"j M Y, H:i" }} UTC</span>
+              <span class="badge badge-sm badge-amber">
+                {% blocktranslate with remaining=solicitation.application_deadline|timeuntil %}{{ remaining }} left{% endblocktranslate %}
+              </span>
+            </span>
+            {# A new tab, so unsaved answers aren't lost. #}
+            <a class="underline whitespace-nowrap"
+               href="{% url 'marketplace:detail' solicitation.solicitation_id %}"
+               target="_blank"
+               rel="noopener">{% translate "See details" %} <i class="fa-solid fa-arrow-up-right-from-square text-xs"
+    aria-hidden="true"></i></a>
+          {% endif %}
+        </div>
+      </header>
+      {% if closed %}
+        <div class="card_bg flex flex-col gap-3">
+          <h2 class="title-sm">{% translate "This solicitation has closed" %}</h2>
+          <p class="card_description">
+            {% blocktranslate with date=solicitation.application_deadline|date:"j M Y, H:i" %}It stopped taking applications on {{ date }} UTC.{% endblocktranslate %}
+          </p>
+        </div>
+      {% elif not organizations %}
+        <div class="card_bg flex flex-col gap-3">
+          <h2 class="title-sm">{% translate "Create an organization to apply" %}</h2>
+          <p class="card_description">
+            {% translate "Solicitations take applications from organizations, made by their admins. Create an organization to apply as. You will be its admin, and we will bring you back here afterwards." %}
+          </p>
+          <div>
+            <a class="button button-md primary-dark" href="{{ create_org_url }}">{% translate "Create an organization" %}</a>
+          </div>
+        </div>
+      {% else %}
+        {% if form %}
+          <form method="post"
+                enctype="multipart/form-data"
+                class="flex flex-col gap-4"
+                x-data="applicationProgress()">
+            {% csrf_token %}
+            {% if form.question_fields %}
+              {# Stays in view below the fixed header while the applicant scrolls through the questions. #}
+              <div class="sticky top-16 z-20 card_bg flex flex-col gap-3"
+                   aria-live="polite">
+                <div class="flex flex-wrap justify-between gap-3">
+                  {# Whole sentences with the counts as HTML inside, so translators can reorder them. #}
+                  <span class="title-sm">
+                    {% blocktranslate with total=form.question_fields|length %}<span x-text="answered">0</span> of <span x-text="total">{{ total }}</span> questions answered{% endblocktranslate %}
+                  </span>
+                  <span class="card_description" x-show="requiredLeft" x-cloak>
+                    {% blocktranslate %}<span x-text="requiredLeft"></span> required left{% endblocktranslate %}
+                  </span>
+                  <span class="card_description" x-show="!requiredLeft" x-cloak>{% translate "All required questions answered" %}</span>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill"
+                       :class="requiredLeft ? 'primary-dark' : 'positive-dark'"
+                       :style="`width: ${percent}%`"
+                       style="width: 0%"></div>
+                </div>
+              </div>
+            {% endif %}
+            <ol class="card_bg flex flex-col gap-8">
+              {% for question, field in form.question_fields %}
+                <li class="flex flex-col gap-2"
+                    data-question
+                    {% if question.required %}data-required{% endif %}
+                    {% if field.field.saved_file_name %}data-saved-file{% endif %}>
+                  <span class="hint">
+                    {% blocktranslate with number=forloop.counter %}Question {{ number }}{% endblocktranslate %}
+                    ·
+                    {% if question.required %}
+                      {% translate "Required" %}
+                    {% else %}
+                      {% translate "Optional" %}
+                    {% endif %}
+                  </span>
+                  <label for="{{ field.id_for_label }}" class="title">{{ field.label }}</label>
+                  {% if field.help_text %}<p class="card_description">{{ field.help_text }}</p>{% endif %}
+                  {% crispy_field field %}
+                  {% if question.question_type == "file" %}
+                    <p class="hint">{% blocktranslate with size=max_file_size_mb %}Up to {{ size }} MB.{% endblocktranslate %}</p>
+                  {% endif %}
+                  {% if field.field.saved_file_name %}
+                    <p class="hint">
+                      {% blocktranslate with name=field.field.saved_file_name %}Uploaded: {{ name }}. Choose a file to replace it.{% endblocktranslate %}
+                    </p>
+                  {% endif %}
+                  {% for error in field.errors %}<p class="text-sm text-red-600">{{ error }}</p>{% endfor %}
+                </li>
+              {% empty %}
+                <li class="card_description">{% translate "This solicitation asks no questions." %}</li>
+              {% endfor %}
+            </ol>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <p class="flex-1 min-w-64 card_description">
+                {% blocktranslate with poster=solicitation.organization.name %}Save a draft to come back to it before the deadline. Submitting sends your answers to {{ poster }}, and they can't be changed after that.{% endblocktranslate %}
+              </p>
+              <div class="flex shrink-0 gap-3">
+                {# Saving a draft skips the browser's required-field checks; only submitting needs every answer. #}
+                <button type="submit"
+                        name="save"
+                        formnovalidate
+                        class="button button-md outline-style">{% translate "Save draft" %}</button>
+                <button type="submit" name="submit" class="button button-md primary-dark">{% translate "Submit application" %}</button>
+              </div>
+            </div>
+          </form>
+        {% elif application %}
+          <div class="card_bg">
+            <p class="card_description">
+              {% blocktranslate with name=organization.name date=application.submitted_date|date:"j M Y, H:i" status=application.get_status_display %}{{ name }} submitted its application on {{ date }} UTC. Its status is {{ status }}.{% endblocktranslate %}
+            </p>
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+{% endblock content %}
