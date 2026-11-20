@@ -16,7 +16,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.views import link_deliver_units
 
-backfill_migration = importlib.import_module("commcare_connect.opportunity.migrations.0155_deliverunit_opportunity")
+backfill_migration = importlib.import_module("commcare_connect.opportunity.migrations.0156_deliverunit_opportunity")
 
 
 @pytest.fixture
