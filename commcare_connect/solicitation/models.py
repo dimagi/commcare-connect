@@ -26,6 +26,10 @@ class SolicitationQuerySet(models.QuerySet):
     def expired(self):
         return self._active().filter(application_deadline__lte=Now())
 
+    def public(self):
+        """Public and still open for applications: what the marketplace shows to everyone."""
+        return self.open().filter(public=True)
+
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()

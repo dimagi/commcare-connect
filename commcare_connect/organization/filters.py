@@ -3,9 +3,9 @@ from django import forms
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.filters import CSRFExemptForm
 from commcare_connect.opportunity.models import Country
 from commcare_connect.organization.models import OrganizationStatus, PrimarySector
+from commcare_connect.utils.filters import CSRFExemptForm
 
 
 class OrganizationFilterSet(django_filters.FilterSet):
