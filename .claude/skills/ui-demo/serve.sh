@@ -9,7 +9,7 @@ mkdir -p output
 
 if [ "${1:-}" = "stop" ]; then
   PORT="${2:-8010}"
-  pkill -f "runserver.*:$PORT" 2>/dev/null || pkill -f "runserver $PORT" 2>/dev/null
+  pkill -f "runserver (.*:)?$PORT$" 2>/dev/null
   sleep 1
   curl -s -o /dev/null --max-time 2 "http://localhost:$PORT/" && echo "server still up on $PORT" || echo "server on $PORT stopped"
   exit 0
@@ -20,15 +20,16 @@ if curl -s -o /dev/null --max-time 2 "http://localhost:$PORT/"; then
   echo "port $PORT is in use — pass another port or run: $0 stop $PORT"; exit 1
 fi
 
+TASK_DIR="$PWD"
 cd "$REPO" || { echo "repo not found: $REPO"; exit 1; }
 # shellcheck disable=SC1091
 source .venv/bin/activate || { echo "no .venv in $REPO — run: uv sync"; exit 1; }
 
 # Static files need no collectstatic: record_settings serves them from the source folders (see its docstring).
 # Every email the server sends lands in this task's output/mail/, where runner.mjs shows it on camera.
-UI_DEMO_MAIL_DIR="$OLDPWD/output/mail" PYTHONPATH="$SKILL_DIR" DJANGO_SETTINGS_MODULE=record_settings \
-  nohup ./manage.py runserver "$PORT" > "$OLDPWD/output/server.log" 2>&1 &
-cd "$OLDPWD"
+UI_DEMO_MAIL_DIR="$TASK_DIR/output/mail" PYTHONPATH="$SKILL_DIR" DJANGO_SETTINGS_MODULE=record_settings \
+  nohup ./manage.py runserver "$PORT" > "$TASK_DIR/output/server.log" 2>&1 &
+cd "$TASK_DIR"
 
 for _ in $(seq 1 40); do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://localhost:$PORT/accounts/login/")

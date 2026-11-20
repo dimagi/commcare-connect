@@ -161,14 +161,18 @@ class Narrator:
         wav = self.model.generate(
             text, audio_prompt_path=a.voice, exaggeration=a.exaggeration, cfg_weight=a.cfg_weight
         )
-        torchaudio.save(str(wav_path), trim_silence(wav, self.model.sr), self.model.sr)
+        # write to temp files and move into wav_path last: a half-finished clip there would be reused as a cache hit
+        raw = wav_path.with_suffix(".raw.wav")
+        torchaudio.save(str(raw), trim_silence(wav, self.model.sr), self.model.sr)
         if abs(a.tempo - 1) > 1e-3:
             tmp = wav_path.with_suffix(".tempo.wav")
             subprocess.run(
-                ["ffmpeg", "-y", "-v", "error", "-i", str(wav_path), "-filter:a", f"atempo={a.tempo}", str(tmp)],
+                ["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-filter:a", f"atempo={a.tempo}", str(tmp)],
                 check=True,
             )
-            tmp.replace(wav_path)
+            raw.unlink()
+            raw = tmp
+        raw.replace(wav_path)
 
 
 def trim_silence(wav, sample_rate):

@@ -564,6 +564,7 @@ function frameCapture(outPath, fps) {
     start = null,
     written = 0,
     ticker = null;
+  ff.stdin.on('error', () => {}); // EPIPE if ffmpeg dies early; `done` still rejects with its exit code
   const fillTo = (t) => {
     // every slot before t's slot gets the frame that was on screen then
     if (start === null || !latest) return;

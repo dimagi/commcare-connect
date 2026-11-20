@@ -142,7 +142,9 @@ export async function pickTomSelect(page, d, id, option) {
   // 4. by data-value, not text: once filtered the match is wrapped in <span class="highlight"> and :text-is() misses it
   await d.click(
     page,
-    `.ts-wrapper:has(#${id}-ts-control) .ts-dropdown .option[data-value="${value}"]`,
+    `.ts-wrapper:has(#${id}-ts-control) .ts-dropdown .option[data-value=${JSON.stringify(
+      value,
+    )}]`,
   );
   // 5. a multi-select keeps its dropdown open after a pick, over the fields below it, and the record cursor's next
   //    click lands on an option instead. Closing keeps focus, so the next pick still types straight in
