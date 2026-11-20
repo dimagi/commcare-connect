@@ -38,6 +38,12 @@ urlpatterns = [
 # The public marketplace: not scoped to an organization, and reachable without logging in.
 marketplace_urlpatterns = [
     path("", view=marketplace.MarketplaceListView.as_view(), name="list"),
+    path("<uuid:solicitation_id>/", view=marketplace.MarketplaceDetailView.as_view(), name="detail"),
+    path(
+        "<uuid:solicitation_id>/attachments/<int:attachment_id>/",
+        view=marketplace.MarketplaceAttachmentView.as_view(),
+        name="attachment",
+    ),
 ]
 
 # The applications a posting organization's solicitations received.

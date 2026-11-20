@@ -1,6 +1,8 @@
 import mimetypes
 import os
 
+from django.http import FileResponse, Http404
+
 # Leading characters that make a spreadsheet treat a cell as a formula.
 FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
 
@@ -34,3 +36,15 @@ def neutralize_formula(value):
     if isinstance(value, str) and value.startswith(FORMULA_TRIGGERS):
         return f"'{value}"
     return value
+
+
+def stored_file_response(field_file, filename):
+    """Downloads a stored file through the app, so the calling view decides who may have it.
+
+    Media storage URLs are neither signed nor public, so linking to them directly would not work.
+    """
+    try:
+        handle = field_file.open("rb")
+    except FileNotFoundError:
+        raise Http404()
+    return FileResponse(handle, as_attachment=True, filename=filename)
