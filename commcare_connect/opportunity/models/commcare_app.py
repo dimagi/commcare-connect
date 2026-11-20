@@ -38,3 +38,14 @@ class HQApiKey(models.Model):
     )
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.masked
+
+    @property
+    def masked(self):
+        """The key with all but its first and last four characters hidden, safe to show in the UI.
+
+        Keys too short to keep eight characters back are hidden completely."""
+        value = self.api_key or ""
+        return f"{value[:4]}...{value[-4:]}" if len(value) > 12 else "****"
