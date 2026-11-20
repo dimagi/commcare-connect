@@ -11,7 +11,6 @@ annotates `in_use` (and any count columns) onto the queryset, and uses a templat
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.text import capfirst
@@ -20,6 +19,7 @@ from django.views.generic import CreateView, ListView, UpdateView, View
 from django_tables2 import SingleTableMixin
 
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.views import HtmxModalFormMixin
 
 
 class ManagedOptionMixin(LoginRequiredMixin, PermissionRequiredMixin):
@@ -53,22 +53,10 @@ class ManagedOptionListView(ManagedOptionMixin, SingleTableMixin, ListView):
     table_pagination = False
 
 
-class ManagedOptionFormMixin(ManagedOptionMixin, SuccessMessageMixin):
-    """Serves the list page's Add/Edit modal: errors swap the form back in, success reloads the list."""
+class ManagedOptionFormMixin(ManagedOptionMixin, HtmxModalFormMixin, SuccessMessageMixin):
+    """Serves the list page's Add/Edit modal."""
 
     template_name = "users/managed_options/form.html"
-
-    def get(self, request, *args, **kwargs):
-        # The form is only a modal fragment; a direct visit gets the list page that hosts it.
-        if not request.htmx:
-            return redirect(self.get_success_url())
-        return super().get(request, *args, **kwargs)
-
-    def form_valid(self, form):
-        response = super().form_valid(form)
-        if self.request.htmx:
-            return HttpResponse(headers={"HX-Redirect": self.get_success_url()})
-        return response
 
     def get_success_message(self, cleaned_data):
         return _("%(option)s '%(name)s' saved.") % {
