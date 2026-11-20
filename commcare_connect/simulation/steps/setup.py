@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.auth.models import Permission
 from django.urls import resolve, reverse
+from django.utils.text import slugify
 from oauth2_provider.models import get_application_model
 from waffle import switch_is_active
 
@@ -17,6 +18,7 @@ from commcare_connect.simulation.constants import SIM_DELIVER_APP_PREFIX, SIM_DO
 from commcare_connect.users.models import User
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
+from .form_data import management_form
 from .types import PaymentUnitSpec
 
 SIM_HQ_URL = "https://hq.simulation.local"
@@ -65,7 +67,7 @@ class SetupSteps:
         data = {
             "name": name,
             "description": f"{name} (simulated)",
-            "delivery_type": _delivery_type().pk,
+            "delivery_type": delivery_type().pk,
             "budget": budget,
             "currency": currency,
             "country": country,
@@ -192,12 +194,12 @@ def _org_settings_staff():
     return staff
 
 
-def _delivery_type():
-    """Delivery types are managed in Django admin only, so the simulation's is get-or-created."""
-    delivery_type, _created = DeliveryType.objects.get_or_create(
-        slug="simulation", defaults={"name": "Simulation", "description": "Programs built by the simulation"}
+def delivery_type(name="Simulation"):
+    """Delivery types are managed in Django admin only, so the simulation's are get-or-created by name."""
+    found, _created = DeliveryType.objects.get_or_create(
+        slug=slugify(name), defaults={"name": name, "description": f"{name}, created by the simulation"}
     )
-    return delivery_type
+    return found
 
 
 def _invited(program, organization):
@@ -338,23 +340,14 @@ def _verification_data(opportunity, verification_flags, deliver_unit_flags):
     for index, deliver_unit in enumerate(deliver_units):
         rules = {"duration": 0} | deliver_unit_flags.get(deliver_unit.slug, {})
         data |= {f"deliver_unit-{index}-{key}": _checkbox(value) for key, value in rules.items() if value is not False}
-    data |= _management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
-    data |= _management_form("form_json", total=1, max_num=1000)
+    data |= management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
+    data |= management_form("form_json", total=1, max_num=1000)
     return data
 
 
 def _checkbox(value):
     """A ticked checkbox posts "on"; other inputs post their value."""
     return "on" if value is True else value
-
-
-def _management_form(prefix, *, total, max_num):
-    return {
-        f"{prefix}-TOTAL_FORMS": total,
-        f"{prefix}-INITIAL_FORMS": 0,
-        f"{prefix}-MIN_NUM_FORMS": 0,
-        f"{prefix}-MAX_NUM_FORMS": max_num,
-    }
 
 
 def _verification_saved(response):
