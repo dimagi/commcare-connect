@@ -3,9 +3,11 @@
 Reset is cleanup, not simulation, so it deletes rows directly. Several of the relations it walks are
 ``PROTECT`` or ``DO_NOTHING``, so it deletes the referring rows first rather than relying on the cascade.
 
-It only deletes what the named organizations own. Before deleting anything it refuses, with ``ResetBlocked``,
-when another organization's opportunity hangs off them (through their program, their supervision or their apps),
-or when a protected record such as a solicitation still points at them.
+It only deletes what the named organizations own, their solicitations included. Before deleting anything it
+refuses, with ``ResetBlocked``, when another organization's opportunity hangs off them (through their program,
+their supervision or their apps), when another organization has applied to one of their solicitations, or when
+another protected record still points at them, such as another organization's solicitation linked to their
+program.
 
 Users are kept: the admins existed before the scenario, and worker users are matched by phone number when a
 scenario invites them again, as ConnectID users would be.
@@ -32,6 +34,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 
 # How another organization's opportunity can hang off the organizations being reset.
 OUTSIDE_DEPENDENCIES = (
@@ -54,6 +57,7 @@ def reset_orgs(org_names, log=print):
         return
     programs = Program.objects.filter(organization__in=orgs)
     _refuse_outside_opportunities(orgs)
+    _refuse_outside_applications(orgs)
     for org in orgs:
         log(f"Deleting organization {org.name} ({org.slug})")
     try:
@@ -74,6 +78,24 @@ def _refuse_outside_opportunities(orgs):
         raise ResetBlocked(
             f"Not resetting {_names(orgs)}: opportunities of other organizations depend on their programs or apps: "
             f"{listed}. Nothing was deleted."
+        )
+
+
+def _refuse_outside_applications(orgs):
+    """Deleting a solicitation deletes its applications, which belong to the organizations that applied."""
+    outside = (
+        SolicitationApplication.objects.filter(solicitation__organization__in=orgs)
+        .exclude(organization__in=orgs)
+        .select_related("organization", "solicitation")
+    )
+    if outside:
+        listed = ", ".join(
+            f"{application.organization.slug} to {application.solicitation.title} (id {application.pk})"
+            for application in outside
+        )
+        raise ResetBlocked(
+            f"Not resetting {_names(orgs)}: other organizations applied to their solicitations: {listed}. "
+            "Nothing was deleted."
         )
 
 
@@ -98,6 +120,8 @@ def _delete(orgs, programs):
     accesses.delete()
     opportunities.delete()
     ProgramApplication.objects.filter(Q(program__in=programs) | Q(organization__in=orgs)).delete()
+    # Before programs and organizations, which it protects; its criteria, questions and invitations cascade.
+    Solicitation.objects.filter(organization__in=orgs).delete()
     programs.delete()
     Organization.objects.filter(pk__in=[org.pk for org in orgs]).delete()
 

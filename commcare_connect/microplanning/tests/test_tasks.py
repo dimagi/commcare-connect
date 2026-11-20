@@ -719,7 +719,8 @@ def test_import_work_areas_task_bom_csv(opportunity):
 
 @pytest.mark.django_db
 def test_import_work_areas_task_adds_to_existing_work_areas(opportunity):
-    WorkAreaFactory(opportunity=opportunity, boundary=square(10, 10))
+    # A fixed slug: the factory's "area-{n}" sequence can produce the uploaded row's "area-1"
+    WorkAreaFactory(opportunity=opportunity, slug="existing-area", boundary=square(10, 10))
     file_name = "test-add-upload.csv"
     default_storage.save(file_name, ContentFile(f"{WA_BASE_HEADER}\n{WA_ROW.format(n=1)}\n".encode()))
 
