@@ -1,0 +1,19 @@
+{# The header that opens and closes a sidebar group. The enclosing element holds the group's `open` state. #}
+{# Hidden in the collapsed sidebar, where its icon would read as one more link. #}
+<button type="button"
+        x-show="sidebarOpen"
+        x-cloak
+        class="flex w-full rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300"
+        @click="open = !open"
+        :aria-expanded="open.toString()">
+  <div class="flex items-center justify-center w-8 h-8">
+    <i class="fa-solid fa-{{ icon }}" aria-hidden="true"></i>
+  </div>
+  <div class="transition-all duration-300 overflow-hidden flex items-center justify-between"
+       :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
+    <span class="text-xs whitespace-nowrap">{{ name }}</span>
+    <i class="fa-solid fa-chevron-down text-xs transition-transform"
+       :class="open && 'rotate-180'"
+       aria-hidden="true"></i>
+  </div>
+</button>
