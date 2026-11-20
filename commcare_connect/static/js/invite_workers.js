@@ -5,7 +5,9 @@ import TagInput from './tag_input';
 
 // E.164 allows at most 15 digits including the country code. The lower bound catches a
 // country code on its own, such as "+27".
-const PHONE_NUMBER = /^\+\d{7,15}$/;
+// Matches the server: '+' followed by digits only, with no separate length bound enforced
+// here beyond the DB column (max_length=15, including the '+').
+const PHONE_NUMBER = /^\+\d{1,14}$/;
 
 // People write numbers as "+27 82 123-4567" or "+1 (555) 123 4567"; the server accepts digits only.
 function normalizePhoneNumber(value) {
