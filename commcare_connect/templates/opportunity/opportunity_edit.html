@@ -5,6 +5,11 @@
 {% load tailwind_filters %}
 {% load i18n %}
 {% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% static 'bundles/js/invite_workers-bundle.js' %}" defer></script>
+{% endblock javascript %}
 {% block breadcrumbs_inner %}
   {{ block.super }}
   <li class="breadcrumb-item">

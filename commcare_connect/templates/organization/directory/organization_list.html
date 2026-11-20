@@ -1,5 +1,10 @@
 {% extends "organization/directory/listing_base.html" %}
-{% load i18n %}
+{% load i18n static %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% static 'bundles/js/organization_profile-bundle.js' %}" defer></script>
+{% endblock javascript %}
 {% block title %}
   {% translate "Organizations" %}
 {% endblock title %}

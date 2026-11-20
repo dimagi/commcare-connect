@@ -1380,7 +1380,7 @@ def opportunity_user_invite(request, org_slug=None, opp_id=None):
         return redirect("opportunity:detail", request.org.slug, opp_id)
     return render(
         request,
-        "components/form.html",
+        "opportunity/user_invite.html",
         dict(title=f"{request.org.slug} - {request.opportunity.name}", form_title="Invite Connect Workers", form=form),
     )
 
