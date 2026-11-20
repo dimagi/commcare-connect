@@ -326,14 +326,25 @@ class DeliveryProgressSerializer(serializers.Serializer):
     payments = serializers.SerializerMethodField()
     max_payments = serializers.SerializerMethodField()
     payment_accrued = serializers.IntegerField()
-    end_date = serializers.DateField(source="opportunityclaim.end_date")
+    end_date = serializers.SerializerMethodField()
     assigned_tasks = serializers.SerializerMethodField()
 
+    @staticmethod
+    def _get_claim(obj):
+        # The access may not have been claimed yet (e.g. the user is still in the learn phase)
+        return getattr(obj, "opportunityclaim", None)
+
+    def get_end_date(self, obj):
+        claim = self._get_claim(obj)
+        if claim is None:
+            return None
+        return serializers.DateField().to_representation(claim.end_date)
+
     def get_max_payments(self, obj):
-        return (
-            obj.opportunityclaim.opportunityclaimlimit_set.aggregate(max_visits=Sum("max_visits")).get("max_visits", 0)
-            or -1
-        )
+        claim = self._get_claim(obj)
+        if claim is None:
+            return -1
+        return claim.opportunityclaimlimit_set.aggregate(max_visits=Sum("max_visits")).get("max_visits", 0) or -1
 
     def get_payments(self, obj):
         return PaymentSerializer(obj.payment_set.all(), many=True).data
