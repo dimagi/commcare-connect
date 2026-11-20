@@ -153,8 +153,10 @@ class TestBillToAddressViews:
                 reverse("users:bill_to_address_update", args=[address.pk]), _data(), HTTP_HX_REQUEST="true"
             )
         sql = [q["sql"] for q in queries.captured_queries]
-        lock = next(i for i, q in enumerate(sql) if "FOR UPDATE" in q and "billtoaddress" in q)
-        in_use_check = next(i for i, q in enumerate(sql) if "opportunity_paymentinvoice" in q)
+        lock = next((i for i, q in enumerate(sql) if "FOR UPDATE" in q and "billtoaddress" in q), None)
+        in_use_check = next((i for i, q in enumerate(sql) if "opportunity_paymentinvoice" in q), None)
+        assert lock is not None, "expected a locking SELECT ... FOR UPDATE on billtoaddress"
+        assert in_use_check is not None, "expected a query referencing opportunity_paymentinvoice"
         assert lock < in_use_check
 
     @pytest.mark.parametrize(
