@@ -16,7 +16,7 @@ The opportunity app is the core domain of Connect. It manages paid programs wher
 - **AssignedTask** — Tracks completion of individual tasks by a user (assigned → completed).
 - **Payment** — A confirmed payment to a user for approved work.
 - **PaymentInvoice** — An invoice for an opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
-- **BilledEntity** — An entity invoices are billed to (`PaymentInvoice.bill_to`, `PROTECT`). Exactly one active default always exists (seeded as Dimagi, Inc.), and new invoices without a choice get it.
+- **BilledEntity** — An entity invoices are billed to (`PaymentInvoice.bill_to`, `PROTECT`). Exactly one active default always exists (seeded as Dimagi, Inc.), and new invoices without a choice get it. Once an invoice uses an entity, its name and address are frozen. Managed on Internal Features: used entities can only be deactivated, unused ones can be edited or deleted, and the default can't be deactivated or deleted. The default moves with the list's Make default button.
 
 ## User Journey
 
