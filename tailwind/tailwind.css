@@ -429,7 +429,8 @@
     @apply flex items-center gap-0.5 pr-0.5;
   }
 
-  .breadcrumb li a {
+  .breadcrumb li a,
+  .breadcrumb li span {
     @apply text-xs;
   }
 

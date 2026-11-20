@@ -174,6 +174,9 @@ class SolicitationApplication(BaseModel):
         REJECTED = "rejected", _("Rejected")
         WITHDRAWN = "withdrawn", _("Withdrawn")
 
+    # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
+    NON_RESPONSE_STATUSES = (Status.DRAFT, Status.WITHDRAWN)
+
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
     # The applying organization is the application's key, matching the

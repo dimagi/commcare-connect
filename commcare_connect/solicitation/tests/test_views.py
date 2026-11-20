@@ -24,7 +24,7 @@ from commcare_connect.solicitation.tests.factories import (
     SolicitationQuestionFactory,
     SolicitationReviewerFactory,
 )
-from commcare_connect.solicitation.views import SolicitationListView
+from commcare_connect.solicitation.views.management import SolicitationListView
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 Status = SolicitationApplication.Status

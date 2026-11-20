@@ -1,7 +1,11 @@
 <ul class="breadcrumb">
   {% for data in path %}
     <li>
-      <a href="{{ data.url }}">{{ data.title }}</a>
+      {% if data.url %}
+        <a href="{{ data.url }}">{{ data.title }}</a>
+      {% else %}
+        <span>{{ data.title }}</span>
+      {% endif %}
       <i class="fa-solid fa-chevron-right"></i>
     </li>
   {% endfor %}
