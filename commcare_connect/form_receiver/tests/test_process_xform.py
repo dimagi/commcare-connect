@@ -9,6 +9,7 @@ from commcare_connect.form_receiver.processor import (
     ASSESSMENT_JSONPATH,
     _get_matching_blocks,
     check_visit_over_limit,
+    get_or_create_learn_module,
     process_assessments,
     process_deliver_form,
     process_learn_form,
@@ -31,7 +32,11 @@ from commcare_connect.opportunity.models import (
     PaymentUnit,
     TaskType,
 )
-from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityAccessFactory
+from commcare_connect.opportunity.tests.factories import (
+    CommCareAppFactory,
+    LearnModuleFactory,
+    OpportunityAccessFactory,
+)
 
 LEARN_PROCESSOR_PATCHES = [
     "commcare_connect.form_receiver.processor.process_learn_modules",
@@ -319,3 +324,12 @@ def test_check_visit_over_limit(claim_end_date, claim_limit_end_date, max_daily,
     )
     assert is_over_limit == bool(expected_reasons)
     assert reasons == expected_reasons
+
+
+@pytest.mark.django_db
+def test_get_or_create_learn_module_skips_estimates_for_existing_module(caplog):
+    module = LearnModuleFactory(time_estimate=1, time_estimate_minutes=10)
+    module_data = LearnModuleJsonFactory(id=module.slug, time_estimate=1, time_estimate_minutes=150).json["module"]
+
+    assert get_or_create_learn_module(module.app, module_data) == module
+    assert caplog.text == ""

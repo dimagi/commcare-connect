@@ -280,9 +280,11 @@ class DeliverUnitResponseSerializer(serializers.ModelSerializer):
 
 
 class LearnModuleResponseSerializer(serializers.ModelSerializer):
+    time_estimate_minutes = serializers.IntegerField(source="estimated_minutes", read_only=True)
+
     class Meta:
         model = LearnModule
-        fields = ["id", "slug", "name", "description", "time_estimate"]
+        fields = ["id", "slug", "name", "description", "time_estimate", "time_estimate_minutes"]
 
 
 class ProgramOpportunityResponseSerializer(serializers.ModelSerializer):

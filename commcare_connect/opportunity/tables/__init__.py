@@ -662,6 +662,7 @@ class LearnModuleTable(tables.Table):
     index = IndexColumn()
     name = tables.Column(verbose_name=_("Module Name"))
     description = tables.Column(verbose_name=_("Module Description"))
+    time_estimate = tables.Column(verbose_name=_("Time Estimate"), accessor="estimated_minutes")
 
     class Meta:
         model = LearnModule
@@ -670,7 +671,12 @@ class LearnModuleTable(tables.Table):
         empty_text = "No Learn Module for this opportunity."
 
     def render_time_estimate(self, value):
-        return f"{value}hr"
+        hours, minutes = divmod(value, 60)
+        if not hours:
+            return _("%(minutes)s min") % {"minutes": minutes}
+        if not minutes:
+            return _("%(hours)s hr") % {"hours": hours}
+        return _("%(hours)s hr %(minutes)s min") % {"hours": hours, "minutes": minutes}
 
 
 class DeliverUnitTable(tables.Table):

@@ -98,6 +98,7 @@ class LearnModuleFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     time_estimate = Faker("pyint", min_value=1, max_value=10)
+    time_estimate_minutes = LazyAttribute(lambda o: o.time_estimate * 60)
 
     class Meta:
         model = "opportunity.LearnModule"

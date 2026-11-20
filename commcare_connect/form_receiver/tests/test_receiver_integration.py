@@ -83,11 +83,25 @@ def test_form_receiver_learn_module(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "hours, minutes, expected_hours, expected_minutes",
+    [
+        (2, None, 2, 120),  # legacy form, hours only
+        (1, 25, 1, 25),
+        (None, 90, 2, 90),  # minutes only
+    ],
+)
 def test_form_receiver_learn_module_create(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    hours,
+    minutes,
+    expected_hours,
+    expected_minutes,
 ):
     """Test that a new learn module is created if it doesn't exist."""
-    module = LearnModuleJsonFactory()
+    module = LearnModuleJsonFactory(time_estimate=hours, time_estimate_minutes=minutes)
     oauth_application = opportunity.hq_server.oauth_application
     form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
     assert CompletedModule.objects.count() == 0
@@ -106,7 +120,8 @@ def test_form_receiver_learn_module_create(
         slug=module.id,
         name=module.name,
         description=module.description,
-        time_estimate=module.time_estimate,
+        time_estimate=expected_hours,
+        time_estimate_minutes=expected_minutes,
     ).exists()
 
 
