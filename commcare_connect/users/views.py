@@ -21,7 +21,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import FormView, RedirectView, UpdateView, View
+from django.views.generic import FormView, RedirectView, TemplateView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -45,10 +45,11 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import DeliveryTypeTable
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.organization.forms import PrimarySectorForm
-from commcare_connect.organization.models import PrimarySector
+from commcare_connect.organization.models import Organization, PrimarySector
 from commcare_connect.organization.tables import PrimarySectorTable
 from commcare_connect.program.models import Program
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.users.helpers import CURRENT_ORG_SESSION_KEY
 from commcare_connect.users.managed_options import (
     ManagedOptionCreateView,
     ManagedOptionDeleteView,
@@ -94,8 +95,12 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
     permanent = False
 
     def get_redirect_url(self):
-        if not self.request.user.memberships.exists():
+        memberships = self.request.user.memberships.count()
+        if not memberships:
             return reverse("no_organization")
+        # Right after logging in no organization is remembered yet, so someone in several picks one.
+        if memberships > 1 and not self.request.session.get(CURRENT_ORG_SESSION_KEY):
+            return reverse("users:select_organization")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
@@ -103,6 +108,30 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
 
 user_redirect_view = UserRedirectView.as_view()
+
+
+class SelectOrganizationView(LoginRequiredMixin, TemplateView):
+    """Asks someone in several organizations which one to work in, then opens it."""
+
+    template_name = "account/select_organization.html"
+
+    def get(self, request, *args, **kwargs):
+        organizations = Organization.objects.filter(members=request.user).order_by("name")
+        if len(organizations) < 2:
+            return redirect("users:redirect")
+        slug = request.GET.get("organization")
+        if slug and any(organization.slug == slug for organization in organizations):
+            return redirect("opportunity:list", org_slug=slug)
+        return self.render_to_response(
+            self.get_context_data(
+                organizations=organizations,
+                heading=_("Choose the organization you want to work in"),
+                description=_(
+                    "You belong to more than one organization. "
+                    "You can switch to another one later from the menu at the top of each page."
+                ),
+            )
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")

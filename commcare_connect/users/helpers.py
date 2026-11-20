@@ -12,18 +12,33 @@ from commcare_connect.utils.error_codes import ErrorCodes
 logger = logging.getLogger(__name__)
 
 
+# The organization the user last opened, for pages whose URL names none, such as the marketplace.
+CURRENT_ORG_SESSION_KEY = "current_org_slug"
+
+
 def get_organization_for_request(request, view_kwargs):
+    """The organization the URL names; on other pages, the one the user last opened, or else their first."""
     if not request.user.is_authenticated:
         return
 
+    session = getattr(request, "session", None)  # API requests authenticated by token may have none
     org_slug = view_kwargs.get("org_slug", None)
     if org_slug:
         try:
-            return Organization.objects.get(slug=org_slug)
+            organization = Organization.objects.get(slug=org_slug)
         except Organization.DoesNotExist:
             return None
+        # Only written when it changes, so the session isn't saved on every request.
+        if session is not None and session.get(CURRENT_ORG_SESSION_KEY) != organization.slug:
+            session[CURRENT_ORG_SESSION_KEY] = organization.slug
+        return organization
 
-    membership = request.user.memberships.select_related("organization").first()
+    memberships = request.user.memberships.select_related("organization")
+    # The user may have left the organization since, so it is looked up among their memberships.
+    remembered_slug = session.get(CURRENT_ORG_SESSION_KEY) if session is not None else None
+    membership = (remembered_slug and memberships.filter(organization__slug=remembered_slug).first()) or (
+        memberships.first()
+    )
     return membership.organization if membership else None
 
 

@@ -1,0 +1,22 @@
+{% extends "account/base.html" %}
+{% load i18n %}
+{% block head_title %}
+  {% translate "Choose an organization" %}
+{% endblock head_title %}
+{% block inner %}
+  {# Shown right after logging in, so it keeps the login page's layout rather than the app's. #}
+  <div class="w-full min-h-[620px] h-fit">
+    {# Sends the chosen slug back to the current page as ?organization=<slug>. #}
+    <form method="get" class="flex flex-col gap-3">
+      <label class="title-sm" for="id_organization">{{ heading }}</label>
+      <p class="card_description">{{ description }}</p>
+      <select id="id_organization" name="organization" class="base-input" required>
+        <option value="">{% translate "Select an organization" %}</option>
+        {% for option in organizations %}<option value="{{ option.slug }}">{{ option.name }}</option>{% endfor %}
+      </select>
+      <div>
+        <button type="submit" class="button button-md primary-dark">{% translate "Continue" %}</button>
+      </div>
+    </form>
+  </div>
+{% endblock inner %}
