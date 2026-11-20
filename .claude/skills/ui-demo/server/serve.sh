@@ -2,8 +2,8 @@
 # serve.sh [port] — start the commcare-connect dev server with demo settings, in the background.
 # Idempotent. Run from the task folder; logs to ./output/server.log. Stop with: serve.sh stop [port]
 set -u
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(git -C "$SKILL_DIR" rev-parse --show-toplevel)"
+SERVER_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(git -C "$SERVER_DIR" rev-parse --show-toplevel)"
 PORT="${1:-8010}"
 mkdir -p output
 
@@ -27,7 +27,7 @@ source .venv/bin/activate || { echo "no .venv in $REPO — run: uv sync"; exit 1
 
 # Static files need no collectstatic: record_settings serves them from the source folders (see its docstring).
 # Every email the server sends lands in this task's output/mail/, where runner.mjs shows it on camera.
-UI_DEMO_MAIL_DIR="$TASK_DIR/output/mail" PYTHONPATH="$SKILL_DIR" DJANGO_SETTINGS_MODULE=record_settings \
+UI_DEMO_MAIL_DIR="$TASK_DIR/output/mail" PYTHONPATH="$SERVER_DIR" DJANGO_SETTINGS_MODULE=record_settings \
   nohup ./manage.py runserver "$PORT" > "$TASK_DIR/output/server.log" 2>&1 &
 cd "$TASK_DIR"
 

@@ -20,7 +20,7 @@ def schedule_voiceover(out_dir, tmap, intro):
     are added in time order, so earlier placements never move."""
     vo_path = out_dir / "voiceover.json"
     if not vo_path.exists():
-        sys.exit('--voiceover needs output/voiceover.json: run `uv run "$SKILL/narrate.py"` first')
+        sys.exit('--voiceover needs output/voiceover.json: run `uv run "$SKILL/voiceover/narrate.py"` first')
     lines = sorted(json.loads(vo_path.read_text())["lines"], key=lambda ln: (ln["holdAt"], ln["anchor"]))
     placed, clock = [], -LINE_GAP_S
     for i, line in enumerate(lines):

@@ -24,8 +24,8 @@ re-voices only that line. The first run installs torch into uv's own cached envi
 Chatterbox weights (~3.2 GB). Runs on an NVIDIA GPU, then Apple's GPU, else the CPU (much slower).
 
 Usage, from the task folder:
-  uv run "$SKILL/narrate.py" [--task DIR] [--voice ref.wav] [--exaggeration 0.5] [--cfg-weight 0.5] [--tempo 0.9]
-                             [--fresh]
+  uv run "$SKILL/voiceover/narrate.py" [--task DIR] [--voice ref.wav] [--exaggeration 0.5] [--cfg-weight 0.5]
+                                       [--tempo 0.9] [--fresh]
 """
 
 import argparse

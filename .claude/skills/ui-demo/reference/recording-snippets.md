@@ -31,7 +31,7 @@ await page.screencast.showOverlay(
 ## `render.py` — Post-Process
 
 ```bash
-R="../venv/bin/python $SKILL/render.py"   # from the task folder, <repo>/.ui-demo/<task>/
+R="../venv/bin/python $SKILL/render/render.py"   # from the task folder, <repo>/.ui-demo/<task>/
 $R                       # final.mp4 + poster.png + render.json (frame on, captions on, x264)
 $R --voiceover           # mix output/voiceover.json from narrate.py instead of captions (SKILL.md §5a)
 $R --fast                # quick preview (VideoToolbox on macOS, libx264 ultrafast elsewhere) while iterating captions

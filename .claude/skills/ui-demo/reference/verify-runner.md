@@ -19,11 +19,11 @@ Steps are data. Each step:
 - `showEmail` — `false` skips the demo inbox after this step (SKILL.md §2), e.g. when the next step opens the email itself with `d.openEmail` to click its link.
 - `say` — voiceover only: `{ intent, outcome }`, spoken from `actionStart` and from `actionEnd`; `null` mutes either line. `INTRO`/`OUTRO` take `say` as a plain string, spoken over the card. Copied into `steps.json` for `narrate.py`; wording rules in SKILL.md §2.
 
-Runnable examples: `flow.feature-example.mjs` (signed in off camera) and `flow.example.mjs` (login on camera), in this skill's folder.
+Runnable examples: `flow.feature-example.mjs` (signed in off camera) and `flow.example.mjs` (login on camera), in this skill's `flow/` folder.
 
 ## Runner
 
-The runner is **`runner.mjs`** in this skill's folder (copy it next to `flow.mjs`; don't paste its code into flows). A flow file is:
+The runner is **`runner.mjs`** in this skill's `flow/` folder (copy it next to `flow.mjs`; don't paste its code into flows). A flow file is:
 
 ```js
 import { run, expect } from './runner.mjs';

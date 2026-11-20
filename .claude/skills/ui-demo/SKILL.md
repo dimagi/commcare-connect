@@ -33,7 +33,7 @@ Capture is `page.screencast` — never MCP's `browser_video_*` tools (tool round
 
 Run `preflight.sh` first (Node 20+, Python 3 venv, ffmpeg with libx264, the repo's `.venv`, a display for the headed Record Pass); it prints what to install. Playwright ≥1.61 is required (`showOverlay`) and is installed by the block below. **On Linux**, Chromium also needs its system libraries once: `sudo npx playwright install-deps chromium` (needs sudo, so the user runs it; preflight warns when they look missing). Captions there use DejaVu Sans, as Helvetica Neue is macOS-only.
 
-Kick off `$SKILL/serve.sh` and `$SKILL/reseed.sh` in the background _before_ reading any code, and draft `flow.mjs` while they run. `curl` readiness right before the first Verify Run.
+Kick off `$SKILL/server/serve.sh` and `$SKILL/data/reseed.sh` in the background _before_ reading any code, and draft `flow.mjs` while they run. `curl` readiness right before the first Verify Run.
 
 The workspace is persistent at `<repo>/.ui-demo/`, git-ignored by its own `.gitignore` (`*`): shared `node_modules/` + `venv/` at the root, one subfolder per task (ticket ID verbatim, else a short kebab-case slug) holding `flow.mjs`, the copied `runner.mjs` + `connect.mjs`, and `output/` (`raw.mp4`, `steps.json` durable; `report.json`, `state.json`, `mail/`, `final.mp4`, `poster.png`, `render.json` derived). Every other script runs in place from `$SKILL`.
 
@@ -51,9 +51,9 @@ if [ ! -d "$RECORD_DIR/node_modules" ]; then
 fi
 (cd "$RECORD_DIR" && npx playwright install chromium)   # no-op when present
 mkdir -p "$TASK_DIR/output" && cd "$TASK_DIR"
-cp "$SKILL"/{runner.mjs,connect.mjs} .   # copied, not run in place: Node resolves `playwright` from the file's own folder
-[ -f flow.mjs ] || cp "$SKILL/flow.feature-example.mjs" flow.mjs   # signed in off camera; flow.example.mjs when signing in is the story
-"$SKILL/serve.sh" 8010 && "$SKILL/reseed.sh"   # runserver (DEBUG off, email → demo inbox), realistic data
+cp "$SKILL"/flow/{runner.mjs,connect.mjs} .   # copied, not run in place: Node resolves `playwright` from the file's own folder
+[ -f flow.mjs ] || cp "$SKILL/flow/flow.feature-example.mjs" flow.mjs   # signed in off camera; flow.example.mjs when signing in is the story
+"$SKILL/server/serve.sh" 8010 && "$SKILL/data/reseed.sh"   # runserver (DEBUG off, email → demo inbox), realistic data
 ```
 
 **Recording a branch you don't have checked out.** `serve.sh` and `reseed.sh` run the code of the checkout `$SKILL` sits in, so serve the branch from a throwaway worktree and keep the task folder under `$REPO/.ui-demo/`:
@@ -75,13 +75,13 @@ The worktree shares your DB. Compare its `./manage.py showmigrations` with the D
 
 `seed.py` provides the **Child Health Campaign** workspace and people whose name and email say their role (Asha Admin, Isha Invitee, …), so no legend is needed. Who's who, the other workspaces and the password: `reference/connect.md`.
 
-Feature data (programs, opportunities, workers, visits, payments, invoices) is built through the app by a simulation scenario (`commcare_connect/simulation/README.md`) wherever it has steps for the area: `$SKILL/reseed.sh <scenario>` reseeds and then rebuilds that scenario with Asha as admin, so every take starts from the same state. The standard scenarios name their orgs `Sim <Scenario> PM`/`NM`, which reads as test data on camera; for a recording, write a personal scenario in `commcare_connect/simulation/scenarios/local/` (git-ignored) from the existing steps with realistic names (programme names in `reference/connect.md`). For an area with no simulation steps yet (solicitations, tasks, microplanning, audit, reports), write a task-local `seed_extra.py` instead: `reseed.sh` runs it from the task folder after the seed and any scenario, so it must delete its own rows before recreating them.
+Feature data (programs, opportunities, workers, visits, payments, invoices) is built through the app by a simulation scenario (`commcare_connect/simulation/README.md`) wherever it has steps for the area: `$SKILL/data/reseed.sh <scenario>` reseeds and then rebuilds that scenario with Asha as admin, so every take starts from the same state. The standard scenarios name their orgs `Sim <Scenario> PM`/`NM`, which reads as test data on camera; for a recording, write a personal scenario in `commcare_connect/simulation/scenarios/local/` (git-ignored) from the existing steps with realistic names (programme names in `reference/connect.md`). For an area with no simulation steps yet (solicitations, tasks, microplanning, audit, reports), write a task-local `seed_extra.py` instead: `reseed.sh` runs it from the task folder after the seed and any scenario, so it must delete its own rows before recreating them.
 
 Never `test123`, `example.com`, `uitest.local` — viewers translate "demo/test" into "fake"; the runner warns when such tokens are visible in checkpoints.
 
 ## 2. Draft `flow.mjs` from source
 
-`import { run, expect } from './runner.mjs'`, the Connect helpers (`import * as c from './connect.mjs'`), then `INTRO`, `OUTRO`, `STEPS`, `await run({...}, import.meta.url)`. Schema in `reference/verify-runner.md`; working examples in this skill's folder (`flow.feature-example.mjs` signed in off camera, `flow.example.mjs` login on camera).
+`import { run, expect } from './runner.mjs'`, the Connect helpers (`import * as c from './connect.mjs'`), then `INTRO`, `OUTRO`, `STEPS`, `await run({...}, import.meta.url)`. Schema in `reference/verify-runner.md`; working examples in this skill's `flow/` folder (`flow.feature-example.mjs` signed in off camera, `flow.example.mjs` login on camera).
 
 - **Start where the feature starts.** Sign in off camera with `preAuth: (p) => c.quickLogin(p, c.USERS.admin)` and open the feature page as `firstUrl`. Put login in `STEPS` only when signing in is the story (auth, invites, permissions).
 - **Merge setup-only clicks** into one step; the viewer needs outcomes, not every click.
@@ -99,7 +99,7 @@ Never `test123`, `example.com`, `uitest.local` — viewers translate "demo/test"
 `node flow.mjs` — headless, no video, prints `report.json`.
 
 - **On failure:** fix from the report's assertion error, URL/title, `ariaSnapshot`, console errors and failed requests, then re-run. `preAuth` is reused via `state.json` (`useState: false` for flows that sign in on camera or switch identity); `--from=<step>` resumes only when earlier steps have no needed side effects.
-- **On a clean report:** start `$SKILL/reseed.sh` (with the task's scenario, if any) in the background, then read each `checkpoint` snapshot (right data, right values, no error banners) and `report.warnings` — step-count, caption-length and test-data warnings are demo-quality defects; fix before recording. If you fix and re-verify, reseed again.
+- **On a clean report:** start `$SKILL/data/reseed.sh` (with the task's scenario, if any) in the background, then read each `checkpoint` snapshot (right data, right values, no error banners) and `report.warnings` — step-count, caption-length and test-data warnings are demo-quality defects; fix before recording. If you fix and re-verify, reseed again.
 
 Exit criteria: clean report + checkpoints reviewed + no unexpected console errors/failed requests + no unaccepted warnings.
 
@@ -110,8 +110,8 @@ Exit criteria: clean report + checkpoints reviewed + no unexpected console error
 ## 5. Post-Process
 
 ```bash
-../venv/bin/python "$SKILL/render.py"            # final.mp4 + poster.png + render.json, from ./output
-../venv/bin/python "$SKILL/render.py" --fast     # preview encode while iterating captions
+../venv/bin/python "$SKILL/render/render.py"          # final.mp4 + poster.png + render.json, from ./output
+../venv/bin/python "$SKILL/render/render.py" --fast   # preview encode while iterating captions
 ```
 
 Defaults: 1920×1200, spotlight on, intent pills + captions, dark device frame, 30 fps, `libx264 -crf 19`, 10 MB budget with one automatic `crf+3` retry. Flags and details: `reference/recording-snippets.md`. Caption wording lives in `steps.json`.
@@ -120,8 +120,8 @@ Defaults: 1920×1200, spotlight on, intent pills + captions, dark device frame, 
 
 ```bash
 "$SKILL/preflight.sh" --voiceover
-uv run "$SKILL/narrate.py"                              # output/vo/*.wav + output/voiceover.json
-../venv/bin/python "$SKILL/render.py" --voiceover       # same flags as §5; captions and intent pills off
+uv run "$SKILL/voiceover/narrate.py"                      # output/vo/*.wav + output/voiceover.json
+../venv/bin/python "$SKILL/render/render.py" --voiceover  # same flags as §5; captions and intent pills off
 ```
 
 - `narrate.py` is a uv inline script: Chatterbox, on an NVIDIA GPU (CUDA) or Apple's GPU (MPS) when there is one, else the CPU — much slower, so a laptop without a GPU takes a while. Defaults: built-in voice, exaggeration 0.5, cfg 0.5, **tempo 0.9**, a little slower than speech so a viewer can follow the clicks. `--voice ref.wav` clones a voice from 5–9 s of clean speech.
@@ -137,7 +137,7 @@ Check `render.json` (`duration_s` plausible vs. Record Pass wall-clock, `over_bu
 
 ## 7. Cleanup & deliver
 
-After the Spot-Check passes: delete seeded/test rows the flow created, `output/fail-*.png`, servers started for this recording (`$SKILL/serve.sh stop <port>`, confirm down with `curl`), and stray `.playwright-mcp/`. Keep shared tooling and every task's `flow.mjs` and durable pair. `git status --porcelain` should show nothing from `.ui-demo/`.
+After the Spot-Check passes: delete seeded/test rows the flow created, `output/fail-*.png`, servers started for this recording (`$SKILL/server/serve.sh stop <port>`, confirm down with `curl`), and stray `.playwright-mcp/`. Keep shared tooling and every task's `flow.mjs` and durable pair. `git status --porcelain` should show nothing from `.ui-demo/`.
 
 Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `poster.png` where a still is enough. Mention duration and step count in one line.
 
@@ -148,4 +148,4 @@ Deliver `final.mp4` (plays inline on Slack, Jira, Confluence, GitHub), plus `pos
 - `reference/troubleshooting.md` — MCP unavailable, blocked verification, corrupted recording, TomSelect, zsh gotcha.
 - `reference/learnings.md` — measured findings behind the rules.
 - `reference/connect.md` — the seeded people, `connect.mjs` helpers, commcare-connect gotchas.
-- Skill folder — `connect.mjs`, `seed.py`, `record_settings.py`, `demo_mail.py` + `demo_urls.py` + `templates/` (the demo inbox), `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `reseed.sh [scenario]`, `render.py` + its `render_*.py` modules (Post-Process), `narrate.py` (voiceover), example flows.
+- Skill folder — `preflight.sh`; `server/`: `serve.sh` (port check, DEBUG off, static files without collectstatic, readiness wait), `record_settings.py`, `demo_mail.py` + `demo_urls.py` + `templates/` (the demo inbox); `data/`: `seed.py`, `reseed.sh [scenario]`; `flow/`: `runner.mjs`, `connect.mjs` and the example flows, copied into the task folder; `render/`: `render.py` + its `render_*.py` modules (Post-Process); `voiceover/`: `narrate.py`.
