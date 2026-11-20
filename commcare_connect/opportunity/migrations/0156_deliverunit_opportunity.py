@@ -74,7 +74,7 @@ WHERE du.id = ranked.id AND ranked.rank = 1
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0154_remove_opportunity_managed"),
+        ("opportunity", "0155_drop_opportunity_managed_column"),
     ]
 
     operations = [
