@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load render_table from django_tables2 %}
+{% block title %}
+  {% translate "My applications" %}
+{% endblock title %}
+{% block content %}
+  <div class="flex flex-col gap-2 w-full">
+    <div class="flex flex-wrap items-center justify-between gap-3 w-full px-4 py-2 bg-slate-50 rounded-lg shadow-sm min-h-14">
+      <h1 class="text-sm text-brand-deep-purple">{% translate "My applications" %}</h1>
+      <div class="flex flex-wrap items-center gap-3">
+        {% include "solicitation/partials/table_filter.html" %}
+        <a class="button button-md outline-style"
+           href="{% url 'marketplace:list' %}">{% translate "Find solicitations" %}</a>
+      </div>
+    </div>
+    <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+  </div>
+{% endblock content %}

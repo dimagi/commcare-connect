@@ -61,6 +61,7 @@ received_application_urlpatterns = [
 
 # An applying organization's own applications, scoped to the organization.
 my_application_urlpatterns = [
+    path("", view=my_applications.MyApplicationsView.as_view(), name="list"),
     path("<uuid:application_id>/", view=my_applications.MyApplicationDetailView.as_view(), name="detail"),
     path(
         "<uuid:application_id>/withdraw/",

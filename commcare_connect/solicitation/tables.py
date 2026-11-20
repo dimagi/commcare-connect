@@ -184,3 +184,24 @@ class ReceivedApplicationTable(tables.Table):
 
     class Meta:
         empty_text = _("Your solicitations haven't received any applications yet.")
+
+
+class MyApplicationTable(tables.Table):
+    """The current organization's applications, as its members follow them."""
+
+    solicitation = columns.Column(
+        verbose_name=_("Solicitation"),
+        accessor="solicitation__title",
+        linkify=lambda record: record.applicant_url,
+        attrs={"a": {"class": "underline"}},
+    )
+    type = columns.Column(verbose_name=_("Type"), accessor="solicitation__type")
+    status = application_status_column()
+    deadline = DMYTColumn(verbose_name=_("Deadline"), accessor="solicitation__application_deadline")
+    submitted_date = DMYTColumn(verbose_name=_("Submitted"))
+
+    class Meta:
+        empty_text = _("Your organization hasn't applied to any solicitations yet.")
+
+    def render_type(self, record):
+        return record.solicitation.get_type_display()
