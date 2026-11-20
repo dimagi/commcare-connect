@@ -18,12 +18,12 @@
 
 - **G1.** A Program Manager can create an opportunity without a Learn app, on the web or through the program automation API.
 - **G2.** A worker on a phone app version that supports it can claim a learn-less opportunity straight from the opportunity intro screen.
-- **G3.** Phone app versions that don't support it keep working: they skip learn-less opportunities and still show the worker's other jobs.
+- **G3.** Phone app versions that don't support it skip learn-less opportunities and, in most cases, still show the worker's other jobs (see [Risks](#risks) for the exception).
 - **G4.** Invite acceptance, reporting and reminders still work without a learning step.
 - **G5.** The web UI only shows learning information where an opportunity has a Learn app. Opportunities that have one don't change.
 - **G6.** The feature can be piloted with chosen organizations and programs before it's available to everyone.
 
-**Solution in brief.** The create form gets a "This opportunity uses a Learn app" toggle, on by default. Turning it off leaves the opportunity's Learn app empty, which the database already allows. The phone API sends learn-less opportunities to every app version, with the learn sections of the opportunity empty. Old app versions discard such a job and show a sync error, while still showing the worker's other jobs. On a learn-less opportunity, claiming the job also accepts the invite, taking over what "Start learning" does today. Workers who haven't claimed get a single reminder. The web pages leave out learning information that doesn't apply, and a feature flag limits who can create learn-less opportunities.
+**Solution in brief.** The create form gets a "This opportunity uses a Learn app" toggle, on by default. Turning it off leaves the opportunity's Learn app empty, which the database already allows. The phone API sends learn-less opportunities to every app version, with the learn sections of the opportunity empty. Old app versions discard such a job and show a sync error. Most still show the worker's other jobs. On a learn-less opportunity, claiming the job also accepts the invite, taking over what "Start learning" does today. Workers who haven't claimed get a single reminder. The web pages leave out learning information that doesn't apply, and a feature flag limits who can create learn-less opportunities.
 
 ## At a glance
 
@@ -74,7 +74,7 @@ One migration adds `claim_reminder_sent_date`. There's no backfill: existing wor
 **Why no new phone API version.** We considered adding API version `3.0` and sending learn-less opportunities only to apps that ask for it, so older apps would never see them. We dropped it for these reasons:
 
 - The mobile team confirmed that current app versions already cope: they discard a job with no Learn app, keep showing the worker's other jobs, and show a sync error.
-- That sync error is useful. Support can tell a worker who needs to update apart from one who wasn't invited by asking whether they see the opportunity. If the job were hidden, the two cases would look the same.
+- That sync error is useful. An invited worker on an old app version gets the invite SMS and push, but the job never appears on their phone: the opportunity list shows a sync error, and opening the invite shows "Opportunity not found". A worker who wasn't invited gets neither, so support can tell the two apart by asking whether they see the sync error or got the invite. Hiding the job from old versions would remove that signal and leave the invite leading nowhere without explanation.
 - No error code the server sends makes older apps tell the worker to update, so a version check couldn't give them a better message either.
 
 ### Behaviour
@@ -116,7 +116,7 @@ sequenceDiagram
   - If the worker taps the invite link or push notification, the phone says the opportunity wasn't found, because the job was never saved.
   - No error code the server could send would make these apps tell the worker to update, so sending the job as it is gives the most useful result.
 
-  The sync error is what tells this case apart from a worker who wasn't invited. Support can ask "Do you see a sync error on the opportunity list?".
+  The sync error and the "Opportunity not found" message after opening the invite are what tell this case apart from a worker who wasn't invited. Support can ask "Did you get an invite, and do you see a sync error on the opportunity list?".
 - "Start learning" is only called from the opportunity intro screen, which current apps never show for a learn-less job, and new apps won't call it for one. As a safeguard, the view returns `400 NO_LEARN_APP` for a learn-less opportunity before it does anything else, so it creates no HQ user and doesn't accept the invite. Today it would fail with a 500 on the missing app.
 
 #### Reminding workers who haven't claimed (G4)
