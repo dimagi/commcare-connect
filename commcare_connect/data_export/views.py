@@ -37,6 +37,7 @@ from commcare_connect.data_export.const import (
 from commcare_connect.data_export.pagination import IdKeysetPagination
 from commcare_connect.data_export.serializer import (
     AssessmentDataSerializer,
+    AssignedTaskCreateSerializer,
     AssignedTaskDataSerializer,
     AuditReportDataSerializer,
     AuditReportEntryDataSerializer,
@@ -64,6 +65,7 @@ from commcare_connect.data_export.serializer import (
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
 from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -86,6 +88,8 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
 from commcare_connect.utils.itertools import batched
+from commcare_connect.utils.oauth_tokens import TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, LLO_ENTITY_INTERNAL_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
@@ -148,6 +152,13 @@ class OpportunityAdminView(OpportunityPermissionMixin, BaseDataWriteView):
     def check_opportunity_permission(self, user):
         super().check_opportunity_permission(user)
         if not user_is_opportunity_admin(user, self.opportunity):
+            raise NotFound()
+
+
+class OpportunityPMView(OpportunityPermissionMixin, BaseDataWriteView):
+    def check_opportunity_permission(self, user):
+        super().check_opportunity_permission(user)
+        if not user_is_opportunity_pm(user, self.opportunity):
             raise NotFound()
 
 
@@ -735,7 +746,9 @@ class TaskTypeDataView(OpportunityDataExportView, BaseDataExportListViewV2):
     serializer_class = TaskTypeDataSerializer
 
     def get_queryset(self, *args, **kwargs):
-        return TaskType.objects.filter(opportunity=self.opportunity)
+        # Same set the create-task UI offers. Task types made before TaskType.opportunity
+        # existed have it NULL, so filtering on it would hide them.
+        return TaskType.objects.filter(app=self.opportunity.deliver_app)
 
 
 class AuditReportDataView(OpportunityDataExportView, BaseDataExportListViewV2):
@@ -770,6 +783,42 @@ class AssignedTaskDataView(OpportunityDataExportView, BaseDataExportListViewV2):
         return AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
             "task_type", "opportunity_access__user"
         )
+
+
+class AssignedTaskCreateView(OpportunityPMView, GenericAPIView):
+    """Assigns a task to a worker, as the Create Task button does. PM admins only, like that button."""
+
+    serializer_class = AssignedTaskCreateSerializer
+
+    @extend_schema(responses={201: AssignedTaskDataSerializer})
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            assigned_task = serializer.save()
+        except TaskAlreadyAssignedError:
+            return Response(
+                {"error": _("This task type is already assigned to this worker.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except TokenRefreshError:
+            return Response(
+                {"error": _("Your Open Chat Studio connection has expired. Reconnect it in Connect and try again.")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except CommCareHQAPIException:
+            logger.exception("HQ update failed assigning a task on opportunity %s", self.opportunity.id)
+            return Response(
+                {"error": _("Task creation failed: could not update CommCare HQ. Please try again.")},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except OcsApiError:
+            logger.exception("Failed to start the OCS session for a task on opportunity %s", self.opportunity.id)
+            return Response(
+                {"error": _("Task creation failed: could not start the chatbot session. Please try again.")},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(AssignedTaskDataSerializer(assigned_task).data, status=status.HTTP_201_CREATED)
 
 
 class WorkAreaGroupDataView(OpportunityDataExportView, BaseDataExportListViewV2):

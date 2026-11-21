@@ -1,5 +1,7 @@
+import datetime
 import itertools
 import json
+import uuid
 from unittest import mock
 
 import pytest
@@ -25,7 +27,7 @@ from commcare_connect.microplanning.tests.factories import (
     square,
 )
 from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
-from commcare_connect.opportunity.models import LabsRecord
+from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, LabsRecord, TaskTypeModeChoices
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     AudioAttachmentFactory,
@@ -38,6 +40,8 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.users.tests.factories import MembershipFactory, OrgWithUsersFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.oauth_tokens import SocialTokenMissingError, TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError
 from commcare_connect.utils.tests.api import add_token_credentials
 
 
@@ -80,7 +84,7 @@ def v2_write_client(api_client, org_user_admin):
 @pytest.mark.django_db
 class TestTaskTypeDataView:
     def test_returns_task_list(self, v2_export_client, opportunity):
-        task = TaskTypeFactory(opportunity=opportunity)
+        task = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity)
         url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -89,6 +93,16 @@ class TestTaskTypeDataView:
         result = data["results"][0]
         assert result["id"] == task.id
         assert result["name"] == task.name
+        assert result["mode"] == task.mode
+
+    def test_lists_deliver_app_task_types_without_opportunity(self, v2_export_client, opportunity):
+        """Task types created before TaskType.opportunity existed have it NULL; the create-task
+        UI still offers them, so the export must too."""
+        legacy = TaskTypeFactory(app=opportunity.deliver_app, opportunity=None)
+        TaskTypeFactory()  # another app's task type
+        url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert [r["id"] for r in response.json()["results"]] == [legacy.id]
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
         add_export_credentials(api_client, user)
@@ -121,6 +135,180 @@ class TestAssignedTaskDataView:
         url = reverse("data_export:assigned_task_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestAssignedTaskCreateView:
+    @pytest.fixture
+    def pm_client(self, api_client, program_manager_org_user_admin):
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        return api_client
+
+    @pytest.fixture
+    def access(self, pm_opportunity):
+        return OpportunityAccessFactory(opportunity=pm_opportunity, accepted=True)
+
+    @pytest.fixture
+    def task_type(self, pm_opportunity):
+        return TaskTypeFactory(app=pm_opportunity.deliver_app, case_property="relearn_module_1")
+
+    @pytest.fixture
+    def ocs_task_type(self, pm_opportunity):
+        return TaskTypeFactory(app=pm_opportunity.deliver_app, mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="bot-1")
+
+    def url(self, opportunity):
+        return reverse("data_export:assigned_task_create", kwargs={"opp_id": opportunity.id})
+
+    def payload(self, task_type, access, **overrides):
+        return {
+            "task_type_id": str(task_type.task_type_id),
+            "username": access.user.username,
+            "due_date": (timezone.localdate() + datetime.timedelta(days=7)).isoformat(),
+            **overrides,
+        }
+
+    def test_assigns_task_and_updates_hq(
+        self,
+        pm_client,
+        pm_opportunity,
+        access,
+        task_type,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
+    ):
+        with (
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
+            mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+
+        assert response.status_code == 201, response.json()
+        task = AssignedTask.objects.get(opportunity_access=access)
+        assert task.task_type == task_type
+        assert task.assigned_by == program_manager_org_user_admin
+        assert task.status == AssignedTaskStatus.ASSIGNED
+        assert response.json()["assigned_task_id"] == str(task.assigned_task_id)
+        assert response.json()["username"] == access.user.username
+        mock_hq.assert_called_once_with({access: {"properties": {"relearn_module_1": "1"}}})
+        mock_notify.assert_called_once_with(task.pk)
+
+    def test_requires_write_scope(self, api_client, pm_opportunity, access, task_type, program_manager_org_user_admin):
+        add_export_only_credentials(api_client, program_manager_org_user_admin)
+        response = _post_json(api_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("caller", ["delivery_org_admin", "pm_org_member", "unrelated_admin"])
+    def test_non_pm_admin_gets_404(
+        self, api_client, pm_opportunity, access, task_type, program_manager_org_user_member, caller
+    ):
+        """Only PM admins see the Create Task button in the UI, so only they can use the API."""
+        if caller == "delivery_org_admin":
+            user = pm_opportunity.organization.memberships.filter(role="admin").first().user
+        elif caller == "pm_org_member":
+            user = program_manager_org_user_member
+        else:
+            user = OrgWithUsersFactory().memberships.filter(role="admin").first().user
+        add_export_credentials(api_client, user)
+        response = _post_json(api_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 404
+        assert not AssignedTask.objects.exists()
+
+    @pytest.mark.parametrize(
+        "case,field",
+        [
+            ("unknown_task_type", "task_type_id"),
+            ("inactive_task_type", "task_type_id"),
+            ("other_app_task_type", "task_type_id"),
+            ("unknown_username", "username"),
+            ("not_accepted", "username"),
+            ("suspended", "username"),
+            ("other_opportunity_worker", "username"),
+            ("past_due_date", "due_date"),
+        ],
+    )
+    def test_rejects_invalid_input(self, pm_client, pm_opportunity, access, task_type, case, field):
+        overrides = {}
+        if case == "unknown_task_type":
+            overrides["task_type_id"] = str(uuid.uuid4())
+        elif case == "inactive_task_type":
+            task_type.is_active = False
+            task_type.save()
+        elif case == "other_app_task_type":
+            overrides["task_type_id"] = str(TaskTypeFactory().task_type_id)
+        elif case == "unknown_username":
+            overrides["username"] = "nobody"
+        elif case == "not_accepted":
+            access.accepted = False
+            access.save()
+        elif case == "suspended":
+            access.suspended = True
+            access.save()
+        elif case == "other_opportunity_worker":
+            overrides["username"] = OpportunityAccessFactory(accepted=True).user.username
+        elif case == "past_due_date":
+            overrides["due_date"] = (timezone.localdate() - datetime.timedelta(days=1)).isoformat()
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq:
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access, **overrides))
+
+        assert response.status_code == 400
+        assert field in response.json()
+        mock_hq.assert_not_called()
+        assert not AssignedTask.objects.exists()
+
+    def test_already_assigned_returns_409(self, pm_client, pm_opportunity, access, task_type):
+        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases"):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 409
+        assert AssignedTask.objects.count() == 1
+
+    def test_hq_failure_returns_502_and_creates_nothing(self, pm_client, pm_opportunity, access, task_type):
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases", side_effect=CommCareHQAPIException("down")
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 502
+        assert not AssignedTask.objects.exists()
+
+    def test_ocs_task_requires_connected_ocs_account(self, pm_client, pm_opportunity, access, ocs_task_type):
+        with mock.patch("commcare_connect.utils.ocs_api.trigger_bot") as mock_trigger:
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(ocs_task_type, access))
+        assert response.status_code == 400
+        assert "task_type_id" in response.json()
+        mock_trigger.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error,expected_status",
+        [
+            (None, 201),
+            (OcsApiError("boom"), 502),
+            (SocialTokenMissingError("no token"), 400),
+            (TokenRefreshError("expired"), 400),
+        ],
+    )
+    def test_ocs_task_with_connected_account(
+        self, pm_client, pm_opportunity, access, ocs_task_type, error, expected_status
+    ):
+        with (
+            mock.patch("commcare_connect.data_export.serializer.user_has_connected_ocs", return_value=True),
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                return_value=("session-1", "channel-1"),
+                side_effect=error,
+            ) as mock_trigger,
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(ocs_task_type, access))
+
+        assert response.status_code == expected_status
+        mock_trigger.assert_called_once()
+        if expected_status == 201:
+            task = AssignedTask.objects.get()
+            assert task.ocs_session_id == "session-1"
+            assert task.connect_channel_id == "channel-1"
+        else:
+            assert not AssignedTask.objects.exists()
 
 
 @pytest.mark.django_db
@@ -245,11 +433,11 @@ class TestOpportunityAccessCheckView:
         assert response.status_code == 200
         assert response.json() == {"opportunities": {str(opportunity.id): True}}
 
-    def test_grants_via_managing_program_org(self, api_client, managed_opportunity, program_manager_org_user_member):
+    def test_grants_via_managing_program_org(self, api_client, pm_opportunity, program_manager_org_user_member):
         add_export_credentials(api_client, program_manager_org_user_member)
-        response = self._check(api_client, [managed_opportunity.id])
+        response = self._check(api_client, [pm_opportunity.id])
         assert response.status_code == 200
-        assert response.json() == {"opportunities": {str(managed_opportunity.id): True}}
+        assert response.json() == {"opportunities": {str(pm_opportunity.id): True}}
 
     @pytest.mark.parametrize(
         "relationship,expected",
@@ -263,14 +451,14 @@ class TestOpportunityAccessCheckView:
         ],
     )
     def test_matches_single_opportunity_endpoint(
-        self, api_client, opp_orgs, managed_opportunity, user, relationship, expected
+        self, api_client, opp_orgs, pm_opportunity, user, relationship, expected
     ):
         MembershipFactory(organization=opp_orgs[relationship], user=user, role="member")
         add_export_credentials(api_client, user)
-        response = self._check(api_client, [managed_opportunity.id])
+        response = self._check(api_client, [pm_opportunity.id])
         assert response.status_code == 200
-        assert response.json()["opportunities"] == {str(managed_opportunity.id): expected}
-        single = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": managed_opportunity.id}))
+        assert response.json()["opportunities"] == {str(pm_opportunity.id): expected}
+        single = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": pm_opportunity.id}))
         assert single.status_code == (200 if expected else 404)
 
     def test_denies_without_membership(self, api_client, opportunity, user):
@@ -790,9 +978,9 @@ class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
 @pytest.mark.django_db
 class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
-    def setup_flag_for_managed_opportunity(self, managed_opportunity):
+    def setup_flag_for_opportunity(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, opp_id):
@@ -899,14 +1087,14 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         self,
         mock_hq_sync,
         api_client,
-        managed_opportunity,
+        pm_opportunity,
         program_manager_org_user_admin,
         django_capture_on_commit_callbacks,
     ):
         add_export_credentials(api_client, program_manager_org_user_admin)
         _add_v2_header(api_client)
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
         with (
@@ -915,7 +1103,7 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
             ) as mock_notify,
             django_capture_on_commit_callbacks(execute=True),
         ):
-            response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+            response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
 
         assert response.status_code == 200
         area.refresh_from_db()
@@ -935,7 +1123,7 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         ],
     )
     def test_assign_access_by_org_role(
-        self, api_client, managed_opportunity, program_manager_org_user_admin, org_role, expected
+        self, api_client, pm_opportunity, program_manager_org_user_admin, org_role, expected
     ):
         """Every org relationship that grants ADMIN access to the opportunity from the program
         side (program owner, supervising, funder) can assign work areas; the delivery org and an
@@ -943,28 +1131,28 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         if org_role == "program_owner":
             admin = program_manager_org_user_admin
         elif org_role == "delivery":
-            admin = managed_opportunity.organization.memberships.filter(role="admin").first().user
+            admin = pm_opportunity.organization.memberships.filter(role="admin").first().user
         else:
             org = OrgWithUsersFactory()
             if org_role == "supervising":
-                managed_opportunity.supervising_organization = org
-                managed_opportunity.save()
+                pm_opportunity.supervising_organization = org
+                pm_opportunity.save()
             elif org_role == "funder":
-                managed_opportunity.program.funder = org
-                managed_opportunity.program.save()
+                pm_opportunity.program.funder = org
+                pm_opportunity.program.save()
             admin = org.memberships.filter(role="admin").first().user
 
         add_export_credentials(api_client, admin)
         _add_v2_header(api_client)
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
         with (
             mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas"),
             mock.patch("commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"),
         ):
-            response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+            response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
 
         area.refresh_from_db()
         if expected:
@@ -976,16 +1164,16 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
 
     @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_during_assignment_rolls_back(
-        self, mock_hq_sync, api_client, managed_opportunity, program_manager_org_user_admin
+        self, mock_hq_sync, api_client, pm_opportunity, program_manager_org_user_admin
     ):
         mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
         add_export_credentials(api_client, program_manager_org_user_admin)
         _add_v2_header(api_client)
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        area = WorkAreaFactory(opportunity=managed_opportunity, status=WorkAreaStatus.UNASSIGNED)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
 
         payload = [{"id": area.id, "opportunity_access": access.id}]
-        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
 
         assert response.status_code == 502
         area.refresh_from_db()
@@ -994,17 +1182,17 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
 
     @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_explicit_null_opportunity_access_unassigns(
-        self, mock_hq_unassign, api_client, managed_opportunity, program_manager_org_user_admin
+        self, mock_hq_unassign, api_client, pm_opportunity, program_manager_org_user_admin
     ):
         add_export_credentials(api_client, program_manager_org_user_admin)
         _add_v2_header(api_client)
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
         area = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
+            opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
         )
 
         payload = [{"id": area.id, "opportunity_access": None}]
-        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
 
         assert response.status_code == 200
         body = response.json()
@@ -1015,17 +1203,15 @@ class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
         assert area.status == WorkAreaStatus.UNASSIGNED
 
     def test_explicit_null_opportunity_access_skips_ineligible_work_area(
-        self, api_client, managed_opportunity, program_manager_org_user_admin
+        self, api_client, pm_opportunity, program_manager_org_user_admin
     ):
         add_export_credentials(api_client, program_manager_org_user_admin)
         _add_v2_header(api_client)
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        area = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED
-        )
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED)
 
         payload = [{"id": area.id, "opportunity_access": None}]
-        response = _patch_json(api_client, self.url(managed_opportunity.id), payload)
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
 
         assert response.status_code == 200
         assert response.json()["unassign_skipped"] == 1

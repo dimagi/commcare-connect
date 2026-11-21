@@ -38,7 +38,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-from django.views.generic import CreateView, DetailView, UpdateView
+from django.views.generic import DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
@@ -65,8 +65,6 @@ from commcare_connect.opportunity.forms import (
     HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
-    OpportunityInitForm,
-    OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentUnitForm,
@@ -146,7 +144,6 @@ from commcare_connect.organization.decorators import (
     opportunity_pm_required,
     opportunity_required,
     org_view_access_required,
-    program_admin_access_required,
 )
 from commcare_connect.program.utils import (
     AccessLevel,
@@ -279,60 +276,6 @@ class OpportunityList(FilterMixin, SingleTableView):
         return data.get_data()
 
 
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInit(CreateView):
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitForm
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = False
-        return context
-
-    def form_valid(self, form: OpportunityInitForm):
-        response = super().form_valid(form)
-        create_learn_modules_and_deliver_units(self.object.id)
-        return response
-
-
-@method_decorator(program_admin_access_required, name="dispatch")
-class OpportunityInitUpdate(OpportunityObjectMixin, UpdateView):
-    model = Opportunity
-    template_name = "opportunity/opportunity_init.html"
-    form_class = OpportunityInitUpdateForm
-    context_object_name = "opportunity"
-
-    def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        opportunity = getattr(self, "object", None)
-        if opportunity is None:
-            opportunity = self.get_object()
-            self.object = opportunity
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        kwargs["program"] = opportunity.program
-        return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["opportunity_created"] = True
-        return context
-
-
 @method_decorator(opportunity_pm_required, name="dispatch")
 class OpportunityEdit(OpportunityObjectMixin, UpdateView):
     model = Opportunity
@@ -440,7 +383,7 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
         context = super().get_context_data(**kwargs)
 
         learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
-        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
+        deliver_unit_count = DeliverUnit.objects.for_opportunity(object).count()
         payment_unit_count = object.paymentunit_set.count()
 
         def safe_display(value):
@@ -861,9 +804,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
 @opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=request.opportunity.deliver_app
-    )
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity)
     form = PaymentUnitForm(
         deliver_units=deliver_units,
         data=request.POST or None,
@@ -926,10 +867,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
-        app=request.opportunity.deliver_app,
-    )
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity, payment_unit)
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
@@ -1000,10 +938,10 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
 
 
 def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
-    # The form only offers unattached units and units from inactive opportunities, so this may move
-    # a unit off an inactive opportunity's payment unit
-    DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
-    DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
+    # Scoped to the payment unit's opportunity so another opportunity's units are never moved
+    own_units = DeliverUnit.objects.for_opportunity(payment_unit.opportunity)
+    own_units.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
+    own_units.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
 
 
 @opp_standard_access_required
@@ -1285,7 +1223,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     form = OpportunityVerificationFlagsConfigForm(
         instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
     )
-    deliver_unit_count = DeliverUnit.objects.filter(app=request.opportunity.deliver_app).count()
+    deliver_unit_count = DeliverUnit.objects.for_opportunity(request.opportunity).count()
     DeliverUnitFlagsFormset = modelformset_factory(
         DeliverUnitFlagRules, DeliverUnitFlagsForm, extra=deliver_unit_count, max_num=deliver_unit_count
     )
@@ -1297,7 +1235,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         initial=[
             {"deliver_unit": du}
-            for du in request.opportunity.deliver_app.deliver_units.exclude(
+            for du in DeliverUnit.objects.for_opportunity(request.opportunity).exclude(
                 id__in=deliver_unit_flags.values_list("deliver_unit")
             )
         ],
@@ -1821,7 +1759,7 @@ def learn_module_table(request, org_slug=None, opp_id=None):
 @opp_view_access_required
 @opportunity_required
 def deliver_unit_table(request, org_slug=None, opp_id=None):
-    unit = DeliverUnit.objects.filter(app=request.opportunity.deliver_app)
+    unit = DeliverUnit.objects.for_opportunity(request.opportunity)
     table = DeliverUnitTable(unit)
     return render(
         request,

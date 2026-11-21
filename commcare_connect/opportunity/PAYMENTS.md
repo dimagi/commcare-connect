@@ -32,6 +32,7 @@ erDiagram
     PaymentUnit ||--o{ PaymentUnit : "parent of"
     PaymentUnit ||--o{ DeliverUnit : "paid by"
     CommCareApp ||--o{ DeliverUnit : "defines"
+    Opportunity ||--o{ DeliverUnit : "owns"
     Opportunity ||--o{ OpportunityAccess : "has"
     OpportunityAccess ||--o| OpportunityClaim : "claims"
     OpportunityClaim ||--o{ OpportunityClaimLimit : "limits"
@@ -66,7 +67,7 @@ erDiagram
 
 ### DeliverUnit
 
-A deliver block in the deliver app's forms (identified by `slug`). It belongs to a `CommCareApp`, not an opportunity, and points at the `PaymentUnit` it pays toward. A `PaymentUnit` can have several deliver units:
+A deliver block in the deliver app's forms (identified by `slug`). It belongs to an opportunity and to that opportunity's deliver app, and points at the `PaymentUnit` it pays toward. When a new opportunity reuses an app, it gets its own units, so setting up its payment units leaves the earlier opportunity's units alone. Units created before this have `opportunity` set by migration 0155, or left empty when no opportunity uses their app (CCCT-3057). A `PaymentUnit` can have several deliver units:
 
 - **Required** (`optional=False`): every required unit must be submitted for the payment unit to count as completed.
 - **Optional** (`optional=True`): at least one optional unit must also be submitted, if any exist.
@@ -142,6 +143,8 @@ One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker
 | `approved`   | Accrues payment                                                                |
 | `rejected`   | A visit was rejected, or the worker was suspended or blocked by a pending task |
 | `over_limit` | A visit hit a claim limit                                                      |
+
+A `pending` work may not be complete yet: it moves there on its first visit, even if other deliver units still need one. The mobile `delivery_progress` API therefore only returns work with `saved_completed_count > 0`, plus `rejected` work, and never `incomplete` or `over_limit` work.
 
 `status_modified_date` is set automatically whenever `status` changes. It is the **approval date** used for USD conversion and invoice windows, and it does **not** move when more visits arrive for an already-approved work.
 
