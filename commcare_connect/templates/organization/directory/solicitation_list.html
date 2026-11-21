@@ -1,0 +1,29 @@
+{% extends "organization/directory/listing_base.html" %}
+{% load i18n %}
+{% block title %}
+  {% translate "Solicitations" %}
+{% endblock title %}
+{% block heading %}
+  {% translate "Solicitations" %}
+{% endblock heading %}
+{% block subheading %}
+  {% translate "EOIs and RFPs posted by program manager organizations." %}
+{% endblock subheading %}
+{% block header_actions %}
+  <button type="button"
+          class="button button-md primary-dark"
+          hx-get="{% url 'organization_directory:solicitation_create' %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#directory-form">
+    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+    {% translate "New Solicitation" %}
+  </button>
+{% endblock header_actions %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.organization }}</div>
+  <div class="min-w-48">{{ filter.form.type }}</div>
+  <div class="min-w-48">{{ filter.form.status }}</div>
+  {% include "organization/directory/toggle_filter.html" with field=filter.form.organization_test %}
+{% endblock filters %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} solicitation{% plural %}{{ counter }} solicitations{% endblocktranslate %}
+{% endblock result_count %}
