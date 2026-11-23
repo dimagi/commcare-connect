@@ -92,6 +92,10 @@ class LockChange:
     def removed(self):
         return {n: self.old[n] for n in set(self.old) - set(self.new)}
 
+    @property
+    def has_movement(self):
+        return any((self.moved, self.added, self.removed))
+
 
 class Stack(NamedTuple):
     label: str
@@ -124,14 +128,13 @@ def report(label, change):
         # "no changes" would imply this stack exists and is untouched.
         print("  not present in this repo")
         return
-    moved, added, removed = change.moved, change.added, change.removed
-    if not (moved or added or removed):
+    if not change.has_movement:
         print_no_movement(change.file_changed)
         return
-    print_moved(moved, change.direct)
-    print_listing("Added", added, change.direct)
-    print_listing("Removed", removed, change.direct)
-    print_summary(moved, change.direct)
+    print_moved(change.moved, change.direct)
+    print_listing("Added", change.added, change.direct)
+    print_listing("Removed", change.removed, change.direct)
+    print_summary(change.moved, change.direct)
 
 
 def print_no_movement(file_changed):
