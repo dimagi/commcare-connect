@@ -6,9 +6,10 @@ from uuid import uuid4
 import pghistory
 from django.core.exceptions import ImproperlyConfigured
 from django.core.validators import MinValueValidator
-from django.db import models
-from django.db.models import Q
+from django.db import models, transaction
+from django.db.models import Exists, OuterRef, Q
 from django.utils.functional import cached_property
+from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.models.access import OpportunityAccess
@@ -41,7 +42,11 @@ class InvoiceStatus(models.TextChoices):
 
 
 class BilledEntity(BaseModel):
-    """An entity an invoice can be billed to."""
+    """An entity an invoice can be billed to.
+
+    Once an invoice uses an entity, its name and address are frozen so issued invoices never change.
+    BilledEntityForm enforces this; nothing at the model or database level does, so any new write path must too.
+    """
 
     name = models.CharField(max_length=255)
     address = models.TextField()
@@ -61,6 +66,27 @@ class BilledEntity(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def has_invoices(self):
+        return self.invoices.exists()
+
+    @classmethod
+    def in_use_condition(cls):
+        """True for the default and for entities any invoice uses; usable in filter() and annotate()."""
+        return Q(is_default=True) | Exists(PaymentInvoice.objects.filter(bill_to=OuterRef("pk")))
+
+    def is_in_use(self):
+        return BilledEntity.objects.filter(BilledEntity.in_use_condition(), pk=self.pk).exists()
+
+    @transaction.atomic
+    def make_default(self, modified_by):
+        changes = {"modified_by": modified_by, "date_modified": now()}
+        # The old default goes first: the unique constraint is checked per statement.
+        BilledEntity.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False, **changes)
+        BilledEntity.objects.filter(pk=self.pk).update(is_default=True, **changes)
+        self.is_default = True
+        self.modified_by = changes["modified_by"]
+        self.date_modified = changes["date_modified"]
 
     @classmethod
     def get_default(cls):

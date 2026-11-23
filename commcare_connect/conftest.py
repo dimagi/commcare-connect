@@ -31,6 +31,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 @pytest.fixture(autouse=True)
@@ -245,3 +246,12 @@ def anonymous_request(rf):
         return request
 
     return make
+
+
+@pytest.fixture
+def settings_admin(user):
+    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
+    user.user_permissions.add(
+        user.user_permissions.model.objects.get(content_type__app_label=app_label, codename=codename)
+    )
+    return user
