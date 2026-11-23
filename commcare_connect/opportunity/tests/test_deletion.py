@@ -72,6 +72,16 @@ def test_delete_opportunity_leaves_another_opportunitys_units_on_the_same_app():
 
 
 @pytest.mark.django_db
+def test_delete_opportunity_with_a_visit_that_has_no_access():
+    opportunity = factories.OpportunityFactory()
+    deliver_unit = factories.DeliverUnitFactory(opportunity=opportunity, app=opportunity.deliver_app)
+    factories.UserVisitFactory(opportunity=opportunity, opportunity_access=None, deliver_unit=deliver_unit)
+
+    assert delete_opportunity(opportunity) is True
+    assert not DeliverUnit.objects.filter(pk=deliver_unit.pk).exists()
+
+
+@pytest.mark.django_db
 def test_delete_opportunity_with_nm_payment_linked_to_invoice():
     opportunity = factories.OpportunityFactory()
     invoice = factories.PaymentInvoiceFactory(opportunity=opportunity)

@@ -87,13 +87,18 @@ def _copy_for_opportunity(apps, unit, opportunity_id):
             "payment_unit_id": payment_unit_id,
         },
     )
-    if not created and copy.payment_unit_id is None and payment_unit_id is not None:
+    if not created and payment_unit_id is not None and not _has_own_payment_unit(apps, copy):
         # An opportunity that reused the app after 0156 already has its own unit; keep its configuration,
-        # but restore the payment unit if it has none
+        # but restore the payment unit if it has none, or another opportunity's
         copy.payment_unit_id = payment_unit_id
         copy.optional = unit.optional
         copy.save(update_fields=["payment_unit_id", "optional"])
     return copy
+
+
+def _has_own_payment_unit(apps, unit):
+    PaymentUnit = apps.get_model("opportunity", "PaymentUnit")
+    return PaymentUnit.objects.filter(pk=unit.payment_unit_id, opportunity_id=unit.opportunity_id).exists()
 
 
 def _payment_unit_for(apps, unit, opportunity_id):

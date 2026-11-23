@@ -5,6 +5,7 @@ from django.apps import apps as django_apps
 from django.db import IntegrityError, connection, transaction
 
 from commcare_connect.form_receiver.processor import get_or_create_deliver_unit
+from commcare_connect.opportunity.forms import DeliverUnitFlagsForm, FormJsonValidationRulesForm
 from commcare_connect.opportunity.models import DeliverUnit, DeliverUnitFlagRules, FormJsonValidationRules
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
@@ -94,6 +95,34 @@ def test_assignable(opportunity):
 
     assert set(DeliverUnit.objects.assignable(opportunity)) == {unattached}
     assert set(DeliverUnit.objects.assignable(opportunity, payment_unit)) == {unattached, own}
+
+
+@pytest.mark.django_db
+class TestRulesOnAPreviousDeliverApp:
+    """A rule set up before the opportunity changed its deliver app points at a unit of the old app."""
+
+    @pytest.fixture
+    def old_app_unit(self, opportunity):
+        return DeliverUnitFactory(opportunity=opportunity, app=CommCareAppFactory())
+
+    def test_flag_rule_still_validates(self, opportunity, old_app_unit):
+        rule = DeliverUnitFlagRules.objects.create(opportunity=opportunity, deliver_unit=old_app_unit)
+
+        form = DeliverUnitFlagsForm(data={"duration": 5}, instance=rule, opportunity=opportunity)
+
+        assert form.is_valid(), form.errors
+
+    def test_form_json_rule_keeps_its_target_but_not_another_opportunitys_units(self, opportunity, old_app_unit):
+        current_unit = DeliverUnitFactory(opportunity=opportunity, app=opportunity.deliver_app)
+        DeliverUnitFactory(opportunity=OpportunityFactory(), app=opportunity.deliver_app)
+        rule = FormJsonValidationRules.objects.create(
+            opportunity=opportunity, name="rule", question_path="/data/q", question_value="yes"
+        )
+        rule.deliver_unit.set([old_app_unit])
+
+        form = FormJsonValidationRulesForm(instance=rule, opportunity=opportunity)
+
+        assert set(form.fields["deliver_unit"].queryset) == {current_unit, old_app_unit}
 
 
 @pytest.mark.django_db
@@ -188,13 +217,24 @@ class TestSplitSharedUnits:
 
         assert list(rule.deliver_unit.all()) == [self._copy(unit, other)]
 
-    def test_existing_unit_of_the_opportunity_is_reused(self, shared):
+    @pytest.mark.parametrize("existing_payment_unit", ["none", "another_opportunitys", "own"])
+    def test_existing_unit_of_the_opportunity_is_reused(self, shared, existing_payment_unit):
         # The opportunity reused the app after 0156, so it already has its own unit for the slug
         unit, other = shared
-        existing_copy = DeliverUnitFactory(opportunity=other, app=unit.app, slug=unit.slug, payment_unit=None)
-        other_payment_unit = PaymentUnitFactory(opportunity=other)
+        own_payment_unit = PaymentUnitFactory(opportunity=other)
+        initial_payment_unit = {
+            "none": None,
+            "another_opportunitys": PaymentUnitFactory(opportunity=OpportunityFactory()),
+            "own": own_payment_unit,
+        }[existing_payment_unit]
+        existing_copy = DeliverUnitFactory(
+            opportunity=other, app=unit.app, slug=unit.slug, payment_unit=initial_payment_unit
+        )
+        recovered_payment_unit = PaymentUnitFactory(opportunity=other)
         visit = UserVisitFactory(
-            opportunity=other, deliver_unit=unit, completed_work=CompletedWorkFactory(payment_unit=other_payment_unit)
+            opportunity=other,
+            deliver_unit=unit,
+            completed_work=CompletedWorkFactory(payment_unit=recovered_payment_unit),
         )
 
         self._split()
@@ -202,7 +242,9 @@ class TestSplitSharedUnits:
         visit.refresh_from_db()
         existing_copy.refresh_from_db()
         assert visit.deliver_unit == existing_copy
-        assert existing_copy.payment_unit == other_payment_unit
+        # Its own payment unit is kept; none, or another opportunity's, is replaced by the recovered one
+        expected = own_payment_unit if existing_payment_unit == "own" else recovered_payment_unit
+        assert existing_copy.payment_unit == expected
 
     def test_units_with_no_opportunity_are_split_then_deleted(self, opportunity):
         used = DeliverUnitFactory(opportunity=None, app=opportunity.deliver_app, slug="visit", payment_unit=None)

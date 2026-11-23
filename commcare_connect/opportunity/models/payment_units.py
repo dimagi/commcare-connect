@@ -41,6 +41,16 @@ class DeliverUnitQuerySet(models.QuerySet):
         """The units of the opportunity's current deliver app that belong to the opportunity."""
         return self.filter(opportunity=opportunity, app_id=opportunity.deliver_app_id)
 
+    def for_opportunity_including(self, opportunity, unit_ids):
+        """``for_opportunity`` plus the given units of the opportunity, which an existing rule may still use.
+
+        A rule set up before the opportunity changed its deliver app points at a unit of the old app.
+        Editing the rule must neither reject nor drop it.
+        """
+        return self.filter(opportunity=opportunity).filter(
+            Q(app_id=opportunity.deliver_app_id) | Q(pk__in=[pk for pk in unit_ids if pk])
+        )
+
     def assignable(self, opportunity, payment_unit=None):
         """The opportunity's own units that none of its other payment units count."""
         available = Q(payment_unit__isnull=True)

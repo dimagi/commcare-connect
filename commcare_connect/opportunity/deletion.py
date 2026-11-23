@@ -46,6 +46,8 @@ OPPORTUNITY_DELETIONS: Sequence[ModelDeletion] = (
     ModelDeletion("opportunity", "Payment", "payment_unit__opportunity"),
     ModelDeletion("opportunity", "Payment", "invoice__opportunity"),
     ModelDeletion("opportunity", "OpportunityAccess", "opportunity"),
+    # Visits with no access survive the step above, and would PROTECT their deliver units
+    ModelDeletion("opportunity", "UserVisit", "opportunity"),
     ModelDeletion("opportunity", "DeliverUnit", "opportunity"),
     ModelDeletion("opportunity", "PaymentUnit", "opportunity"),
     ModelDeletion("opportunity", "PaymentInvoice", "opportunity"),

@@ -128,6 +128,7 @@ def _deliver_unit_opportunity(unit):
     if payment_unit_opportunity and payment_unit_opportunity.deliver_app_id == unit.app.id:
         return payment_unit_opportunity
     latest_using_app = Opportunity.objects.filter(deliver_app=unit.app).order_by("-id").first()
+    # Last resort, as a SubFactory default would be: DeliverUnit.opportunity is required
     return latest_using_app or payment_unit_opportunity or OpportunityFactory(deliver_app=unit.app)
 
 
