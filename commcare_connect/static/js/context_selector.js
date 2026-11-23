@@ -46,7 +46,6 @@ function contextSelector() {
       return item.name.toLowerCase().includes(this.query.trim().toLowerCase());
     },
 
-    // A program matches when it or one of its opportunities does.
     programMatches(program) {
       return (
         this.matches(program) ||
