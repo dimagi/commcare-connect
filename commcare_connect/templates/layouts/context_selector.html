@@ -7,7 +7,7 @@
 {% if request.memberships %}
   <script src="{% static 'js/context_selector.js' %}"></script>
   <div x-data="contextSelector"
-       data-url="{% url 'context_search' %}"
+       data-url="{% url 'context_selector_tree' %}"
        data-org="{{ current_org }}"
        data-program="{{ page.program.program_id }}"
        data-opportunity="{{ page.opportunity.opportunity_id }}"

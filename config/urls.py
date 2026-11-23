@@ -10,7 +10,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 
 from commcare_connect.health import views as health_views
 from commcare_connect.organization.urls import directory_urlpatterns
-from commcare_connect.organization.views import context_search, no_organization, organization_create
+from commcare_connect.organization.views import context_selector_tree, no_organization, organization_create
 
 from . import views
 
@@ -48,7 +48,7 @@ urlpatterns = [
     # Your stuff: custom urls includes go here
     path("register/organization/", organization_create, name="organization_create"),
     path("no-organization/", no_organization, name="no_organization"),
-    path("context-search/", context_search, name="context_search"),
+    path("context-selector-tree/", context_selector_tree, name="context_selector_tree"),
     path("organizations/", include((directory_urlpatterns, "organization_directory"))),
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),

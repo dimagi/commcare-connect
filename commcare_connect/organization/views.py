@@ -65,7 +65,7 @@ def organization_create(request):
 
 @login_required
 @require_GET
-def context_search(request: HttpRequest) -> JsonResponse:
+def context_selector_tree(request: HttpRequest) -> JsonResponse:
     """Organizations, programs and opportunities for the header's context selector."""
     return JsonResponse({"organizations": selector_tree(request.user)})
 

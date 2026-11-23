@@ -394,19 +394,19 @@ def test_superuser_sees_only_orgs_they_belong_to(pm_org, nm_org):
     assert [org["name"] for org in selector_tree(user)] == ["A PM org"]
 
 
-def test_context_search_requires_login(client):
+def test_context_selector_tree_requires_login(client):
     """The selector's data endpoint redirects anonymous users to log in."""
-    response = client.get(reverse("context_search"))
+    response = client.get(reverse("context_selector_tree"))
 
     assert response.status_code == 302
 
 
-def test_context_search_returns_the_tree(client, nm_org):
+def test_context_selector_tree_returns_the_tree(client, nm_org):
     """The endpoint returns the user's orgs."""
     user = _member(nm_org)
     client.force_login(user)
 
-    response = client.get(reverse("context_search"))
+    response = client.get(reverse("context_selector_tree"))
 
     assert [org["name"] for org in response.json()["organizations"]] == ["B NM org"]
 
