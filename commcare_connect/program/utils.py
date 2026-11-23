@@ -69,6 +69,11 @@ def org_access_for_program(org, program) -> AccessLevel:
     return AccessLevel.NONE
 
 
+def programs_administered_by(org_ids):
+    """The programs these orgs administer: those they own or fund, the orgs `org_access_for_program` makes ADMIN."""
+    return Program.objects.filter(Q(organization__in=org_ids) | Q(funder__in=org_ids))
+
+
 def programs_accessible_to_org(org):
     if not org:
         return Program.objects.none()
