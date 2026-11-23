@@ -16,7 +16,6 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, F, Max
 from django.urls import reverse
-from django.utils.http import urlencode
 from django.utils.timezone import now
 from django.utils.translation import gettext, ngettext
 
@@ -174,8 +173,11 @@ def _opportunity_list_url(org: Organization, params: dict[str, str]) -> str:
 
     Marking the filters as chosen turns off the list's defaults, which hide test and inactive opportunities.
     """
-    params = {**params, FilterMixin.filters_submitted_param: "1"}
-    return f"{reverse('opportunity:list', args=(org.slug,))}?{urlencode(params)}"
+    return reverse(
+        "opportunity:list",
+        args=(org.slug,),
+        query={**params, FilterMixin.filters_submitted_param: "1"},
+    )
 
 
 def _program_node(
