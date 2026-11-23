@@ -52,8 +52,6 @@ class VisitStats:
         if not self.count:
             return gettext("No visits yet")
         visits = ngettext("%(count)s visit", "%(count)s visits", self.count) % {"count": intcomma(self.count)}
-        if not self.last_visit_date:
-            return visits
         last = self.last_visit_date.strftime("%d %b, %Y")
         return gettext("%(visits)s · Last visit %(date)s") % {"visits": visits, "date": last}
 
