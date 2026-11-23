@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from enum import IntEnum
 
 from django.db.models import Q, QuerySet
@@ -122,15 +122,13 @@ def opportunities_accessible_to_org(org):
     return opportunities_accessible_to_orgs([org])
 
 
-def opportunities_accessible_to_orgs(orgs: Iterable[Organization]) -> QuerySet[Opportunity]:
+def opportunities_accessible_to_orgs(orgs: Collection[Organization]) -> QuerySet[Opportunity]:
     """Opportunities that any of `orgs` can see. `org_opportunity_access` says which of them can see each one."""
     org_ids = [org.id for org in orgs]
     return Opportunity.objects.filter(
         Q(organization__in=org_ids)
         | Q(supervising_organization__in=org_ids)
-        | Q(program__organization__in=org_ids)
-        | Q(program__funder__in=org_ids)
-        | Q(program__in=Program.objects.filter(watchers__in=org_ids).values("id"))
+        | Q(program__in=programs_accessible_to_orgs(orgs))
     )
 
 
