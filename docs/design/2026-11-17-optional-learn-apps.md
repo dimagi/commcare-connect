@@ -30,9 +30,9 @@
 | Area | Change |
 |---|---|
 | Django apps | None |
-| Data models | Opportunities can have no Learn app; the database column already allows this. Each worker's access record gains a date for the "Claim your job" reminder. See [Data model changes](#data-model-changes). |
+| Data models | Opportunities can have no Learn app; the database column already allows this. Each worker's access record gains a date for the "Claim your job" reminder, used on every opportunity. See [Data model changes](#data-model-changes). |
 | URLs and endpoints | The phone's opportunity list returns learn-less opportunities. Claiming accepts the invite on learn-less opportunities. "Start learning" refuses them. The program automation API's Learn app input becomes optional. See [URLs and endpoints](#urls-and-endpoints). |
-| Background work | The daily inactivity notification task sends a one-off "Claim your job" push for learn-less opportunities. See [Background work and external services](#background-work-and-external-services). |
+| Background work | The daily inactivity notification task sends a one-off "Claim your job" push for learn-less opportunities. On Learn opportunities, the existing claim push switches to the same sent-once rule. See [Background work and external services](#background-work-and-external-services). |
 | External services | None. CommCare HQ doesn't tell Learn and Deliver apps apart, so it needs no changes. |
 | Dependencies | None |
 | Templates and frontend | A Learn app toggle on the create form, and changes to the credentials card, dashboard, resources modal and Connect Workers page. See [Templates and frontend](#templates-and-frontend). |
@@ -53,11 +53,11 @@ The model already allows nullable learn apps, so no field changes are needed. Th
 
 | Field | Change | Notes |
 |---|---|---|
-| `claim_reminder_sent_date` | Added, `DateTimeField(null=True, blank=True)` | Set when the reminder is queued. Only used for learn-less opportunities. |
+| `claim_reminder_sent_date` | Added, `DateTimeField(null=True, blank=True)` | Set when the reminder is queued. Used on every opportunity, with or without a Learn app. |
 
 ### Migrations
 
-One migration adds `claim_reminder_sent_date`. There's no backfill: existing workers on existing opportunities all have a Learn app, so the reminder never applies to them.
+One migration adds `claim_reminder_sent_date`, and a data migration backfills it. Without the backfill, the first daily run after deploy would remind every existing worker who finished Learn and never claimed, however long ago. The backfill sets the field to the migration time on every access that hasn't claimed and has completed all of its opportunity's Learn modules. Workers still part-way through Learn keep an empty field, so they get the reminder when they finish.
 
 ## Architecture changes
 
@@ -128,20 +128,25 @@ flowchart TD
     A[Access on an active, unexpired opportunity] --> B{Claimed?}
     B -- yes --> C[Today's delivery reminder, unchanged]
     B -- no --> D{Opportunity has a Learn app?}
-    D -- yes --> E[Today's learn reminder, unchanged]
+    D -- yes --> E{Finished Learn?}
+    E -- no --> E1[Today's 'Resume your learning' reminder, unchanged]
+    E -- yes --> E2{Last module 3+ days ago and reminder not sent yet?}
+    E2 -- yes --> G
+    E2 -- no --> H
     D -- no --> F{Invited 3+ days ago and reminder not sent yet?}
     F -- yes --> G["Send 'Claim your job for …' push, record the date (G4)"]
     F -- no --> H[Nothing]
 ```
 
-- The reminder goes to every invited worker who hasn't claimed. It counts from the date the worker was invited, which is the access record's `invited_date`, set when the record is created.
+- On learn-less opportunities, the reminder goes to every invited worker who hasn't claimed. It counts from the date the worker was invited, which is the access record's `invited_date`, set when the record is created.
 - It's sent once (chosen to not spam the user). The task records `claim_reminder_sent_date` when it queues the message, and skips accesses that already have it.
-- The title and body reuse the existing "Claim your job for …" wording, minus the sentence about having completed learning.
+- On Learn opportunities, the existing "Claim your job" push moves to the same field. It still counts 3 days from the last completed module, but it now fires on any day after that until it's sent, rather than only on the exact third day. This means a missed or failed daily run no longer drops the reminder. The "Resume your learning" push isn't changed: it can fire again each time the worker goes quiet, so a single sent date doesn't fit it.
+- On learn-less opportunities, the title and body reuse the existing "Claim your job for …" wording, minus the sentence about having completed learning.
 - The push uses the existing `ccc_generic_opportunity` action, which Connect already sends for other opportunity notifications.
 
 ### Background work and external services
 
-- **Daily inactivity notifications** (existing periodic task): gains the claim-reminder branch above. The push goes out through the existing ConnectID messaging client. If that client fails, the task behaves as it does today. The reminder date is only recorded for messages that were queued, so a failed run is retried the next day.
+- **Daily inactivity notifications** (existing periodic task): gains the learn-less claim-reminder branch above, and its existing claim reminder for Learn opportunities moves to the sent-once rule. The push goes out through the existing ConnectID messaging client. If that client fails, the task behaves as it does today. The reminder date is only recorded for messages that were queued, so a failed run is retried the next day.
 - **Syncing app structure** (`sync_learn_modules_and_deliver_units`, existing task): with no Learn app it only fetches the Deliver app from HQ. Its existing retry behaviour is unchanged.
 - **CommCare HQ:** no changes. The learn form path in the form receiver only matches opportunities whose Learn app matches the form, so a learn-less opportunity never matches it.
 
