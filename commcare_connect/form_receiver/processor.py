@@ -51,6 +51,7 @@ from commcare_connect.opportunity.tasks import (
     notify_user_for_scored_assessment,
 )
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
+from commcare_connect.organization.context_selector import clear_visit_stats_cache
 from commcare_connect.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -441,7 +442,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     6. Updates or creates the associated CompletedWork record
     7. Triggers incremental payment recalculation
     """
-    deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
+    deliver_unit = get_or_create_deliver_unit(opportunity, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
@@ -571,6 +572,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.over_limit_reasons = over_limit_reasons
 
         user_visit.save()
+        clear_visit_stats_cache(opportunity.id)
 
         if work_area:
             work_area.update_status()
@@ -625,13 +627,9 @@ def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> b
     ).exists()
 
 
-def get_or_create_deliver_unit(app, unit_data):
-    unit, _ = DeliverUnit.objects.get_or_create(
-        app=app,
-        slug=unit_data["@id"],
-        defaults={
-            "name": unit_data["name"],
-        },
+def get_or_create_deliver_unit(opportunity, unit_data):
+    unit, _ = DeliverUnit.objects.get_or_create_for_opportunity(
+        opportunity, unit_data["@id"], defaults={"name": unit_data["name"]}
     )
     return unit
 

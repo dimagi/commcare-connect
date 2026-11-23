@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from django.contrib.auth.context_processors import PermWrapper
+from django.core.cache import cache
 from django.db import connection
 from django.template import Context, Template
 from django.template.loader import render_to_string
@@ -13,13 +14,24 @@ from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory, UserVisitFactory
-from commcare_connect.organization.context_selector import end_label, opportunity_end_label, selector_tree
+from commcare_connect.organization.context_selector import (
+    clear_visit_stats_cache,
+    end_label,
+    opportunity_end_label,
+    selector_tree,
+)
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ProgramWatcher
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
+
+
+@pytest.fixture(autouse=True)
+def empty_cache():
+    """Visit stats are cached, and a test's entries outlive its rolled-back transaction."""
+    cache.clear()
 
 
 @pytest.fixture
@@ -170,6 +182,14 @@ def test_opportunity_end_label_explains_why_it_is_inactive(opp_kwargs, expected_
     assert opportunity_end_label(opportunity).startswith(expected_prefix)
 
 
+def test_orgs_are_sorted_by_name(pm_org, nm_org):
+    user = _member(nm_org)
+    MembershipFactory(user=user, organization=OrganizationFactory(name="C org"))
+    MembershipFactory(user=user, organization=pm_org)
+
+    assert [org["name"] for org in selector_tree(user)] == ["A PM org", "B NM org", "C org"]
+
+
 def test_programs_and_opportunities_are_sorted_by_end_date(pm_org):
     today = datetime.date.today()
     for name, days in [("Ended", -10), ("Later", 30), ("Sooner", 5)]:
@@ -212,13 +232,28 @@ def test_visit_stats_roll_up_to_program_and_org(pm_org, program):
         assert node["visit_summary"] == f"3 visits · Last visit {latest.strftime('%d %b, %Y')}"
 
 
-def test_new_visits_show_the_next_time_the_tree_loads(nm_org, program):
-    """Visit totals are counted on every load, so a visit made since the last load shows straight away."""
+def test_visit_stats_are_cached(nm_org, program):
+    """A second load reuses the cached visit stats, so a visit nobody announced doesn't show yet."""
     opp = OpportunityFactory(organization=nm_org, program=program)
     UserVisitFactory(opportunity=opp)
     user = _member(nm_org)
     selector_tree(user)
     UserVisitFactory(opportunity=opp)
+
+    (program_node,) = _tree_for(user)["B NM org"]["programs"]
+
+    assert program_node["visit_summary"].startswith("1 visit ·")
+
+
+def test_clearing_the_cache_shows_new_visits(nm_org, program, django_capture_on_commit_callbacks):
+    """Once a new visit clears its opportunity's cached stats, the next load counts it."""
+    opp = OpportunityFactory(organization=nm_org, program=program)
+    UserVisitFactory(opportunity=opp)
+    user = _member(nm_org)
+    selector_tree(user)
+    UserVisitFactory(opportunity=opp)
+    with django_capture_on_commit_callbacks(execute=True):
+        clear_visit_stats_cache(opp.id)
 
     (program_node,) = _tree_for(user)["B NM org"]["programs"]
 
@@ -230,6 +265,7 @@ def test_query_count_does_not_grow_with_orgs(pm_org, program):
     user = _member(pm_org)
     OpportunityFactory(program=program)
     selector_tree(user)  # Fills the user's permission cache, which would otherwise count once.
+    cache.clear()  # Count the visit stats query too.
     with CaptureQueriesContext(connection) as one_org:
         selector_tree(user)
 
@@ -238,6 +274,7 @@ def test_query_count_does_not_grow_with_orgs(pm_org, program):
         MembershipFactory(user=user, organization=org)
         program.watchers.add(org)
         OpportunityFactory(organization=org, program=program)
+    cache.clear()
     with CaptureQueriesContext(connection) as three_orgs:
         selector_tree(user)
 
@@ -299,10 +336,11 @@ def test_page_context_shows_program_only_with_access(nm_org, program, member_of_
     assert _page_context(request) == expected
 
 
-def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org, program):
-    """The "See all" link filters the opportunity list by program only where that list offers the program as a filter.
+def test_program_links_filter_by_program_only_where_the_list_allows_it(pm_org, nm_org, program):
+    """A program's link and its "See all" link filter the opportunity list by program only where that list offers
+    the program as a filter.
 
-    An NM org that only delivers for a program can't filter by it, so its link opens the unfiltered list.
+    An NM org that only delivers for a program can't filter by it, so its links open the list without a program.
     """
     OpportunityFactory(organization=nm_org, program=program)
     user = _member(pm_org)
@@ -311,9 +349,31 @@ def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org
     tree = _tree_for(user)
 
     (pm_program,) = tree["A PM org"]["programs"]
-    assert pm_program["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?program={program.slug}"
+    pm_url = f"/a/{pm_org.slug}/opportunity/?program={program.slug}&filtered=1"
+    assert (pm_program["url"], pm_program["opportunities_url"]) == (pm_url, pm_url)
     (nm_program,) = tree["B NM org"]["programs"]
-    assert nm_program["opportunities_url"] == f"/a/{nm_org.slug}/opportunity/"
+    nm_url = f"/a/{nm_org.slug}/opportunity/?filtered=1"
+    assert (nm_program["url"], nm_program["opportunities_url"]) == (nm_url, nm_url)
+
+
+def test_see_all_turns_off_the_lists_default_filters(pm_org):
+    """See all turns off the list's default filters, so the list shows test and inactive opportunities too."""
+    org_node = _tree_for(_member(pm_org))["A PM org"]
+
+    assert org_node["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?filtered=1"
+
+
+@pytest.mark.parametrize("is_test", [True, False])
+def test_test_orgs_and_opportunities_are_marked(is_test):
+    """The selector marks test organizations and test opportunities."""
+    org = OrganizationFactory(name="Org", is_test=is_test)
+    OpportunityFactory(organization=org, program=ProgramFactory(organization=org), is_test=is_test)
+
+    org_node = _tree_for(_member(org))["Org"]
+    (program_node,) = org_node["programs"]
+
+    assert org_node["test"] is is_test
+    assert program_node["opportunities"][0]["test"] is is_test
 
 
 def test_ended_program_with_a_running_opportunity_is_active(pm_org):
@@ -334,19 +394,19 @@ def test_superuser_sees_only_orgs_they_belong_to(pm_org, nm_org):
     assert [org["name"] for org in selector_tree(user)] == ["A PM org"]
 
 
-def test_context_search_requires_login(client):
+def test_context_selector_tree_requires_login(client):
     """The selector's data endpoint redirects anonymous users to log in."""
-    response = client.get(reverse("context_search"))
+    response = client.get(reverse("context_selector_tree"))
 
     assert response.status_code == 302
 
 
-def test_context_search_returns_the_tree(client, nm_org):
+def test_context_selector_tree_returns_the_tree(client, nm_org):
     """The endpoint returns the user's orgs."""
     user = _member(nm_org)
     client.force_login(user)
 
-    response = client.get(reverse("context_search"))
+    response = client.get(reverse("context_selector_tree"))
 
     assert [org["name"] for org in response.json()["organizations"]] == ["B NM org"]
 

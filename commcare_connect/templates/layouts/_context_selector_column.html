@@ -4,7 +4,7 @@
     <p class="text-sm font-medium text-brand-deep-purple">{{ title }}</p>
     <div class="flex items-center gap-3">
       <span x-show="{{ items }}.length"
-            class="text-xs text-gray-400"
+            class="hint"
             x-text="`(${ {{ items }}.length })`"></span>
       {% if see_all %}
         <a x-show="seeAllUrl"
@@ -18,8 +18,9 @@
       <li>
         <button type="button"
                 @click="{{ select }}(item)"
+                @dblclick="go(item)"
                 :aria-pressed="(selected.{{ key }} === item).toString()"
-                :class="selected.{{ key }} === item ? 'bg-indigo-50 border-indigo-200' : 'hover:bg-gray-100 border-transparent'"
+                :class="{ 'bg-indigo-50 border-indigo-200': selected.{{ key }} === item, 'hover:bg-gray-100 border-transparent': selected.{{ key }} !== item }"
                 :title="item.end_label"
                 class="w-full flex items-start gap-2 p-2 rounded text-left border">
           {% if key != "org" %}
@@ -27,10 +28,13 @@
                   class="mt-1.5 shrink-0"></span>
           {% endif %}
           <span class="min-w-0">
-            <span class="block text-sm font-medium text-brand-deep-purple break-words"
-                  x-text="item.name"></span>
-            {% if key == "org" %}<span class="block text-xs text-gray-400" x-text="item.type"></span>{% endif %}
-            <span class="block text-xs text-gray-400" x-text="item.visit_summary"></span>
+            <span class="flex items-start gap-2">
+              <span class="text-sm font-medium text-brand-deep-purple break-words"
+                    x-text="item.name"></span>
+              <span x-show="item.test" class="badge badge-sm badge-amber shrink-0">{% translate "Test" %}</span>
+            </span>
+            {% if key == "org" %}<span class="block hint" x-text="item.type"></span>{% endif %}
+            <span class="block hint" x-text="item.visit_summary"></span>
           </span>
         </button>
       </li>

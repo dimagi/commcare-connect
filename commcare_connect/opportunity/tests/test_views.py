@@ -1014,6 +1014,30 @@ def test_opportunity_list_defaults_apply_until_filters_are_submitted(organizatio
     assert (filter_values["status"] or None, filter_values["is_test"]) == (status, is_test)
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "programs, expected",
+    [
+        (["malaria"], "malaria"),
+        ([], None),
+        (["malaria", "nutrition"], None),
+        # The filter rejects programs the org can't see.
+        (["elsewhere"], None),
+    ],
+)
+def test_opportunity_list_filtered_to_one_program_is_about_that_program(organization, rf, programs, expected):
+    # A program's slug comes from its name.
+    ProgramFactory(organization=organization, name="malaria")
+    ProgramFactory(organization=organization, name="nutrition")
+    ProgramFactory(name="elsewhere")
+    query = "&".join(f"program={slug}" for slug in programs)
+    view = _opportunity_list_view(rf, organization, f"/?filtered=1&{query}")
+
+    program = view.filtered_program()
+
+    assert (program.slug if program else None) == expected
+
+
 _BACKWARDS_START_DATE = "start_date_range=custom&start_date_from=2026-02-01&start_date_to=2026-01-01"
 
 
@@ -2063,7 +2087,8 @@ class TestEditPaymentUnit:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("optional", [False, True])
-def test_link_deliver_units_reuses_unit_from_inactive_opportunity(opportunity, optional):
+def test_link_deliver_units_takes_own_unit_from_legacy_payment_unit(opportunity, optional):
+    # Before CCCT-3057 a reused app's unit could be left on another opportunity's payment unit
     inactive_payment_unit = PaymentUnitFactory(opportunity=OpportunityFactory(active=False))
     reused = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=inactive_payment_unit, optional=not optional)
     unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
