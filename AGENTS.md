@@ -158,6 +158,10 @@ Some words mean several unrelated things here. Work out which one you are in bef
 
 Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunity): handle missing payment unit`). Don't mix change types in one commit; split them instead.
 
+## Code review
+
+When you review a change locally (the working tree or a branch, rather than reviewing on GitHub), end the review by running the `pr-impact` skill (`.claude/skills/pr-impact/`) on the same change, so the risk grade reflects what the review found. Use its pre-PR mode if the branch has no PR yet. The skill asks the author to confirm the grade before it labels anything.
+
 ## Robustness
 
 - **Guard against missing environmental dependencies**: Code must not hard-fail because the environment isn't fully set up. This covers settings/env values (`settings.MAPBOX_TOKEN`, Twilio creds, API keys), DB records that act as configuration (`SocialApp`, `Site`, `Currency`/`Country`, waffle `Flag`s), and unreachable external services (HQ, ConnectID, OCS)
