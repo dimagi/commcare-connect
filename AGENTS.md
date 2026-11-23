@@ -45,7 +45,7 @@ pytest path/to/test_file.py::test_name  # run single test
 inv duplicate-code-report           # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
 inv duplicate-code-report --base origin/<branch>  # compare against another branch, e.g. the PR this one is stacked on
 
-# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint)
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, actionlint, zizmor)
 prek run -a
 
 # Requirements (uv)
@@ -129,7 +129,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
 - **JS/CSS**: prettier (tab-width 2, single-quote)
 - **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
-- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates) and eslint (`commcare_connect/static/**/*.js`); ruff's UP rules cover what pyupgrade used to
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates), eslint (`commcare_connect/static/**/*.js`), and actionlint + zizmor (`.github/` workflows; pin new actions to a commit SHA with a `# vX.Y.Z` comment, and suppress a zizmor finding only with an inline `# zizmor: ignore[<audit>]` and a reason); ruff's UP rules cover what pyupgrade used to
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
@@ -172,7 +172,7 @@ Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunit
 
 - **Framework**: pytest + pytest-django + factory-boy
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
-- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `managed_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `pm_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
 - **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances

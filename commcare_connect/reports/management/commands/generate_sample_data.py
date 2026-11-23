@@ -105,10 +105,10 @@ class Command(BaseCommand):
             help="Slug for the invited organization (if not provided, one will be created)",
         )
         parser.add_argument(
-            "--managed_opportunities",
+            "--pm_opportunities",
             type=int,
             default=3,
-            help="Number of managed opportunities to create",
+            help="Number of opportunities the invited org delivers under the primary org's programs",
         )
         parser.add_argument(
             "--image_percent",
@@ -208,7 +208,7 @@ class Command(BaseCommand):
         num_visits = options["num_visits"]
         org_slug = options["org_slug"]
         invited_org_slug = options["invited_org_slug"]
-        num_managed_opps = options["managed_opportunities"]
+        num_pm_opps = options["pm_opportunities"]
         image_percent = options["image_percent"]
         audio_percent = options["audio_percent"]
         # Checked here rather than as an argparse type, which call_command's keyword options skip.
@@ -256,18 +256,18 @@ class Command(BaseCommand):
         own_program = ProgramFactory(organization=org)
         opportunities = [OpportunityFactory(organization=org, api_key=api_key, program=own_program) for _ in range(5)]
 
-        managed_opportunities = []
-        for _ in range(num_managed_opps):
+        pm_opportunities = []
+        for _ in range(num_pm_opps):
             program = ProgramFactory(organization=org, delivery_type=DeliveryTypeFactory())
             ProgramApplicationFactory(program=program, organization=invited_org)
-            managed_opp = OpportunityFactory(
+            pm_opp = OpportunityFactory(
                 organization=invited_org,
                 program=program,
                 api_key=api_key,
             )
-            managed_opportunities.append(managed_opp)
+            pm_opportunities.append(pm_opp)
 
-        all_opportunities = opportunities + managed_opportunities
+        all_opportunities = opportunities + pm_opportunities
         # The form receiver get_or_creates these as visits arrive. These visits are written
         # straight to the database instead, so nothing else would -- and the visit detail page
         # reads the record without guarding for its absence.

@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
+from jsonpath_ng.exceptions import JSONPathError
 from waffle import switch_is_active
 
 from commcare_connect.flags.switch_names import (
@@ -43,6 +44,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.models.verification import parse_question_path
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
@@ -1247,7 +1249,7 @@ class AddBudgetNewUsersForm(forms.Form):
         total_budget = cleaned_data.get("total_budget")
 
         if not self.program_manager:
-            raise forms.ValidationError("Only program managers are allowed to add budgets for managed opportunities.")
+            raise forms.ValidationError("Only program managers are allowed to add budgets.")
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
@@ -1681,7 +1683,9 @@ class DeliverUnitFlagsForm(forms.ModelForm):
                 ),
             )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, [self.instance.deliver_unit_id]),
+            disabled=True,
+            empty_label=None,
         )
 
     def save(self, commit=True):
@@ -1724,10 +1728,22 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         )
         self.helper.render_hidden_fields = True
 
+        saved_unit_ids = self.instance.deliver_unit.values_list("pk", flat=True) if self.instance.pk else []
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, saved_unit_ids),
             widget=forms.CheckboxSelectMultiple,
         )
+
+    def clean_question_path(self):
+        question_path = self.cleaned_data["question_path"].strip()
+        try:
+            parse_question_path(question_path)
+        except JSONPathError as e:
+            raise ValidationError(
+                _("Enter a valid question path, e.g. form.group.question or /data/group/question (%(error)s)."),
+                params={"error": e},
+            )
+        return question_path
 
 
 class AudioAttachmentTranscribeForm(forms.ModelForm):

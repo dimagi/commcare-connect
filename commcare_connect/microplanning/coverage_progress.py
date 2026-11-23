@@ -125,7 +125,7 @@ def missing_deliver_units(opportunity: Opportunity, slugs: list[str]) -> list[st
     if opportunity.deliver_app_id is None:
         return slugs
     present = set(
-        DeliverUnit.objects.filter(app_id=opportunity.deliver_app_id, slug__in=slugs).values_list("slug", flat=True)
+        DeliverUnit.objects.for_opportunity(opportunity).filter(slug__in=slugs).values_list("slug", flat=True)
     )
     return [slug for slug in slugs if slug not in present]
 

@@ -82,8 +82,10 @@ class ReviewSteps:
             )
         with self.step():
             app = opportunity.deliver_app
-            unit = DeliverUnit.objects.select_related("payment_unit").get(
-                app=app, slug=deliver_unit or DELIVER_UNIT_SLUGS[0]
+            unit = (
+                DeliverUnit.objects.for_opportunity(opportunity)
+                .select_related("payment_unit")
+                .get(slug=deliver_unit or DELIVER_UNIT_SLUGS[0])
             )
             min_duration = _min_duration(opportunity, unit)
             max_duration = min_duration + datetime.timedelta(minutes=EXTRA_DURATION_MINUTES[1])

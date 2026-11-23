@@ -931,6 +931,48 @@ def test_receiver_verification_flags_form_json_rule(
         ] in visit.flag_reason.get("flags", [])
 
 
+@pytest.mark.parametrize("question_path", ["/data/value", "data/value", "form.value", "$.form.value"])
+def test_receiver_form_json_rule_path_formats(
+    question_path,
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    deliver_unit = opportunity.deliver_app.deliver_units.first()
+    form_json["form"]["value"] = "123"
+    form_json_rule = FormJsonValidationRulesFactory(
+        opportunity=opportunity,
+        question_path=question_path,
+        question_value="123",
+    )
+    form_json_rule.deliver_unit.add(deliver_unit)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert not visit.flagged
+
+
+def test_receiver_invalid_form_json_rule_flags_visit(
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    deliver_unit = opportunity.deliver_app.deliver_units.first()
+    form_json_rule = FormJsonValidationRulesFactory(
+        opportunity=opportunity,
+        question_path="form.[[",
+        question_value="123",
+    )
+    form_json_rule.deliver_unit.add(deliver_unit)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.flagged
+    assert any(flag[0] == "form_json_rule_invalid" for flag in visit.flag_reason.get("flags", []))
+
+
 def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_with_connect_link)
     payment_unit = PaymentUnitFactory(opportunity=opportunity, org_amount=2)
