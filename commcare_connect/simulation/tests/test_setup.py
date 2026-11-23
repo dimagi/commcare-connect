@@ -71,6 +71,27 @@ def test_org_profile_changes_only_the_given_fields(sim, user):
     assert (pm_org.name, pm_org.program_manager, pm_org.office_address) == ("Sim PM", True, address)
 
 
+def test_org_profile_keeps_program_management_when_the_admin_can_edit_it(sim, user):
+    # A superuser holds every permission, so Organization Home shows them "Enable Program Manager".
+    user.is_superuser = True
+    user.save()
+    pm_org = sim.org("Sim PM", admin=user, program_manager=True)
+    assert pm_org.program_manager
+
+    sim.org_profile(pm_org, admin=user, office_address="1 Clinic Road")
+
+    pm_org.refresh_from_db()
+    assert pm_org.program_manager
+
+
+def test_contact_email_is_found_after_the_form_strips_it(sim, user):
+    organization = sim.org("Sim Org", admin=user)
+
+    contact = sim.contact(organization, name="Amina Okafor", email=" amina@sim.example ")
+
+    assert contact.email == "amina@sim.example"
+
+
 def test_contact_is_added_in_the_llo_directory(sim, user):
     assert not user.has_perm(LLO_DIRECTORY_MANAGEMENT_ACCESS)
     organization = sim.org("Sim Org", admin=user)

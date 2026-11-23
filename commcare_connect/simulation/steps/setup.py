@@ -43,6 +43,7 @@ class SetupSteps:
             organization = Organization.objects.get(slug=resolve(response.url).kwargs["org_slug"])
             if program_manager:
                 _enable_program_manager(self.browser(_org_settings_staff()), organization)
+                organization.refresh_from_db()
             self.log(f"Created organization {organization.slug}{' (program manager)' if program_manager else ''}")
         return organization
 
@@ -52,6 +53,8 @@ class SetupSteps:
         ``changes`` are ``OrganizationChangeForm`` fields, such as ``office_address``.
         """
         with self.step():
+            # The page posts the saved profile back, so start from it, not from a possibly stale instance.
+            organization.refresh_from_db()
             _submit_org_home(self.browser(admin), organization, changes)
             organization.refresh_from_db()
             self.log(f"Updated {', '.join(changes)} of {organization.slug}")
@@ -62,6 +65,8 @@ class SetupSteps:
         The directory is for Dimagi staff, so the form is submitted as the simulation's directory staff user.
         ``main`` makes them the organization's main point of contact.
         """
+        # The form saves the email stripped, so the contact is looked up by the stripped value.
+        email = email.strip()
         data = {
             "name": name,
             "organization": organization.pk,
