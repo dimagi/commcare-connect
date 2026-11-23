@@ -196,6 +196,8 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 
 `update_payment_accrued_for_user` runs synchronously inside the request and takes a Redis lock per `OpportunityAccess` (`cache.lock`).
 
+Each new `UserVisit` also clears its opportunity's cached visit totals for the header's context selector (`clear_visit_stats_cache`), once the transaction commits.
+
 ## Error Handling
 
 | Situation                                                               | Connect returns      | HQ does                                                                                                                |
