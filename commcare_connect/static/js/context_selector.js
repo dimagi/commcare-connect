@@ -4,23 +4,11 @@
 // the ids of the page's own context, so the panel opens with them selected.
 function contextSelector() {
   return {
-    dataUrl: null,
-    current: {},
     open: false,
     status: 'idle', // idle | loading | loaded | error
     organizations: [],
     query: '',
     selected: { org: null, program: null, opportunity: null },
-
-    init() {
-      const { url, org, program, opportunity } = this.$el.dataset;
-      this.dataUrl = url;
-      this.current = {
-        org: org || null,
-        program: program || null,
-        opportunity: opportunity || null,
-      };
-    },
 
     toggle() {
       this.open = !this.open;
@@ -30,7 +18,7 @@ function contextSelector() {
     async load() {
       this.status = 'loading';
       try {
-        const response = await fetch(this.dataUrl, {
+        const response = await fetch(this.$root.dataset.url, {
           headers: { Accept: 'application/json' },
         });
         if (!response.ok) throw new Error(response.statusText);
@@ -43,7 +31,7 @@ function contextSelector() {
     },
 
     selectCurrent() {
-      const current = this.current;
+      const current = this.$root.dataset;
       const org = this.organizations.find((o) => o.id === current.org);
       if (!org) return;
       const program =
