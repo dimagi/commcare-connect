@@ -33,9 +33,9 @@ from waffle.models import Switch
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.forms import BillToAddressForm, DeliveryTypeForm
+from commcare_connect.opportunity.forms import BilledEntityForm, DeliveryTypeForm
 from commcare_connect.opportunity.models import (
-    BillToAddress,
+    BilledEntity,
     DeliveryType,
     HQApiKey,
     Opportunity,
@@ -43,7 +43,7 @@ from commcare_connect.opportunity.models import (
     UserInvite,
     UserInviteStatus,
 )
-from commcare_connect.opportunity.tables import BillToAddressTable, DeliveryTypeTable
+from commcare_connect.opportunity.tables import BilledEntityTable, DeliveryTypeTable
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
@@ -424,23 +424,23 @@ def internal_features(request):
         },
         {
             "perm": ORG_MANAGEMENT_SETTINGS_ACCESS,
-            "name": "Invoice Bill To Addresses",
+            "name": "Invoice Billed Entities",
             "description": "Manage the entities invoices can be billed to.",
-            "url": reverse("users:bill_to_address_list"),
+            "url": reverse("users:billed_entity_list"),
         },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
 
 
-class BillToAddressMixin:
-    model = BillToAddress
-    form_class = BillToAddressForm
-    url_prefix = "users:bill_to_address"
+class BilledEntityMixin:
+    model = BilledEntity
+    form_class = BilledEntityForm
+    url_prefix = "users:billed_entity"
     in_use_message = _("'%(name)s' is the default or is used by invoices, so it can't be deleted.")
     in_use_hint = _(
         "The default, or used by invoices, so it can't be deleted. Deactivate it instead, after making another "
-        "address the default if it's the default."
+        "entity the default if it's the default."
     )
 
     def form_valid(self, form):
@@ -450,44 +450,44 @@ class BillToAddressMixin:
         return super().form_valid(form)
 
 
-class BillToAddressListView(BillToAddressMixin, ManagedOptionListView):
-    template_name = "users/bill_to_addresses/list.html"
-    table_class = BillToAddressTable
+class BilledEntityListView(BilledEntityMixin, ManagedOptionListView):
+    template_name = "users/billed_entities/list.html"
+    table_class = BilledEntityTable
 
     def get_queryset(self):
-        return BillToAddress.objects.annotate(
+        return BilledEntity.objects.annotate(
             invoice_count=Count("invoices"),
-            in_use=BillToAddress.in_use_condition(),
+            in_use=BilledEntity.in_use_condition(),
         ).order_by("-is_default", "-is_active", "name")
 
 
-class BillToAddressUpdateView(BillToAddressMixin, ManagedOptionUpdateView):
+class BilledEntityUpdateView(BilledEntityMixin, ManagedOptionUpdateView):
     def get_queryset(self):
-        # Locked so a first invoice using this address can't commit between the form's in-use check and the save.
+        # Locked so a first invoice using this entity can't commit between the form's in-use check and the save.
         queryset = super().get_queryset()
         return queryset.select_for_update() if self.request.method == "POST" else queryset
 
 
-class BillToAddressCreateView(BillToAddressMixin, ManagedOptionCreateView):
+class BilledEntityCreateView(BilledEntityMixin, ManagedOptionCreateView):
     pass
 
 
-class BillToAddressDeleteView(BillToAddressMixin, ManagedOptionDeleteView):
+class BilledEntityDeleteView(BilledEntityMixin, ManagedOptionDeleteView):
     pass
 
 
-class BillToAddressMakeDefaultView(BillToAddressMixin, ManagedOptionMixin, View):
+class BilledEntityMakeDefaultView(BilledEntityMixin, ManagedOptionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, pk):
         # Locks every row (the table is tiny) so concurrent swaps queue instead of tripping the one-default constraint.
-        list(BillToAddress.objects.select_for_update().order_by("pk"))
-        address = get_object_or_404(BillToAddress, pk=pk)
-        if not address.is_active:
-            messages.error(request, _("'%(name)s' is inactive, so it can't be the default.") % {"name": address.name})
+        list(BilledEntity.objects.select_for_update().order_by("pk"))
+        entity = get_object_or_404(BilledEntity, pk=pk)
+        if not entity.is_active:
+            messages.error(request, _("'%(name)s' is inactive, so it can't be the default.") % {"name": entity.name})
         else:
-            address.make_default(modified_by=request.user.email)
-            messages.success(request, _("'%(name)s' is now the default Bill To address.") % {"name": address.name})
+            entity.make_default(modified_by=request.user.email)
+            messages.success(request, _("'%(name)s' is now the default billed entity.") % {"name": entity.name})
         return redirect(self.url_name("list"))
 
 

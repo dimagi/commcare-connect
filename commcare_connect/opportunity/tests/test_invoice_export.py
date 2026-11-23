@@ -16,7 +16,7 @@ from pytest_django.asserts import assertInHTML
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import (
-    BillToAddressFactory,
+    BilledEntityFactory,
     ExchangeRateFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
@@ -64,7 +64,7 @@ class TestPdfExport:
         assert render_invoice_pdf(invoice).startswith(b"%PDF")
 
     @pytest.mark.parametrize(
-        "address_kwargs, expected",
+        "entity_kwargs, expected",
         [
             # No choice: the seeded default must print exactly what the hardcoded DIMAGI_ADDRESS did.
             (None, "<p>Dimagi, Inc.<br>245 Main Street, 2nd Floor<br>Cambridge, MA 02142, USA<br>+1 617.649.2214</p>"),
@@ -74,16 +74,16 @@ class TestPdfExport:
             ),
         ],
     )
-    def test_bill_to_section(self, opportunity, address_kwargs, expected):
-        extra = {"bill_to": BillToAddressFactory(**address_kwargs)} if address_kwargs else {}
+    def test_bill_to_section(self, opportunity, entity_kwargs, expected):
+        extra = {"bill_to": BilledEntityFactory(**entity_kwargs)} if entity_kwargs else {}
         invoice = PaymentInvoiceFactory(opportunity=opportunity, **extra)
         html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
         assertInHTML(expected, html)
 
     @pytest.mark.parametrize("field", ["name", "address"])
     def test_long_unbroken_bill_to_text_wraps_inside_the_page(self, opportunity, field):
-        address = BillToAddressFactory(**{field: "X" * 150})
-        invoice = PaymentInvoiceFactory(opportunity=opportunity, bill_to=address)
+        entity = BilledEntityFactory(**{field: "X" * 150})
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, bill_to=entity)
         html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
         document = weasyprint.HTML(string=html, base_url=PDF_BASE_URL, url_fetcher=DjangoURLFetcher()).render()
         page_box = document.pages[0]._page_box  # WeasyPrint has no public API for laid-out boxes.

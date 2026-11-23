@@ -2063,7 +2063,8 @@ class TestEditPaymentUnit:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("optional", [False, True])
-def test_link_deliver_units_reuses_unit_from_inactive_opportunity(opportunity, optional):
+def test_link_deliver_units_takes_own_unit_from_legacy_payment_unit(opportunity, optional):
+    # Before CCCT-3057 a reused app's unit could be left on another opportunity's payment unit
     inactive_payment_unit = PaymentUnitFactory(opportunity=OpportunityFactory(active=False))
     reused = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=inactive_payment_unit, optional=not optional)
     unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)

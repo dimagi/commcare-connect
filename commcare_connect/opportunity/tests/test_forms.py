@@ -39,7 +39,7 @@ from commcare_connect.opportunity.forms.assigned_tasks import (
 from commcare_connect.opportunity.forms.invoices import AutomatedPaymentInvoiceForm
 from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
-    BillToAddress,
+    BilledEntity,
     CompletedWorkInvoice,
     CompletedWorkStatus,
     CredentialConfiguration,
@@ -53,7 +53,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
-    BillToAddressFactory,
+    BilledEntityFactory,
     CommCareAppFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -754,7 +754,7 @@ class TestAutomatedPaymentInvoiceForm:
     def _form(self, opportunity, invoice_type="custom", data=None, **kwargs):
         """Bound forms get the default bill_to unless `data` supplies one."""
         if data is not None:
-            data = {"bill_to": BillToAddress.get_default().pk, **data}
+            data = {"bill_to": BilledEntity.get_default().pk, **data}
         return AutomatedPaymentInvoiceForm(
             opportunity=opportunity, invoice_type=invoice_type, is_opportunity_pm=False, data=data, **kwargs
         )
@@ -773,24 +773,24 @@ class TestAutomatedPaymentInvoiceForm:
         return cw
 
     @pytest.fixture
-    def addresses(self, db):
+    def entities(self, db):
         return {
-            "default": BillToAddress.objects.get(is_default=True),
-            "other": BillToAddressFactory(name="Dimagi South Africa"),
-            "inactive": BillToAddressFactory(name="Old Entity", is_active=False),
+            "default": BilledEntity.objects.get(is_default=True),
+            "other": BilledEntityFactory(name="Dimagi South Africa"),
+            "inactive": BilledEntityFactory(name="Old Entity", is_active=False),
         }
 
-    def test_bill_to_lists_active_addresses_with_default_selected(self, valid_opportunity, addresses):
+    def test_bill_to_lists_active_entities_with_default_selected(self, valid_opportunity, entities):
         field = self._form(valid_opportunity).fields["bill_to"]
-        assert list(field.queryset) == [addresses["default"], addresses["other"]]
-        assert field.initial == addresses["default"]
+        assert list(field.queryset) == [entities["default"], entities["other"]]
+        assert field.initial == entities["default"]
 
     @pytest.mark.parametrize("choice", ["default", "other"])
-    def test_saves_chosen_bill_to(self, valid_opportunity, addresses, choice):
+    def test_saves_chosen_bill_to(self, valid_opportunity, entities, choice):
         ExchangeRateFactory(rate_date="2020-01-01")
-        form = self._form(valid_opportunity, data=self._custom_data(bill_to=addresses[choice].pk))
+        form = self._form(valid_opportunity, data=self._custom_data(bill_to=entities[choice].pk))
         assert form.is_valid(), form.errors
-        assert form.save().bill_to == addresses[choice]
+        assert form.save().bill_to == entities[choice]
 
     def test_bill_to_is_required(self, valid_opportunity):
         ExchangeRateFactory(rate_date="2020-01-01")
@@ -798,12 +798,12 @@ class TestAutomatedPaymentInvoiceForm:
         assert not form.is_valid()
         assert "bill_to" in form.errors
 
-    def test_read_only_shows_invoice_address_even_if_deactivated(self, valid_opportunity, addresses):
-        invoice = PaymentInvoiceFactory(opportunity=valid_opportunity, bill_to=addresses["other"])
-        addresses["other"].is_active = False
-        addresses["other"].save()
+    def test_read_only_shows_invoice_entity_even_if_deactivated(self, valid_opportunity, entities):
+        invoice = PaymentInvoiceFactory(opportunity=valid_opportunity, bill_to=entities["other"])
+        entities["other"].is_active = False
+        entities["other"].save()
         form = self._form(valid_opportunity, instance=invoice, read_only=True)
-        assert form.fields["bill_to"].initial == f"Dimagi South Africa\n{addresses['other'].address}"
+        assert form.fields["bill_to"].initial == f"Dimagi South Africa\n{entities['other'].address}"
         assert form.fields["bill_to"].widget.attrs["readonly"] == "readonly"
 
     def test_form_initialization(self, valid_opportunity):

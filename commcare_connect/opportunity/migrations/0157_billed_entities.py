@@ -8,29 +8,29 @@ DIMAGI_INC_NAME = "Dimagi, Inc."
 DIMAGI_INC_ADDRESS = "245 Main Street, 2nd Floor\nCambridge, MA 02142, USA\n+1 617.649.2214"
 
 
-def seed_default_bill_to_address(apps, schema_editor):
+def seed_default_billed_entity(apps, schema_editor):
     db = schema_editor.connection.alias
-    BillToAddress = apps.get_model("opportunity", "BillToAddress")
-    BillToAddress.objects.using(db).create(name=DIMAGI_INC_NAME, address=DIMAGI_INC_ADDRESS, is_default=True)
+    BilledEntity = apps.get_model("opportunity", "BilledEntity")
+    BilledEntity.objects.using(db).create(name=DIMAGI_INC_NAME, address=DIMAGI_INC_ADDRESS, is_default=True)
 
 
 def backfill_invoice_bill_to(apps, schema_editor):
     db = schema_editor.connection.alias
-    BillToAddress = apps.get_model("opportunity", "BillToAddress")
+    BilledEntity = apps.get_model("opportunity", "BilledEntity")
     PaymentInvoice = apps.get_model("opportunity", "PaymentInvoice")
-    default = BillToAddress.objects.using(db).get(is_default=True)
+    default = BilledEntity.objects.using(db).get(is_default=True)
     PaymentInvoice.objects.using(db).filter(bill_to__isnull=True).update(bill_to=default)
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0154_remove_opportunity_managed'),
+        ('opportunity', '0156_deliverunit_opportunity'),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BillToAddress',
+            name='BilledEntity',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('created_by', models.CharField(max_length=255)),
@@ -43,17 +43,17 @@ class Migration(migrations.Migration):
                 ('is_default', models.BooleanField(default=False)),
             ],
             options={
-                'verbose_name_plural': 'Bill to Addresses',
-                'constraints': [models.UniqueConstraint(condition=models.Q(('is_default', True)), fields=('is_default',), name='unique_default_bill_to_address'), models.CheckConstraint(condition=models.Q(('is_active', True), ('is_default', False), _connector='OR'), name='default_bill_to_address_is_active')],
+                'verbose_name_plural': 'Billed entities',
+                'constraints': [models.UniqueConstraint(condition=models.Q(('is_default', True)), fields=('is_default',), name='unique_default_billed_entity'), models.CheckConstraint(condition=models.Q(('is_active', True), ('is_default', False), _connector='OR'), name='default_billed_entity_is_active')],
             },
         ),
         migrations.AddField(
             model_name='paymentinvoice',
             name='bill_to',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='invoices', to='opportunity.billtoaddress'),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='invoices', to='opportunity.billedentity'),
         ),
         migrations.RunPython(
-            seed_default_bill_to_address, migrations.RunPython.noop, hints={"run_on_secondary": True}
+            seed_default_billed_entity, migrations.RunPython.noop, hints={"run_on_secondary": True}
         ),
         migrations.RunPython(backfill_invoice_bill_to, migrations.RunPython.noop, hints={"run_on_secondary": True}),
         # Every row has a value now. Django drops the FK with SET CONSTRAINTS ... IMMEDIATE before altering the
@@ -62,7 +62,7 @@ class Migration(migrations.Migration):
             model_name="paymentinvoice",
             name="bill_to",
             field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, related_name="invoices", to="opportunity.billtoaddress"
+                on_delete=django.db.models.deletion.PROTECT, related_name="invoices", to="opportunity.billedentity"
             ),
         ),
     ]

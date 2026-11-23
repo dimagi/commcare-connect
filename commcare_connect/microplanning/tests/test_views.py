@@ -58,7 +58,7 @@ from commcare_connect.microplanning.views import (
     get_metrics_for_microplanning,
     is_adding_work_areas,
 )
-from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
+from commcare_connect.opportunity.models import BlobMeta, DeliverUnit, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     DeliverUnitFactory,
     OpportunityAccessFactory,
@@ -2574,8 +2574,12 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def _make_visits(self, opp, work_area, *, approved=0, pending=0, deliver_unit=None):
         """Create `approved` approved + `pending` pending UserVisits for `work_area`."""
-        deliver_unit = deliver_unit or DeliverUnitFactory(
-            app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG, name="Health Service Delivery"
+        deliver_unit = (
+            deliver_unit
+            or DeliverUnit.objects.for_opportunity(opp).filter(slug=SERVICE_DELIVERY_UNIT_SLUG).first()
+            or DeliverUnitFactory(
+                opportunity=opp, app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG, name="Health Service Delivery"
+            )
         )
         for _ in range(approved):
             UserVisitFactory(
@@ -2819,7 +2823,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         )
         self._make_visits(opp, wa_visited, approved=1)
         # Orphan approved visits (no work area) must be ignored.
-        hsd_unit = DeliverUnitFactory(app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
+        hsd_unit = DeliverUnit.objects.for_opportunity(opp).get(slug=SERVICE_DELIVERY_UNIT_SLUG)
         for _ in range(3):
             UserVisitFactory(
                 opportunity=opp, work_area=None, deliver_unit=hsd_unit, status=VisitValidationStatus.approved

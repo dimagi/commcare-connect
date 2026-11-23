@@ -56,13 +56,17 @@ class WorkerSteps:
             blocks.append(assessment_block(ASSESSMENT_SLUG, score))
         with self.step():
             for worker in workers:
-                started, forms = self._learn_schedule(opportunity, worker, len(blocks))
+                started, durations, gaps = self._learn_schedule(opportunity, worker, len(blocks))
                 with self.at(started):
                     # Opening the learn app is what accepts the invite and creates the worker's CommCare user.
                     response = _phone(worker).post(
                         reverse("users:start_learn_app"), {"opportunity": str(opportunity.opportunity_id)}
                     )
                     _check(response, worker, "start learning")
+                # The app stamps the learn start when that request runs, which can be later than ``started``
+                # by however long the request took; the forms must not come before it.
+                access = OpportunityAccess.objects.get(user=worker, opportunity=opportunity)
+                forms = _fit_forms(max(started, access.date_learn_started), durations, gaps)
                 username = _commcare_username(worker, opportunity.learn_app)
                 for block, (time_start, duration) in zip(blocks, forms):
                     # The phone sends each form when the worker finishes it.
@@ -71,10 +75,11 @@ class WorkerSteps:
             self.log(f"{len(workers)} workers completed {len(slugs)}/{len(LEARN_MODULE_SLUGS)} learn modules")
 
     def _learn_schedule(self, opportunity, worker, form_count):
-        """When the worker starts learning, and each form's ``(time_start, duration)``.
+        """When the worker starts learning, and the drawn duration of each form and the gap after it.
 
-        Learning runs forward from the later of the invite and the opportunity's start. When the time from there
-        to now is shorter than the drawn schedule, the whole schedule is compressed to fit.
+        Learning starts after a delay from the later of the invite and the opportunity's start. When the time
+        from there to now is shorter than the whole drawn schedule, the delay is compressed in proportion, so
+        the forms keep their share of the window; ``_fit_forms`` compresses the forms themselves.
         """
         access = OpportunityAccess.objects.get(user=worker, opportunity=opportunity)
         earliest = max(access.invited_date, datetime.combine(opportunity.start_date, time.min, tzinfo=UTC))
@@ -86,14 +91,20 @@ class WorkerSteps:
         durations = [timedelta(minutes=self.rng.randint(5, 25)) for _ in range(form_count)]
         gaps = [timedelta(minutes=self.rng.randint(10, 240)) for _ in range(form_count - 1)] + [timedelta(0)]
         scale = min(1, window / (delay + sum(durations, timedelta()) + sum(gaps, timedelta())))
+        return earliest + delay * scale, durations, gaps
 
-        started = earliest + delay * scale
-        forms = []
-        time_start = started
-        for duration, gap in zip(durations, gaps):
-            forms.append((time_start, duration * scale))
-            time_start += (duration + gap) * scale
-        return started, forms
+
+def _fit_forms(start, durations, gaps):
+    """Each form's ``(time_start, duration)``, running forward from ``start`` and compressed to end by now."""
+    total = sum(durations, timedelta()) + sum(gaps, timedelta())
+    window = max(now() - start, timedelta(0))
+    scale = min(1, window / total) if total else 1
+    forms = []
+    time_start = start
+    for duration, gap in zip(durations, gaps):
+        forms.append((time_start, duration * scale))
+        time_start += (duration + gap) * scale
+    return forms
 
 
 def _commcare_username(worker, app):

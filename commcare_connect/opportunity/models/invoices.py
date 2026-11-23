@@ -41,11 +41,11 @@ class InvoiceStatus(models.TextChoices):
         return cls.choices
 
 
-class BillToAddress(BaseModel):
+class BilledEntity(BaseModel):
     """An entity an invoice can be billed to.
 
-    Once an invoice uses an address, its name and address are frozen so issued invoices never change.
-    BillToAddressForm enforces this; nothing at the model or database level does, so any new write path must too.
+    Once an invoice uses an entity, its name and address are frozen so issued invoices never change.
+    BilledEntityForm enforces this; nothing at the model or database level does, so any new write path must too.
     """
 
     name = models.CharField(max_length=255)
@@ -54,13 +54,13 @@ class BillToAddress(BaseModel):
     is_default = models.BooleanField(default=False)
 
     class Meta:
-        verbose_name_plural = gettext_lazy("Bill to Addresses")
+        verbose_name_plural = gettext_lazy("Billed entities")
         constraints = [
             models.UniqueConstraint(
-                fields=["is_default"], condition=Q(is_default=True), name="unique_default_bill_to_address"
+                fields=["is_default"], condition=Q(is_default=True), name="unique_default_billed_entity"
             ),
             models.CheckConstraint(
-                condition=Q(is_active=True) | Q(is_default=False), name="default_bill_to_address_is_active"
+                condition=Q(is_active=True) | Q(is_default=False), name="default_billed_entity_is_active"
             ),
         ]
 
@@ -72,18 +72,18 @@ class BillToAddress(BaseModel):
 
     @classmethod
     def in_use_condition(cls):
-        """True for the default and for addresses any invoice uses; usable in filter() and annotate()."""
+        """True for the default and for entities any invoice uses; usable in filter() and annotate()."""
         return Q(is_default=True) | Exists(PaymentInvoice.objects.filter(bill_to=OuterRef("pk")))
 
     def is_in_use(self):
-        return BillToAddress.objects.filter(BillToAddress.in_use_condition(), pk=self.pk).exists()
+        return BilledEntity.objects.filter(BilledEntity.in_use_condition(), pk=self.pk).exists()
 
     @transaction.atomic
     def make_default(self, modified_by):
         changes = {"modified_by": modified_by, "date_modified": now()}
         # The old default goes first: the unique constraint is checked per statement.
-        BillToAddress.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False, **changes)
-        BillToAddress.objects.filter(pk=self.pk).update(is_default=True, **changes)
+        BilledEntity.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False, **changes)
+        BilledEntity.objects.filter(pk=self.pk).update(is_default=True, **changes)
         self.is_default = True
         self.modified_by = changes["modified_by"]
         self.date_modified = changes["date_modified"]
@@ -93,7 +93,7 @@ class BillToAddress(BaseModel):
         try:
             return cls.objects.get(is_default=True)
         except cls.DoesNotExist:
-            raise ImproperlyConfigured("No default Bill To address is configured.")
+            raise ImproperlyConfigured("No default billed entity is configured.")
 
 
 @pghistory.track(fields=["status"])
@@ -110,7 +110,7 @@ class PaymentInvoice(models.Model):
     invoice_number = models.CharField(max_length=50)
     service_delivery = models.BooleanField(default=True)
     exchange_rate = models.ForeignKey(ExchangeRate, on_delete=models.DO_NOTHING, null=True)
-    bill_to = models.ForeignKey(BillToAddress, on_delete=models.PROTECT, related_name="invoices")
+    bill_to = models.ForeignKey(BilledEntity, on_delete=models.PROTECT, related_name="invoices")
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
@@ -127,7 +127,7 @@ class PaymentInvoice(models.Model):
 
     def save(self, *args, **kwargs):
         if self._state.adding and self.bill_to_id is None:
-            self.bill_to = BillToAddress.get_default()
+            self.bill_to = BilledEntity.get_default()
         super().save(*args, **kwargs)
 
     @property

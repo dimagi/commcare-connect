@@ -11,7 +11,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.models import (
     AudioAttachment,
-    BillToAddress,
+    BilledEntity,
     BlobMeta,
     CompletedWorkInvoice,
     CompletedWorkStatus,
@@ -48,7 +48,7 @@ from commcare_connect.opportunity.tasks import (
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     AssignedTaskFactory,
-    BillToAddressFactory,
+    BilledEntityFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     CompletedWorkInvoiceFactory,
@@ -375,9 +375,9 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
             yield
 
     def test_generate_invoice_for_two_active_opportunities(self):
-        # The task saves invoices without choosing an entity, so they go to whichever address is the default.
-        BillToAddress.objects.update(is_default=False)
-        bill_to = BillToAddressFactory(name="Dimagi South Africa", is_default=True)
+        # The task saves invoices without choosing an entity, so they go to whichever entity is the default.
+        BilledEntity.objects.update(is_default=False)
+        bill_to = BilledEntityFactory(name="Dimagi South Africa", is_default=True)
         opportunity1 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 1, 1))
         opportunity2 = OpportunityFactory(active=True, is_test=False, start_date=datetime.date(2026, 12, 1))
 

@@ -25,7 +25,7 @@ from commcare_connect.flags.switch_names import (
 )
 from commcare_connect.opportunity.models import (
     AudioAttachment,
-    BillToAddress,
+    BilledEntity,
     CommCareApp,
     Country,
     CredentialConfiguration,
@@ -1812,7 +1812,9 @@ class DeliverUnitFlagsForm(forms.ModelForm):
                 ),
             )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, [self.instance.deliver_unit_id]),
+            disabled=True,
+            empty_label=None,
         )
 
     def save(self, commit=True):
@@ -1855,8 +1857,9 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         )
         self.helper.render_hidden_fields = True
 
+        saved_unit_ids = self.instance.deliver_unit.values_list("pk", flat=True) if self.instance.pk else []
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, saved_unit_ids),
             widget=forms.CheckboxSelectMultiple,
         )
 
@@ -1910,11 +1913,11 @@ class DeliveryTypeForm(ManagedOptionForm):
         model = DeliveryType
 
 
-class BillToAddressForm(forms.ModelForm):
+class BilledEntityForm(forms.ModelForm):
     slug_autofill = False
 
     class Meta:
-        model = BillToAddress
+        model = BilledEntity
         fields = ("name", "address", "is_active")
         widgets = {"address": forms.Textarea(attrs={"rows": 4})}
         help_texts = {
@@ -1928,13 +1931,13 @@ class BillToAddressForm(forms.ModelForm):
             self.fields["name"].disabled = True
             self.fields["address"].disabled = True
             self.fields["address"].help_text = _(
-                "Used by invoices, so the name and address can't change. To correct them, add a new address and "
+                "Used by invoices, so the name and address can't change. To correct them, add a new entity and "
                 "deactivate this one."
             )
         if self.instance.is_default:
             self.fields["is_active"].disabled = True
             self.fields["is_active"].help_text = _(
-                "The default address can't be deactivated. Make another address the default first."
+                "The default entity can't be deactivated. Make another entity the default first."
             )
         self.helper = FormHelper(self)
         self.helper.form_tag = False
@@ -1947,7 +1950,7 @@ class BillToAddressForm(forms.ModelForm):
 
     def clean(self):
         # Django ignores a disabled field's posted value, so without this a rename on a page opened before the
-        # address was used would be dropped while the save still reports success.
+        # entity was used would be dropped while the save still reports success.
         cleaned_data = super().clean()
         for name in ("name", "address"):
             if self.fields[name].disabled and self._posted_change(name):
