@@ -80,7 +80,11 @@ def opportunity_end_label(opportunity: Opportunity) -> str:
 
 def selector_tree(user: User) -> list[dict[str, Any]]:
     """Return the organizations the user is a member of, each with its programs and their opportunities."""
-    memberships = UserOrganizationMembership.objects.filter(user=user).select_related("organization")
+    memberships = (
+        UserOrganizationMembership.objects.filter(user=user)
+        .select_related("organization")
+        .order_by("organization__name")
+    )
     orgs = {membership.organization: membership for membership in memberships}
     opportunities_by_org = _opportunities_by_org(orgs)
     filterable_programs_by_org = _filterable_programs_by_org(orgs)
@@ -92,7 +96,7 @@ def selector_tree(user: User) -> list[dict[str, Any]]:
             filterable_programs=filterable_programs_by_org[org],
             can_open_org_home=user_can_edit_org_profile(user, membership),
         )
-        for org, membership in sorted(orgs.items(), key=lambda item: item[0].name)
+        for org, membership in orgs.items()
     ]
 
 
