@@ -142,6 +142,19 @@ class TestPaymentUnits:
         )
         assert response.status_code == 400
 
+    def test_payment_unit_rejects_start_before_opportunity(
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
+    ):
+        opportunity, du1, du2 = opp_with_deliver_units
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payment_unit = {
+            **_payment_unit(required=[du1.id]),
+            "start_date": (opportunity.start_date - datetime.timedelta(days=1)).isoformat(),
+        }
+        response = _post_payment_units(api_client=api_client, opportunity=opportunity, payment_units=[payment_unit])
+        assert response.status_code == 400
+        assert "opportunity's start date" in str(response.data)
+
     @pytest.mark.parametrize(
         "same_opportunity, expected_status",
         [
