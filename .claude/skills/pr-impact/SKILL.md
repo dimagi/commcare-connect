@@ -56,7 +56,7 @@ Give each dimension the highest level any part of the change reaches, with a rea
 
 ### 3.1 Core flow (criticality)
 
-`core-flows.md` lists the flows Connect exists to run (form ingest, visit status, accrual, invoicing and payment, claiming, worker identity, org access) with the code to start from for each one. Check reach from those starting points: does the changed code run on one of the flows, directly or through a caller?
+`docs/core-flows.md` lists the flows Connect exists to run (form ingest, visit status, accrual, invoicing and payment, claiming, worker identity, org access) with the code to start from for each one. Check reach from those starting points: does the changed code run on one of the flows, directly or through a caller?
 
 - **High:** on a core flow, and a defect could block it, lose submitted work, or produce a wrong status, count or amount. For the org access flow, High here means a defect could lock people out of work they need to do; a defect that grants access to the wrong people is graded under Security (3.3), not here, so the same risk isn't counted twice.
 - **Medium:** a feature program managers or org admins use regularly but that isn't a core flow (opportunity dashboards, worker pages, exports, microplanning, audit reports, tasks).

@@ -1,6 +1,10 @@
 # Core flows
 
-The flows Connect exists to run. A change that could block one of these, lose submitted work, or produce a wrong status, count or amount is **High** on the core flow dimension, however small the diff is. The code listed is where to start checking reach; it is not the whole flow. All paths are under `commcare_connect/`.
+The flows Connect exists to run. A defect in one of these blocks organisations or workers from doing their job, loses submitted work, or records a wrong status, count or amount, however small the change that caused it. Review changes that reach them closely; the `pr-impact` skill (`.claude/skills/pr-impact/`) grades any such change **High** on its core flow dimension.
+
+The code listed is where to start checking whether a change reaches a flow; it is not the whole flow. All paths are under `commcare_connect/`.
+
+**Keep this page current.** When you move, rename or delete code listed here, or add a flow, update this page in the same PR.
 
 ## Field work: claim → learn → deliver
 
