@@ -138,7 +138,6 @@ def _org_node(
     filterable_programs: dict[int, Program],
     can_open_org_home: bool,
 ) -> dict[str, Any]:
-    """`opportunities` maps each of the org's opportunities to its visit stats."""
     opportunities_by_program = defaultdict(dict)
     for opp, opp_stats in opportunities.items():
         opportunities_by_program[opp.program_id][opp] = opp_stats
