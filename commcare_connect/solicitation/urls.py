@@ -1,6 +1,13 @@
 from django.urls import path
 
-from commcare_connect.solicitation.views import applications, apply, management, marketplace, participants
+from commcare_connect.solicitation.views import (
+    applications,
+    apply,
+    management,
+    marketplace,
+    my_applications,
+    participants,
+)
 
 app_name = "solicitation"
 urlpatterns = [
@@ -50,4 +57,19 @@ marketplace_urlpatterns = [
 # The applications a posting organization's solicitations received.
 received_application_urlpatterns = [
     path("", view=applications.ReceivedApplicationsView.as_view(), name="list"),
+]
+
+# An applying organization's own applications, scoped to the organization.
+my_application_urlpatterns = [
+    path("<uuid:application_id>/", view=my_applications.MyApplicationDetailView.as_view(), name="detail"),
+    path(
+        "<uuid:application_id>/withdraw/",
+        view=my_applications.MyApplicationWithdrawView.as_view(),
+        name="withdraw",
+    ),
+    path(
+        "<uuid:application_id>/answers/<int:answer_id>/file/",
+        view=my_applications.MyApplicationAnswerFileView.as_view(),
+        name="answer_file",
+    ),
 ]

@@ -1,4 +1,4 @@
-from urllib.parse import urlencode
+import os
 from uuid import uuid4
 
 from django.conf import settings
@@ -225,6 +225,8 @@ class SolicitationApplication(BaseModel):
 
     # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
     NON_RESPONSE_STATUSES = (Status.DRAFT, Status.WITHDRAWN)
+    # Sent and not yet decided. Withdrawing an awarded application also releases its award, so it is separate.
+    WITHDRAWABLE_STATUSES = (Status.SUBMITTED, Status.UNDER_REVIEW)
 
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
@@ -253,10 +255,26 @@ class SolicitationApplication(BaseModel):
         ]
 
     @property
+    def applicant_status(self):
+        """The status the applying organization sees: shortlisting shows while the application is under review."""
+        if self.status == self.Status.UNDER_REVIEW and self.shortlisted:
+            return _("Shortlisted")
+        return self.get_status_display()
+
+    @property
     def applicant_url(self):
-        """Where the applying organization follows this application: its Apply page, which shows it once sent."""
-        url = reverse("marketplace:apply", args=[self.solicitation.solicitation_id])
-        return f"{url}?{urlencode({'organization': self.organization.slug})}"
+        """Where the applying organization follows this application."""
+        return reverse("my_applications:detail", args=[self.organization.slug, self.application_id])
+
+    @property
+    def can_withdraw(self):
+        return self.status in self.WITHDRAWABLE_STATUSES
+
+    def withdraw(self, user_email):
+        self.status = self.Status.WITHDRAWN
+        self.withdrawn_date = now()
+        self.modified_by = user_email
+        self.save(update_fields=["status", "withdrawn_date", "modified_by", "date_modified"])
 
 
 class SolicitationApplicationAnswer(BaseModel):
@@ -269,6 +287,11 @@ class SolicitationApplicationAnswer(BaseModel):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["application", "question"], name="one_answer_per_question")]
+
+    @property
+    def file_name(self):
+        """The uploaded file's name without its storage folder."""
+        return os.path.basename(self.file.name)
 
 
 class SolicitationReviewer(BaseModel):

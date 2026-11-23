@@ -1,10 +1,15 @@
-{# An application's status as a coloured badge. #}
-{% if record.status == "withdrawn" or record.status == "rejected" %}
-  <span class="badge badge-sm negative-light">{{ record.get_status_display }}</span>
-{% elif record.status == "submitted" or record.status == "awarded" %}
-  <span class="badge badge-sm positive-light">{{ record.get_status_display }}</span>
-{% elif record.status == "draft" %}
-  <span class="badge badge-sm badge-amber">{{ record.get_status_display }}</span>
+{# An application's status: as the applying organization sees it, or as the posting one does when poster_view is set. #}
+{% if poster_view %}
+  {% firstof record.get_status_display as label %}
 {% else %}
-  <span class="badge badge-sm badge-indigo">{{ record.get_status_display }}</span>
+  {% firstof record.applicant_status as label %}
+{% endif %}
+{% if record.status == "withdrawn" or record.status == "rejected" %}
+  <span class="badge badge-sm negative-light">{{ label }}</span>
+{% elif record.status == "submitted" or record.status == "awarded" %}
+  <span class="badge badge-sm positive-light">{{ label }}</span>
+{% elif record.status == "draft" %}
+  <span class="badge badge-sm badge-amber">{{ label }}</span>
+{% else %}
+  <span class="badge badge-sm badge-indigo">{{ label }}</span>
 {% endif %}

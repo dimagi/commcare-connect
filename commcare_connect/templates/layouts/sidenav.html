@@ -50,7 +50,7 @@
       {% switch "solicitations" %}
         {% with namespaces=request.resolver_match.namespaces %}
           <div {% if not request.org %}class="mt-5"{% endif %} x-data="{ open:
-            {% if 'solicitation' in namespaces or 'received_applications' in namespaces or 'marketplace' in namespaces %}
+            {% if 'solicitation' in namespaces or 'received_applications' in namespaces or 'my_applications' in namespaces or 'marketplace' in namespaces %}
               true
             {% else %}
               false

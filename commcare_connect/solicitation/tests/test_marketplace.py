@@ -348,7 +348,7 @@ def test_detail_offers_apply_until_the_organization_has_applied(
 
     content = client.get(detail_url(solicitation)).content.decode()
 
-    assert (">Apply</a>" in content) == shows_apply
+    assert (reverse("marketplace:apply", args=[solicitation.solicitation_id]) in content) == shows_apply
     assert (application is not None and application.applicant_url in content) == (not shows_apply)
 
 

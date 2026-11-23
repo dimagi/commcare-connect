@@ -15,10 +15,12 @@ def shortlisted_column():
     return columns.BooleanColumn(verbose_name=_("Shortlisted"), yesno=(_("Yes"), _("No")), attrs=STAT_COLUMN_ATTRS)
 
 
-def application_status_column():
-    """The status as a coloured badge."""
+def application_status_column(*, poster_view=False):
+    """The status as a coloured badge; poster_view shows it as the posting organization sees it."""
     return columns.TemplateColumn(
-        verbose_name=_("Status"), template_name="solicitation/partials/application_status_badge.html"
+        verbose_name=_("Status"),
+        template_name="solicitation/partials/application_status_badge.html",
+        extra_context={"poster_view": poster_view},
     )
 
 
@@ -134,7 +136,7 @@ class SolicitationApplicationTable(tables.Table):
 
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
     submitted_date = DMYTColumn(verbose_name=_("Submitted"))
-    status = application_status_column()
+    status = application_status_column(poster_view=True)
     shortlisted = shortlisted_column()
     average_score = columns.Column(verbose_name=_("Avg. score (/100)"), attrs=STAT_COLUMN_ATTRS)
     recommendations = columns.Column(verbose_name=_("Recommendations"), empty_values=(), orderable=False)
@@ -176,7 +178,7 @@ class ReceivedApplicationTable(tables.Table):
         attrs={"a": {"class": "underline"}},
     )
     organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
-    status = application_status_column()
+    status = application_status_column(poster_view=True)
     shortlisted = shortlisted_column()
     submitted_date = DMYTColumn(verbose_name=_("Submitted"))
 

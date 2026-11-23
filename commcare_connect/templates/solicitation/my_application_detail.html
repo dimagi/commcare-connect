@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}
+  {{ solicitation.title }}
+{% endblock title %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full pb-8">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="title">{{ solicitation.title }}</h1>
+        <p class="hint">
+          {% blocktranslate with name=application.organization.name %}{{ name }}'s application{% endblocktranslate %}
+        </p>
+      </div>
+      {% if request.org_access_level.has_admin %}
+        <div class="flex gap-3">
+          {% if application.status == "draft" and solicitation.is_open %}
+            <a class="button button-md primary-dark"
+               href="{% url 'marketplace:apply' solicitation.solicitation_id %}?organization={{ application.organization.slug }}">{% translate "Continue editing" %}</a>
+          {% endif %}
+          {% if application.can_withdraw %}
+            <form method="post"
+                  action="{% url 'my_applications:withdraw' request.org.slug application.application_id %}"
+                  x-data
+                  x-ref="withdrawForm">
+              {% csrf_token %}
+              <button type="button"
+                      class="button button-md negative-dark"
+                      @click="$store.confirmModal.show({title: '{{ _("Withdraw application") |escapejs }}', message: '{{ _("Withdraw this application? It can't be sent again, and the program manager will no longer consider it.") |escapejs }}', confirmBtnText: '{{ _("Withdraw") |escapejs }}', confirmBtnRed: true, formRef: $refs.withdrawForm})">
+                {% translate "Withdraw" %}
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <section class="card_bg">
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <dt class="text-gray-500">{% translate "Status" %}</dt>
+        <dd>
+          {% include "solicitation/partials/application_status_badge.html" with record=application %}
+        </dd>
+        {% if application.submitted_date %}
+          <dt class="text-gray-500">{% translate "Submitted" %}</dt>
+          <dd>
+            {{ application.submitted_date|date:"j M Y, H:i" }} UTC · {{ application.submitter_name }}
+          </dd>
+        {% endif %}
+        {% if application.withdrawn_date %}
+          <dt class="text-gray-500">{% translate "Withdrawn" %}</dt>
+          <dd>
+            {{ application.withdrawn_date|date:"j M Y, H:i" }} UTC
+          </dd>
+        {% endif %}
+      </dl>
+    </section>
+    {% include "solicitation/partials/marketplace_card.html" %}
+    <section class="flex flex-col gap-3">
+      <h2 class="title-sm">{% translate "Answers" %}</h2>
+      {% for question, answer in answered_questions %}
+        <div class="card_bg flex flex-col gap-1">
+          <p class="font-medium">{{ question.text }}</p>
+          {% if answer.file %}
+            <a class="underline text-sm"
+               href="{% url 'my_applications:answer_file' request.org.slug application.application_id answer.pk %}">{{ answer.file_name }}</a>
+          {% elif answer.answer is not None %}
+            <div class="text-sm">{{ answer.answer|linebreaks }}</div>
+          {% else %}
+            <p class="hint">{% translate "Not answered" %}</p>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p class="card_bg card_description">{% translate "This solicitation asks no questions." %}</p>
+      {% endfor %}
+    </section>
+  </div>
+  {% include "components/confirm_modal.html" %}
+{% endblock content %}

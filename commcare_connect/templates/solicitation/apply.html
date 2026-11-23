@@ -45,6 +45,9 @@
           <p class="card_description">
             {% blocktranslate with date=solicitation.application_deadline|date:"j M Y, H:i" %}It stopped taking applications on {{ date }} UTC.{% endblocktranslate %}
           </p>
+          {% if application.pk %}
+            <a class="underline text-sm" href="{{ application.applicant_url }}">{% translate "View the application" %}</a>
+          {% endif %}
         </div>
       {% elif not organizations %}
         <div class="card_bg flex flex-col gap-3">
@@ -134,8 +137,9 @@
         {% elif application %}
           <div class="card_bg">
             <p class="card_description">
-              {% blocktranslate with name=organization.name date=application.submitted_date|date:"j M Y, H:i" status=application.get_status_display %}{{ name }} submitted its application on {{ date }} UTC. Its status is {{ status }}.{% endblocktranslate %}
+              {% blocktranslate with name=organization.name date=application.submitted_date|date:"j M Y, H:i" status=application.applicant_status %}{{ name }} submitted its application on {{ date }} UTC. Its status is {{ status }}.{% endblocktranslate %}
             </p>
+            <a class="underline text-sm" href="{{ application.applicant_url }}">{% translate "View the application" %}</a>
           </div>
         {% endif %}
       {% endif %}
