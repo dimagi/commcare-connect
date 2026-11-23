@@ -13,12 +13,7 @@ on:
   schedule:
     - cron: '0 12 * * 1,3,5'
 
-# The called deploy.yml can't have more permissions than these
-permissions:
-  id-token: write
-  contents: write
-  actions: write
-  deployments: write
+permissions: {}
 
 # The group manual production deploys take in deploy.yml (deploy-<environment>); keep the name and
 # cancel-in-progress: false the same in both, or one could cancel the other's deploy halfway. Holding it for the whole
@@ -38,7 +33,9 @@ jobs:
       sha: ${{ steps.ready.outputs.sha }}
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: ready
         name: Check main is ready to deploy
@@ -49,7 +46,7 @@ jobs:
       # Posts every skip, warn or not, so each scheduled run leaves a message in the channel
       - name: Notify deploy skipped
         if: ${{ steps.ready.outputs.deploy != 'true' || failure() }}
-        uses: slackapi/slack-github-action@v1.24.0
+        uses: slackapi/slack-github-action@e28cf165c92ffef168d23c5c9000cffc8a25e117 # v1.24.0
         with:
           channel-id: ${{ vars.SLACK_PRODUCTION_DEPLOY_CHANNEL }}
           # toJSON escapes quotes and newlines in the reason, which would otherwise break the JSON
@@ -64,11 +61,22 @@ jobs:
     needs: readiness
     # An empty ref would leave the deploy unpinned, and asking for the group this run already holds
     if: ${{ needs.readiness.outputs.deploy == 'true' && needs.readiness.outputs.sha != '' }}
-    uses: ./.github/workflows/deploy.yml
+    # The called deploy.yml can't have more permissions than these
+    permissions:
+      id-token: write
+      contents: write
+      deployments: write
+      pull-requests: write
+    uses: ./.github/workflows/deploy.yml # zizmor: ignore[self-repository]
     with:
       environment: production
       # Not 'scheduled': manual deploys use that for the regular release cadence, and Slack shows this value
       deploy_type: automatic
       # The commit the readiness check approved, so anything merged since waits for the next slot
       ref: ${{ needs.readiness.outputs.sha }}
-    secrets: inherit
+    secrets:
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      QA_SUITE_DISPATCH_TOKEN: ${{ secrets.QA_SUITE_DISPATCH_TOKEN }}

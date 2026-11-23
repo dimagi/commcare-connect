@@ -81,6 +81,7 @@ Organization
   │     ├── Task
   │     └── DeliverUnit → PaymentUnit
   └── Opportunity (refs learn_app, deliver_app)
+        ├── DeliverUnit (its own units of deliver_app)
         ├── PaymentUnit (amount, limits)
         │     └── PaymentUnit (child, optional)
         ├── OpportunityVerificationFlags (1:1)
