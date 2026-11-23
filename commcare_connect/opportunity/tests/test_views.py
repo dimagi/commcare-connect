@@ -1359,6 +1359,7 @@ class TestResendUserInvites:
         sms_body = mock_send_sms.call_args.args[1]
         expected_path = reverse("users:invite_redirect", args=(self.access2.opportunity.opportunity_id,))
         assert expected_path in sms_body
+        mock_send_message.assert_not_called()
 
     def test_no_user_ids(self, mock_send_event):
         response = self.client.post(self.url, data={})
