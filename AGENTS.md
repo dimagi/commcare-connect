@@ -146,6 +146,7 @@ Some words mean several unrelated things here. Work out which one you are in bef
 - **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists all 76 of them. Plenty of templates still use raw utilities; that's legacy
 - **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables/__init__.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
 - **App READMEs are part of the change**: `opportunity/README.md`, `opportunity/PAYMENTS.md`, `form_receiver/README.md`, `flags/README.md`, `health/README.md` and `templates/README.md` document non-obvious behaviour (status rules, accrual, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+- **So is `docs/core-flows.md`**: it lists the flows Connect exists to run (form ingest, visit status, accrual, invoicing and payment, claiming, worker identity, org access) and the code each one starts from. The `pr-impact` skill grades PR risk against it, so a stale entry means wrong grades. If you move, rename or delete code it lists, or add a flow, update it in the same PR.
 <!-- --8<-- [end:code-style] -->
 - **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
 - **Moving or renaming a module**: grep `*.md` for the old path and update it in the same commit.
@@ -156,6 +157,10 @@ Some words mean several unrelated things here. Work out which one you are in bef
 ## Commits
 
 Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunity): handle missing payment unit`). Don't mix change types in one commit; split them instead.
+
+## Code review
+
+When you review a change locally (the working tree or a branch, rather than reviewing on GitHub), end the review by running the `pr-impact` skill (`.claude/skills/pr-impact/`) on the same change, so the risk grade reflects what the review found. Use its pre-PR mode if the branch has no PR yet. The skill asks the author to confirm the grade before it labels anything.
 
 ## Robustness
 
@@ -220,6 +225,7 @@ Write ADRs for significant decisions only. A decision is significant when it is 
 The developer docs site (`zensical.toml`) publishes these and the app READMEs. Most of its pages under `docs/` are one-line `--8<--` stubs that include a README from beside the code, so edit the README, not the stub. `README.md` and this file are published in parts, delimited by `<!-- --8<-- [start:name] -->` / `[end:name]` comments; keep those markers when you move sections around. A new doc page needs a `nav` entry in `zensical.toml`; links to files outside the site (`.github/`, source files) must be absolute GitHub URLs, because the site has no copy of them and the build's link check does not catch these.
 
 - `docs/code-organization.md` — writing another app's models, where utilities go, and migration imports
+- `docs/core-flows.md` — the core flows (field work, money, identity and access) and where their code starts
 - `pr_guidelines.md` — PR size, description and review conventions
 - `docs/dependency-management.md` — adding/upgrading dependencies
 - `deploy/README.md` — Kamal + Ansible deployment
