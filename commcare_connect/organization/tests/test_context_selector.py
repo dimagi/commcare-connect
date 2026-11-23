@@ -328,10 +328,11 @@ def test_page_context_shows_program_only_with_access(nm_org, program, member_of_
     assert _page_context(request) == expected
 
 
-def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org, program):
-    """The "See all" link filters the opportunity list by program only where that list offers the program as a filter.
+def test_program_links_filter_by_program_only_where_the_list_allows_it(pm_org, nm_org, program):
+    """A program's link and its "See all" link filter the opportunity list by program only where that list offers
+    the program as a filter.
 
-    An NM org that only delivers for a program can't filter by it, so its link opens the list without a program.
+    An NM org that only delivers for a program can't filter by it, so its links open the list without a program.
     """
     OpportunityFactory(organization=nm_org, program=program)
     user = _member(pm_org)
@@ -340,9 +341,11 @@ def test_see_all_filters_by_program_only_where_the_list_allows_it(pm_org, nm_org
     tree = _tree_for(user)
 
     (pm_program,) = tree["A PM org"]["programs"]
-    assert pm_program["opportunities_url"] == f"/a/{pm_org.slug}/opportunity/?program={program.slug}&filtered=1"
+    pm_url = f"/a/{pm_org.slug}/opportunity/?program={program.slug}&filtered=1"
+    assert (pm_program["url"], pm_program["opportunities_url"]) == (pm_url, pm_url)
     (nm_program,) = tree["B NM org"]["programs"]
-    assert nm_program["opportunities_url"] == f"/a/{nm_org.slug}/opportunity/?filtered=1"
+    nm_url = f"/a/{nm_org.slug}/opportunity/?filtered=1"
+    assert (nm_program["url"], nm_program["opportunities_url"]) == (nm_url, nm_url)
 
 
 def test_see_all_turns_off_the_lists_default_filters(pm_org):

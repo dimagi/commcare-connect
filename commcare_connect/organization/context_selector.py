@@ -192,7 +192,7 @@ def _program_node(
         "name": program.name,
         # A program past its end date still counts while one of its opportunities runs.
         "active": program.end_date >= now().date() or any(node["active"] for node in opportunity_nodes),
-        "url": reverse("program:home", args=(org.slug,)),
+        "url": opportunities_url,
         "opportunities_url": opportunities_url,
         "opportunities": opportunity_nodes,
         "end_label": end_label(program.end_date),
