@@ -49,6 +49,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentUnit,
     TaskTypeModeChoices,
+    UserInvite,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -1360,6 +1361,14 @@ def test_invite_form_rejects_ended_opportunity():
     )
     assert not form.is_valid()
     assert "This opportunity has ended. You cannot invite more workers." in str(form.errors["users"])
+
+
+def test_invite_form_rejects_too_many_numbers(opportunity):
+    PaymentUnitFactory(opportunity=opportunity)
+    numbers = "\n".join(f"+265{i:09d}" for i in range(UserInvite.MAX_PER_REQUEST + 1))
+    form = OpportunityUserInviteForm(data={"users": numbers}, opportunity=opportunity)
+    assert not form.is_valid()
+    assert "at most" in str(form.errors["users"])
 
 
 @pytest.mark.django_db

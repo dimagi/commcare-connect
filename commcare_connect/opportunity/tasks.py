@@ -13,7 +13,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
@@ -73,7 +73,7 @@ from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import get_export_storage, set_task_progress
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
-from commcare_connect.utils.sms import send_sms
+from commcare_connect.utils.sms import is_sms_destination_allowed, send_sms
 from config import celery_app
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,9 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
             "Skipping invite for opportunity %s with incomplete setup (%d users)", opportunity_id, len(user_list)
         )
         return
+    user_list = _numbers_needing_invite(opportunity, user_list)
+    if not user_list:
+        return
     found_users = fetch_users(user_list)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
@@ -133,6 +136,22 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
         )
     for user in found_users:
         update_user_and_send_invite(user, opportunity_id)
+
+
+def _numbers_needing_invite(opportunity, user_list):
+    """Drop duplicates, and numbers that already accepted or were sent an invite SMS recently.
+
+    Each invite costs an SMS, so submitting the same numbers again must not send them again.
+    """
+    numbers = list(dict.fromkeys(user_list))
+    skip = set(
+        UserInvite.objects.filter(opportunity=opportunity, phone_number__in=numbers)
+        .filter(Q(status=UserInviteStatus.accepted) | Q(notification_date__gte=now() - UserInvite.RESEND_INTERVAL))
+        .values_list("phone_number", flat=True)
+    )
+    if skip:
+        logger.info("Skipping %d already invited numbers for opportunity %s", len(skip), opportunity.pk)
+    return [number for number in numbers if number not in skip]
 
 
 def update_user_and_send_invite(user: ConnectIdUser, opp_id):
@@ -157,11 +176,16 @@ def invite_user(user_id, opportunity_access_id):
     body = f"You have been invited to a job in Connect. Click the link to accept {url}"
     if not user.phone_number:
         return
-    sms_status = send_sms(user.phone_number, body)
+    message_sid = None
+    if is_sms_destination_allowed(user.phone_number):
+        message_sid = send_sms(user.phone_number, body).sid
+    else:
+        logger.warning("Not sending invite SMS to a disallowed country (opportunity access %s)", opportunity_access.pk)
     UserInvite.objects.update_or_create(
         opportunity_access=opportunity_access,
         defaults={
-            "message_sid": sms_status.sid,
+            "message_sid": message_sid,
+            "notification_date": now(),
             "status": UserInviteStatus.accepted if opportunity_access.accepted else UserInviteStatus.invited,
         },
     )

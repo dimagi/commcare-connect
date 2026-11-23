@@ -1,11 +1,13 @@
 """A worker's access to an opportunity: invites, claims and claim limits."""
 
+from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 from django.db import models, transaction
 from django.db.models import Count, Q, Sum
 from django.utils.functional import cached_property
+from django.utils.timezone import now
 from django.utils.translation import gettext
 
 from commcare_connect.opportunity.models.base import CHOICE_FIELD_MAX_LENGTH
@@ -210,3 +212,12 @@ class UserInvite(models.Model):
         max_length=CHOICE_FIELD_MAX_LENGTH, choices=UserInviteStatus, default=UserInviteStatus.invited
     )
     notification_date = models.DateTimeField(null=True)
+
+    # Every invite sends an SMS, so a number gets at most one invite per opportunity in this window.
+    RESEND_INTERVAL = timedelta(days=1)
+    # The most phone numbers one request may invite.
+    MAX_PER_REQUEST = 1000
+
+    @property
+    def sent_recently(self):
+        return bool(self.notification_date) and now() - self.notification_date < self.RESEND_INTERVAL

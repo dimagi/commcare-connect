@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     OpportunityActiveEvent,
     PaymentInvoice,
     UserInvite,
+    UserInviteStatus,
 )
 from commcare_connect.opportunity.tasks import (
     OPPORTUNITY_AUTO_ARCHIVE_DAYS,
@@ -38,6 +39,7 @@ from commcare_connect.opportunity.tasks import (
     generate_review_visit_export,
     generate_user_status_export,
     generate_visit_export,
+    invite_user,
     notify_user_for_scored_assessment,
     save_export,
     send_payment_notification,
@@ -58,6 +60,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
+    UserInviteFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
@@ -103,6 +106,57 @@ class TestConnectUserCreation:
         assert User.objects.filter(username="test").count() == 0
         assert OpportunityAccess.objects.filter(opportunity=opportunity).count() == 0
         assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
+
+    @pytest.mark.django_db
+    def test_add_connect_users_skips_numbers_already_invited(self):
+        opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
+        UserInviteFactory(opportunity=opportunity, phone_number="+111", status=UserInviteStatus.accepted)
+        UserInviteFactory(
+            opportunity=opportunity,
+            phone_number="+222",
+            status=UserInviteStatus.invited,
+            notification_date=now() - datetime.timedelta(hours=1),
+        )
+        UserInviteFactory(
+            opportunity=opportunity,
+            phone_number="+333",
+            status=UserInviteStatus.sms_delivered,
+            notification_date=now() - datetime.timedelta(days=2),
+        )
+        with mock.patch("commcare_connect.opportunity.tasks.fetch_users", return_value=[]) as fetch_users:
+            add_connect_users(["+111", "+222", "+333", "+444", "+444"], opportunity.id)
+            fetch_users.assert_called_once_with(["+333", "+444"])
+
+            fetch_users.reset_mock()
+            add_connect_users(["+111", "+222"], opportunity.id)
+            fetch_users.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "allowed_codes, sms_sent",
+    [([], True), (["+265", "+1"], True), (["+265"], False)],
+    ids=["no_allowlist", "allowed", "disallowed"],
+)
+def test_invite_user_sms_country_allowlist(settings, mobile_user, opportunity, allowed_codes, sms_sent):
+    settings.SMS_ALLOWED_COUNTRY_CODES = allowed_codes
+    mobile_user.phone_number = "+15555555555"
+    mobile_user.save()
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    UserInviteFactory(
+        opportunity=opportunity, opportunity_access=access, phone_number=mobile_user.phone_number, message_sid=None
+    )
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.send_sms", return_value=mock.Mock(sid="SM1")) as send_sms,
+        mock.patch("commcare_connect.opportunity.tasks.send_message") as send_message,
+    ):
+        invite_user(mobile_user.pk, access.pk)
+
+    invite = UserInvite.objects.get(opportunity_access=access)
+    assert send_sms.called is sms_sent
+    assert invite.message_sid == ("SM1" if sms_sent else None)
+    assert invite.notification_date is not None
+    send_message.assert_called_once()
 
 
 def test_send_inactive_notification_learn_inactive_message(mobile_user: User, opportunity: Opportunity):

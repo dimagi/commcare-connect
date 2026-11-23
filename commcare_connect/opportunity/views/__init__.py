@@ -6,7 +6,6 @@ Never import a submodule here: they import from this package, so it would be cir
 import datetime
 import json
 import logging
-from datetime import timedelta
 from decimal import Decimal
 from functools import cached_property
 from http import HTTPStatus
@@ -1533,7 +1532,7 @@ def resend_user_invites(request, org_slug, opp_id):
         if user_invite.status == UserInviteStatus.accepted:
             accepted_invites.append(user_invite.phone_number)
             continue
-        if user_invite.notification_date and (now() - user_invite.notification_date) < timedelta(days=1):
+        if user_invite.sent_recently:
             recent_invites.append(user_invite.phone_number)
             continue
         if user_invite.status == UserInviteStatus.not_found:

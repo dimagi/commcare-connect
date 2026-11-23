@@ -445,6 +445,8 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 TWILIO_ACCOUNT_SID = env("TWILIO_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+# Country calling codes SMS may be sent to, e.g. "+265,+258". Empty allows every country.
+SMS_ALLOWED_COUNTRY_CODES = [code.strip() for code in env.list("SMS_ALLOWED_COUNTRY_CODES", default=[])]
 MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)

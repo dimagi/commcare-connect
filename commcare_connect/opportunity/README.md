@@ -27,6 +27,12 @@ Invited → Accepted → Learning → Claimed → Delivering → Paid
 
 An organization invites mobile users to an opportunity. This creates an access record and sends an SMS with an invite link.
 
+Invite SMS cost money, so they are limited (`add_connect_users` and `invite_user` in `tasks.py`):
+
+- One request can invite at most `UserInvite.MAX_PER_REQUEST` numbers (form and automation API).
+- A number that already accepted, or was sent an invite in the last `UserInvite.RESEND_INTERVAL`, is skipped. Invites are only sent to numbers registered with ConnectID.
+- No SMS goes to a number outside the `SMS_ALLOWED_COUNTRY_CODES` setting (empty allows every country). The invite is still recorded and the push notification still sent.
+
 ### 2. Acceptance
 
 The user clicks the invite link and accepts the opportunity.

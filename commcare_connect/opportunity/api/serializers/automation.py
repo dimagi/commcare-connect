@@ -10,6 +10,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     PaymentUnit,
+    UserInvite,
 )
 
 
@@ -179,7 +180,9 @@ class OpportunityActivateResponseSerializer(serializers.ModelSerializer):
 
 
 class UserInviteSerializer(serializers.Serializer):
-    phone_numbers = serializers.ListField(child=serializers.CharField(), min_length=1)
+    phone_numbers = serializers.ListField(
+        child=serializers.CharField(), min_length=1, max_length=UserInvite.MAX_PER_REQUEST
+    )
 
     def validate(self, data):
         opportunity = self.context["opportunity"]

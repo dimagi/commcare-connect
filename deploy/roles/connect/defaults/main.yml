@@ -29,3 +29,6 @@ commcare_hq_url: https://staging.commcarehq.org
 hubspot_api_id: ''
 # Redirect the old marketing URLs to /public/; only production routes it to the marketing site.
 marketing_site_enabled: False
+# Country calling codes SMS may be sent to (e.g. ["+265", "+258"]). Empty allows every country;
+# set it per inventory to stop SMS pumping to countries Connect doesn't work in.
+sms_allowed_country_codes: []

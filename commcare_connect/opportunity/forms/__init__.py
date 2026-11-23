@@ -40,6 +40,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     PaymentUnit,
+    UserInvite,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -107,6 +108,11 @@ class OpportunityUserInviteForm(forms.Form):
             raise ValidationError(gettext("Please finish setting up the opportunity before inviting users."))
 
         user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
+        if len(user_numbers) > UserInvite.MAX_PER_REQUEST:
+            raise ValidationError(
+                gettext("You can invite at most %(max)s phone numbers at a time.")
+                % {"max": UserInvite.MAX_PER_REQUEST}
+            )
         for user_number in user_numbers:
             if not user_number.startswith("+") or not user_number[1:].isdigit():
                 raise ValidationError(

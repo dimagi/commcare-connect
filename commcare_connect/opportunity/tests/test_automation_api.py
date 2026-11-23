@@ -6,7 +6,7 @@ from waffle.testutils import override_switch
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.flags.switch_names import OPTIONAL_DAILY_LIMIT
-from commcare_connect.opportunity.models import PaymentUnit
+from commcare_connect.opportunity.models import PaymentUnit, UserInvite
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
     DeliverUnitFactory,
@@ -387,11 +387,12 @@ class TestInviteUsers:
         opportunity = active_opportunity
         assert not (opportunity.userinvite_set.exists() or opportunity.opportunityaccess_set.exists())
 
-    def test_invite_users_empty_list(self, api_client, program_manager_org_user_admin, active_opportunity):
+    @pytest.mark.parametrize("count", [0, UserInvite.MAX_PER_REQUEST + 1], ids=["empty", "too_many"])
+    def test_invite_users_list_size(self, api_client, program_manager_org_user_admin, active_opportunity, count):
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
             f"/api/opportunities/{active_opportunity.opportunity_id}/invite_users/",
-            {"phone_numbers": []},
+            {"phone_numbers": [f"+265{i:09d}" for i in range(count)]},
             format="json",
         )
         assert response.status_code == 400
