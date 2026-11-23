@@ -107,25 +107,28 @@ class OpportunityUserInviteForm(forms.Form):
         if self.opportunity and not self.opportunity.is_setup_complete:
             raise ValidationError(gettext("Please finish setting up the opportunity before inviting users."))
 
-        user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
-        if len(user_numbers) > UserInvite.MAX_PER_REQUEST:
-            raise ValidationError(
-                gettext("You can invite at most %(max)s phone numbers at a time.")
-                % {"max": UserInvite.MAX_PER_REQUEST}
-            )
-        for user_number in user_numbers:
-            if not user_number.startswith("+") or not user_number[1:].isdigit():
-                raise ValidationError(
-                    gettext("Phone numbers must contain only digits and include the country code starting with '+'")
-                )
-
-        return user_numbers
+        return _parse_invite_phone_numbers(user_data)
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
         if user_data and self.opportunity and self.opportunity.has_ended:
             raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
         return self._validate_and_parse_users(user_data)
+
+
+def _parse_invite_phone_numbers(user_data):
+    """Split one phone number per line, checking the count and that each has a country code."""
+    user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
+    if len(user_numbers) > UserInvite.MAX_PER_REQUEST:
+        raise ValidationError(
+            gettext("You can invite at most %(max)s phone numbers at a time.") % {"max": UserInvite.MAX_PER_REQUEST}
+        )
+    for user_number in user_numbers:
+        if not user_number.startswith("+") or not user_number[1:].isdigit():
+            raise ValidationError(
+                gettext("Phone numbers must contain only digits and include the country code starting with '+'")
+            )
+    return user_numbers
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
