@@ -3,7 +3,7 @@ from django.db import IntegrityError
 
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.deletion import OPPORTUNITY_DELETIONS, ModelDeletion, delete_opportunity
-from commcare_connect.opportunity.models import CompletedWorkInvoice, LabsRecord, Opportunity, Payment
+from commcare_connect.opportunity.models import CompletedWorkInvoice, DeliverUnit, LabsRecord, Opportunity, Payment
 from commcare_connect.opportunity.tests import factories
 
 
@@ -52,39 +52,23 @@ def test_delete_opportunity_clears_registered_models(opportunity_factory):
 
 
 @pytest.mark.django_db
-def test_delete_opportunity_detaches_deliver_unit_still_used_by_another_opportunity():
-    # Opp A: the DeliverUnit's original owner, still has visit history against it.
-    opp_a = factories.OpportunityFactory()
-    opp_a_access = factories.OpportunityAccessFactory(opportunity=opp_a)
-    opp_a_payment_unit = factories.PaymentUnitFactory(opportunity=opp_a)
-    shared_deliver_unit = factories.DeliverUnitFactory(payment_unit=opp_a_payment_unit)
-    factories.UserVisitFactory(
-        opportunity=opp_a,
-        opportunity_access=opp_a_access,
-        deliver_unit=shared_deliver_unit,
+def test_delete_opportunity_leaves_another_opportunitys_units_on_the_same_app():
+    opp_a = factories.OpportunityFactory(active=False)
+    opp_a_unit = factories.DeliverUnitFactory(
+        opportunity=opp_a, app=opp_a.deliver_app, payment_unit=factories.PaymentUnitFactory(opportunity=opp_a)
     )
-    opp_a.active = False
-    opp_a.save()
+    opp_a_visit = factories.UserVisitFactory(opportunity=opp_a, deliver_unit=opp_a_unit)
+    # Opp B reuses the app, so it has its own unit with the same slug
+    opp_b = factories.OpportunityFactory(deliver_app=opp_a.deliver_app)
+    opp_b_unit = factories.DeliverUnitFactory(
+        opportunity=opp_b, app=opp_a.deliver_app, slug=opp_a_unit.slug, payment_unit=None
+    )
 
-    # Opp B: reused the same DeliverUnit for its own PaymentUnit (see add_payment_unit/
-    # edit_payment_unit, which lets a new opportunity claim a DeliverUnit from an inactive
-    # opportunity's PaymentUnit by reassigning the FK rather than creating a new DeliverUnit row).
-    # Opp B is the one being deleted here.
-    opp_b = factories.OpportunityFactory()
-    opp_b_payment_unit = factories.PaymentUnitFactory(opportunity=opp_b)
-    shared_deliver_unit.payment_unit = opp_b_payment_unit
-    shared_deliver_unit.save()
+    assert delete_opportunity(opp_b) is True
 
-    result = delete_opportunity(opp_b)
-
-    # Opp B is still deleted successfully, as it has no visits of its own...
-    assert result is True
-    assert not Opportunity.objects.filter(pk=opp_b.pk).exists()
-    # ...but the shared DeliverUnit is detached (not deleted), since Opp A's visit history still
-    # needs it to exist.
-    shared_deliver_unit.refresh_from_db()
-    assert shared_deliver_unit.payment_unit_id is None
-    assert opp_a.uservisit_set.filter(deliver_unit=shared_deliver_unit).exists()
+    assert not DeliverUnit.objects.filter(pk=opp_b_unit.pk).exists()
+    opp_a_visit.refresh_from_db()
+    assert opp_a_visit.deliver_unit == opp_a_unit
 
 
 @pytest.mark.django_db

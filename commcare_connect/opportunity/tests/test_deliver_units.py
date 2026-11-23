@@ -1,22 +1,29 @@
 import importlib
-from unittest.mock import patch
 
 import pytest
+from django.apps import apps as django_apps
 from django.db import IntegrityError, connection, transaction
-from django.db.models import QuerySet
 
 from commcare_connect.form_receiver.processor import get_or_create_deliver_unit
-from commcare_connect.opportunity.forms import DeliverUnitFlagsForm, FormJsonValidationRulesForm
 from commcare_connect.opportunity.models import DeliverUnit, DeliverUnitFlagRules, FormJsonValidationRules
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
+    CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
 from commcare_connect.opportunity.views import link_deliver_units
 
-backfill_migration = importlib.import_module("commcare_connect.opportunity.migrations.0156_deliverunit_opportunity")
+split_migration = importlib.import_module("commcare_connect.opportunity.migrations.0157_split_shared_deliver_units")
+
+
+@pytest.fixture
+def nullable_deliver_unit_opportunity(db):
+    """Allow units with no opportunity, as before 0158, for the length of the test's transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE opportunity_deliverunit ALTER COLUMN opportunity_id DROP NOT NULL")
 
 
 @pytest.fixture
@@ -48,37 +55,6 @@ class TestGetOrCreateForOpportunity:
         previous_unit.refresh_from_db()
         assert previous_unit.opportunity_id != new_opportunity.id
 
-    def test_adopts_one_unit_with_no_opportunity(self, opportunity):
-        # Several can match, e.g. when two opportunities that shared the app were deleted
-        first, second = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app, slug="visit", opportunity=None)
-
-        unit, created = DeliverUnit.objects.get_or_create_for_opportunity(opportunity, "visit")
-
-        assert (unit, created) == (first, False)
-        assert unit.opportunity == opportunity
-        second.refresh_from_db()
-        assert second.opportunity is None
-
-    def test_adopts_nothing_once_the_opportunity_has_a_unit(self, opportunity):
-        # A concurrent caller adopted the first unit after this one's initial lookup missed
-        DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
-        orphan = DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=None)
-
-        DeliverUnit.objects.all()._adopt_unit_with_no_opportunity(opportunity, "visit")
-
-        orphan.refresh_from_db()
-        assert orphan.opportunity is None
-
-    def test_adopting_survives_a_unit_inserted_concurrently(self, opportunity):
-        # Simulates a unit for the slug committed by another transaction while the adopting UPDATE runs
-        existing = DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
-        DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=None)
-
-        with patch.object(QuerySet, "update", side_effect=IntegrityError):
-            DeliverUnit.objects.all()._adopt_unit_with_no_opportunity(opportunity, "visit")
-
-        assert DeliverUnit.objects.get_or_create_for_opportunity(opportunity, "visit") == (existing, False)
-
     def test_ignores_units_of_a_previous_deliver_app(self, opportunity):
         old_app_unit = DeliverUnitFactory(app=CommCareAppFactory(), slug="visit", opportunity=opportunity)
 
@@ -95,13 +71,6 @@ class TestUniquePerOpportunity:
 
         with pytest.raises(IntegrityError), transaction.atomic():
             DeliverUnitFactory(app=opportunity.deliver_app, slug="visit", opportunity=opportunity)
-
-    def test_allows_the_same_slug_on_units_with_no_opportunity(self):
-        app = CommCareAppFactory()
-
-        DeliverUnitFactory.create_batch(2, app=app, slug="visit", opportunity=None)
-
-        assert DeliverUnit.objects.filter(app=app, slug="visit").count() == 2
 
 
 @pytest.mark.django_db
@@ -121,42 +90,10 @@ def test_assignable(opportunity):
     unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
     own = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
     DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=other_payment_unit)
-    on_legacy_payment_unit = DeliverUnitFactory(
-        app=opportunity.deliver_app, payment_unit=PaymentUnitFactory(opportunity=OpportunityFactory())
-    )
     DeliverUnitFactory(app=opportunity.deliver_app, opportunity=OpportunityFactory(), payment_unit=None)
 
-    assert set(DeliverUnit.objects.assignable(opportunity)) == {unattached, on_legacy_payment_unit}
-    assert set(DeliverUnit.objects.assignable(opportunity, payment_unit)) == {
-        unattached,
-        own,
-        on_legacy_payment_unit,
-    }
-
-
-@pytest.mark.django_db
-class TestRulesOnAnotherOpportunitysUnit:
-    """A rule set up before CCCT-3057 can target a unit that the 0155 backfill gave to another opportunity."""
-
-    def test_flag_rule_still_validates(self, opportunity):
-        other_opportunitys_unit = DeliverUnitFactory(app=opportunity.deliver_app, opportunity=OpportunityFactory())
-        rule = DeliverUnitFlagRules.objects.create(opportunity=opportunity, deliver_unit=other_opportunitys_unit)
-
-        form = DeliverUnitFlagsForm(data={"duration": 5}, instance=rule, opportunity=opportunity)
-
-        assert form.is_valid(), form.errors
-
-    def test_form_json_rule_keeps_its_target(self, opportunity):
-        own_unit = DeliverUnitFactory(app=opportunity.deliver_app)
-        other_opportunitys_unit = DeliverUnitFactory(app=opportunity.deliver_app, opportunity=OpportunityFactory())
-        rule = FormJsonValidationRules.objects.create(
-            opportunity=opportunity, name="rule", question_path="/data/q", question_value="yes"
-        )
-        rule.deliver_unit.set([own_unit, other_opportunitys_unit])
-
-        form = FormJsonValidationRulesForm(instance=rule, opportunity=opportunity)
-
-        assert set(form.fields["deliver_unit"].queryset) == {own_unit, other_opportunitys_unit}
+    assert set(DeliverUnit.objects.assignable(opportunity)) == {unattached}
+    assert set(DeliverUnit.objects.assignable(opportunity, payment_unit)) == {unattached, own}
 
 
 @pytest.mark.django_db
@@ -171,55 +108,119 @@ def test_link_deliver_units_leaves_other_opportunities_units_alone(reused_app):
     assert previous_unit.payment_unit == previous_payment_unit
 
 
-@pytest.mark.django_db
-class TestBackfill:
-    def _backfill(self, *units):
-        DeliverUnit.objects.filter(id__in=[unit.id for unit in units]).update(opportunity=None)
-        with connection.cursor() as cursor:
-            cursor.execute(backfill_migration.BACKFILL_SQL)
-        return [DeliverUnit.objects.get(id=unit.id).opportunity for unit in units]
+@pytest.mark.usefixtures("nullable_deliver_unit_opportunity")
+class TestSplitSharedUnits:
+    """Migration 0157: each opportunity that uses a unit it doesn't own gets its own copy."""
 
-    def test_app_used_by_one_opportunity(self, opportunity):
-        unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-
-        assert self._backfill(unit) == [opportunity]
-
-    def test_shared_app_goes_to_payment_unit_opportunity(self, opportunity):
+    @pytest.fixture
+    def shared(self, opportunity):
+        """``opportunity``'s unit, on an app that ``other`` reused before units belonged to an opportunity."""
         unit = DeliverUnitFactory(
-            app=opportunity.deliver_app, payment_unit=PaymentUnitFactory(opportunity=opportunity)
+            opportunity=opportunity,
+            app=opportunity.deliver_app,
+            slug="visit",
+            display_name="Visit",
+            optional=True,
+            payment_unit=PaymentUnitFactory(opportunity=opportunity),
         )
-        OpportunityFactory(deliver_app=opportunity.deliver_app)
+        other = OpportunityFactory(deliver_app=opportunity.deliver_app, active=False)
+        return unit, other
 
-        assert self._backfill(unit) == [opportunity]
+    def _split(self):
+        split_migration.split_shared_deliver_units(django_apps, None)
 
-    @pytest.mark.parametrize("payment_unit_on_app", [False, None])
-    def test_shared_app_otherwise_goes_to_latest_opportunity(self, opportunity, payment_unit_on_app):
-        # False: the payment unit's opportunity no longer uses the app. None: no payment unit.
-        payment_unit = PaymentUnitFactory() if payment_unit_on_app is False else None
-        unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
-        latest = OpportunityFactory(deliver_app=opportunity.deliver_app)
+    def _copy(self, unit, opportunity):
+        return DeliverUnit.objects.get(opportunity=opportunity, app=unit.app, slug=unit.slug)
 
-        assert self._backfill(unit) == [latest]
-
-    def test_shared_app_unit_with_no_payment_unit_goes_to_running_opportunity(self, opportunity):
-        unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        OpportunityFactory(deliver_app=opportunity.deliver_app, active=False)
-
-        assert self._backfill(unit) == [opportunity]
-
-    def test_duplicate_slugs_give_the_opportunity_to_one_unit(self, opportunity):
-        payment_unit = PaymentUnitFactory(opportunity=opportunity)
-        # Possible under the old schema, which had no unique constraint
-        unconfigured = DeliverUnitFactory(
-            app=opportunity.deliver_app, slug="visit", payment_unit=None, opportunity=None
-        )
-        configured = DeliverUnitFactory(
-            app=opportunity.deliver_app, slug="visit", payment_unit=payment_unit, opportunity=None
+    def test_visits_move_to_a_copy_with_the_payment_unit_their_work_used(self, shared):
+        unit, other = shared
+        other_payment_unit = PaymentUnitFactory(opportunity=other)
+        own_visit = UserVisitFactory(opportunity=unit.opportunity, deliver_unit=unit)
+        other_visit = UserVisitFactory(
+            opportunity=other,
+            deliver_unit=unit,
+            completed_work=CompletedWorkFactory(payment_unit=other_payment_unit),
         )
 
-        assert self._backfill(unconfigured, configured) == [None, opportunity]
+        self._split()
 
-    def test_app_used_by_no_opportunity_stays_null(self):
-        unit = DeliverUnitFactory(payment_unit=None)
+        copy = self._copy(unit, other)
+        assert (copy.name, copy.display_name, copy.optional) == (unit.name, unit.display_name, unit.optional)
+        assert copy.payment_unit == other_payment_unit
+        other_visit.refresh_from_db()
+        own_visit.refresh_from_db()
+        assert (other_visit.deliver_unit, own_visit.deliver_unit) == (copy, unit)
 
-        assert self._backfill(unit) == [None]
+    def test_overwritten_payment_unit_goes_back_to_its_opportunity(self, shared):
+        # The bug: the unit ended up on another opportunity's payment unit
+        unit, other = shared
+        other_payment_unit = PaymentUnitFactory(opportunity=other)
+        DeliverUnit.objects.filter(pk=unit.pk).update(payment_unit=other_payment_unit)
+
+        self._split()
+
+        assert self._copy(unit, other).payment_unit == other_payment_unit
+        unit.refresh_from_db()
+        assert (unit.payment_unit, unit.optional) == (None, False)
+
+    @pytest.mark.parametrize("copy_has_rule", [False, True])
+    def test_flag_rules_move_to_the_copy(self, shared, copy_has_rule):
+        unit, other = shared
+        rule = DeliverUnitFlagRules.objects.create(opportunity=other, deliver_unit=unit, duration=1)
+        if copy_has_rule:
+            existing_copy = DeliverUnitFactory(opportunity=other, app=unit.app, slug=unit.slug, payment_unit=None)
+            DeliverUnitFlagRules.objects.create(opportunity=other, deliver_unit=existing_copy, duration=2)
+
+        self._split()
+
+        rules = DeliverUnitFlagRules.objects.filter(opportunity=other)
+        assert [(r.deliver_unit, r.duration) for r in rules] == [(self._copy(unit, other), 2 if copy_has_rule else 1)]
+        assert copy_has_rule or rules.get().pk == rule.pk
+
+    def test_form_json_rules_move_to_the_copy(self, shared):
+        unit, other = shared
+        rule = FormJsonValidationRules.objects.create(
+            opportunity=other, name="rule", question_path="/data/q", question_value="yes"
+        )
+        rule.deliver_unit.set([unit])
+
+        self._split()
+
+        assert list(rule.deliver_unit.all()) == [self._copy(unit, other)]
+
+    def test_existing_unit_of_the_opportunity_is_reused(self, shared):
+        # The opportunity reused the app after 0156, so it already has its own unit for the slug
+        unit, other = shared
+        existing_copy = DeliverUnitFactory(opportunity=other, app=unit.app, slug=unit.slug, payment_unit=None)
+        other_payment_unit = PaymentUnitFactory(opportunity=other)
+        visit = UserVisitFactory(
+            opportunity=other, deliver_unit=unit, completed_work=CompletedWorkFactory(payment_unit=other_payment_unit)
+        )
+
+        self._split()
+
+        visit.refresh_from_db()
+        existing_copy.refresh_from_db()
+        assert visit.deliver_unit == existing_copy
+        assert existing_copy.payment_unit == other_payment_unit
+
+    def test_units_with_no_opportunity_are_split_then_deleted(self, opportunity):
+        used = DeliverUnitFactory(opportunity=None, app=opportunity.deliver_app, slug="visit", payment_unit=None)
+        visit = UserVisitFactory(opportunity=opportunity, deliver_unit=used)
+        unused = DeliverUnitFactory(opportunity=None, app=opportunity.deliver_app, slug="other", payment_unit=None)
+
+        self._split()
+
+        visit.refresh_from_db()
+        assert visit.deliver_unit == self._copy(used, opportunity)
+        assert not DeliverUnit.objects.filter(pk__in=[used.pk, unused.pk]).exists()
+
+    def test_unit_used_only_by_its_owner_is_unchanged(self, shared):
+        unit, _ = shared
+        UserVisitFactory(opportunity=unit.opportunity, deliver_unit=unit)
+
+        self._split()
+
+        assert list(DeliverUnit.objects.filter(app=unit.app)) == [unit]
+        unit.refresh_from_db()
+        assert unit.payment_unit.opportunity == unit.opportunity
