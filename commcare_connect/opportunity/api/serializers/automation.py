@@ -54,13 +54,10 @@ class PaymentUnitItemSerializer(serializers.Serializer):
                 }
             )
 
-        deliver_app = opportunity.deliver_app
         all_du_ids = set(required + optional)
         if all_du_ids:
             valid_ids = set(
-                DeliverUnit.objects.filter(app=deliver_app, id__in=all_du_ids, payment_unit__isnull=True).values_list(
-                    "id", flat=True
-                )
+                DeliverUnit.objects.assignable(opportunity).filter(id__in=all_du_ids).values_list("id", flat=True)
             )
             invalid = all_du_ids - valid_ids
             if invalid:
@@ -128,17 +125,19 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
         return created
 
     def _assign_deliver_units(self, deliver_unit_ids, payment_unit, optional):
-        """Assign unassigned deliver units to the given payment unit in a single query.
+        """Assign the opportunity's assignable deliver units to the given payment unit in a single query.
 
         Raises ValidationError if any of the requested deliver units are already
-        assigned to another payment unit (re-checked here under transaction to
-        protect against races between validate() and create()).
+        assigned to another of the opportunity's payment units (re-checked here under
+        transaction to protect against races between validate() and create()).
         """
         unique_ids = set(deliver_unit_ids)
         if not unique_ids:
             return
-        updated = DeliverUnit.objects.filter(id__in=unique_ids, payment_unit__isnull=True).update(
-            payment_unit=payment_unit, optional=optional
+        updated = (
+            DeliverUnit.objects.assignable(payment_unit.opportunity)
+            .filter(id__in=unique_ids)
+            .update(payment_unit=payment_unit, optional=optional)
         )
         if updated != len(unique_ids):
             raise serializers.ValidationError(

@@ -24,8 +24,12 @@ def org_names(title):
 
 def days_ago(days, hour=10):
     """``hour`` o'clock UTC, ``days`` days before today. Keep ``days`` at least 1, so the moment is in the past."""
-    day = now().date() - datetime.timedelta(days=days)
-    return datetime.datetime.combine(day, datetime.time(hour), tzinfo=datetime.UTC)
+    return _at_hour(now().date() - datetime.timedelta(days=days), hour)
+
+
+def days_ahead(days, hour=17):
+    """``hour`` o'clock UTC, ``days`` days after today: a whole hour, as the deadline picker allows."""
+    return _at_hour(now().date() + datetime.timedelta(days=days), hour)
 
 
 def program(sim, title):
@@ -78,3 +82,7 @@ def link_page(sim, opportunity, label, url_name):
         f"{opportunity.name}: {label}",
         reverse(url_name, args=(opportunity.organization.slug, opportunity.opportunity_id)),
     )
+
+
+def _at_hour(day, hour):
+    return datetime.datetime.combine(day, datetime.time(hour), tzinfo=datetime.UTC)

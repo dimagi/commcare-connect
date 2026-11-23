@@ -147,7 +147,9 @@ class WorkArea(geo_models.Model):
         if self.status not in self.VISIT_TRACKABLE_STATUSES or self.opportunity_access is None:
             return
 
-        counts = UserVisit.objects.filter(opportunity_access=self.opportunity_access, work_area=self).aggregate(
+        # Every worker's visits count, so a handoff keeps the previous worker's progress.
+        # Approval decides what counts, not who made the visit.
+        counts = UserVisit.objects.filter(work_area=self).aggregate(
             total=Count("id"),
             approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
         )
