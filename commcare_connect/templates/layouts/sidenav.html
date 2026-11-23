@@ -1,4 +1,4 @@
-{% load static i18n waffle_tags organization_extras %}
+{% load static i18n waffle_tags organization_extras solicitation_extras %}
 <div x-cloak
      class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
      :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -68,6 +68,11 @@
                   {% url 'received_applications:list' request.org.slug as received_applications_url %}
                   {% translate "Applications" as received_applications_name %}
                   {% include "components/sidenav-items.html" with name=received_applications_name icon="inbox" target=received_applications_url namespace="received_applications" %}
+                {% endif %}
+                {% if request.org|has_applications %}
+                  {% url 'my_applications:list' request.org.slug as my_applications_url %}
+                  {% translate "My applications" as my_applications_name %}
+                  {% include "components/sidenav-items.html" with name=my_applications_name icon="file-pen" target=my_applications_url namespace="my_applications" %}
                 {% endif %}
               {% endif %}
               {# Not tied to an organization: a user with none can browse it, and create one when they apply. #}

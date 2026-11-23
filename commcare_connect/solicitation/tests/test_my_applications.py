@@ -1,19 +1,60 @@
+from urllib.parse import urlencode
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from commcare_connect.solicitation.models import SolicitationApplication, SolicitationApplicationAnswer
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationApplicationAnswer
 from commcare_connect.solicitation.tests.factories import SolicitationApplicationFactory, SolicitationQuestionFactory
+from commcare_connect.users.tests.factories import MembershipFactory
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("solicitations_on")]
 
 Status = SolicitationApplication.Status
 
 
+def list_url(organization, **params):
+    url = reverse("my_applications:list", args=[organization.slug])
+    return f"{url}?{urlencode(params)}" if params else url
+
+
+def listed(client, url):
+    return [row.record for row in client.get(url).context["table"].page.object_list]
+
+
 @pytest.fixture
 def member_client(client, org_user_member):
     client.force_login(org_user_member)
     return client
+
+
+def test_lists_only_the_current_organizations_applications(member_client, organization):
+    draft = SolicitationApplicationFactory(organization=organization)
+    submitted = SolicitationApplicationFactory(organization=organization, status=Status.SUBMITTED)
+    SolicitationApplicationFactory(status=Status.SUBMITTED)
+
+    assert set(listed(member_client, list_url(organization))) == {draft, submitted}
+
+
+def test_switching_organization_changes_the_list(member_client, org_user_member, organization):
+    other_org = MembershipFactory(user=org_user_member).organization
+    other = SolicitationApplicationFactory(organization=other_org)
+    SolicitationApplicationFactory(organization=organization)
+
+    assert listed(member_client, list_url(other_org)) == [other]
+
+
+def test_not_reachable_for_another_organization(member_client):
+    application = SolicitationApplicationFactory()
+
+    assert member_client.get(list_url(application.organization)).status_code == 404
+
+
+def test_filters_by_type(member_client, organization):
+    rfp = SolicitationApplicationFactory(organization=organization, solicitation__type=Solicitation.Type.RFP)
+    SolicitationApplicationFactory(organization=organization, solicitation__type=Solicitation.Type.EOI)
+
+    assert listed(member_client, list_url(organization, type=Solicitation.Type.RFP)) == [rfp]
 
 
 @pytest.mark.parametrize(
@@ -40,6 +81,16 @@ def test_withdraw_records_who_and_when(organization):
     assert application.status == Status.WITHDRAWN
     assert application.withdrawn_date is not None
     assert application.modified_by == "admin@example.com"
+
+
+@pytest.mark.parametrize("has_applied", [True, False])
+def test_sidebar_links_to_applications_once_the_organization_has_applied(member_client, organization, has_applied):
+    if has_applied:
+        SolicitationApplicationFactory(organization=organization)
+
+    content = member_client.get(reverse("opportunity:list", args=[organization.slug])).content.decode()
+
+    assert (list_url(organization) in content) is has_applied
 
 
 def detail_url(application):
@@ -72,6 +123,9 @@ def test_detail_shows_status_and_answers(member_client, organization):
 
 
 @pytest.mark.parametrize(
+    "page_url", [lambda application: list_url(application.organization), detail_url], ids=["list", "detail"]
+)
+@pytest.mark.parametrize(
     "status, badge_class",
     [
         (Status.DRAFT, "badge-amber"),
@@ -82,10 +136,10 @@ def test_detail_shows_status_and_answers(member_client, organization):
         (Status.WITHDRAWN, "negative-light"),
     ],
 )
-def test_status_badge_is_coloured_by_status(member_client, organization, status, badge_class):
+def test_status_badge_is_coloured_by_status(member_client, organization, page_url, status, badge_class):
     application = SolicitationApplicationFactory(organization=organization, status=status)
 
-    content = member_client.get(detail_url(application)).content.decode()
+    content = member_client.get(page_url(application)).content.decode()
 
     assert f'<span class="badge badge-sm {badge_class}">{application.get_status_display()}</span>' in content
 

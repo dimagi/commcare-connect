@@ -68,6 +68,7 @@ class SolicitationSteps:
             self.log(
                 f"{org.slug} {'submitted' if submit else 'saved a draft of'} its application to {solicitation.title}"
             )
+        self.link(f"Applications of {org.name}", reverse("my_applications:list", args=(org.slug,)))
         return application
 
     def close_expired_solicitations(self):

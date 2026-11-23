@@ -89,3 +89,12 @@ class ReceivedApplicationFilterSet(TableFilterSet):
         empty_label=_("All solicitations"),
     )
     shortlisted = shortlisted_only_filter()
+
+
+class MyApplicationFilterSet(TableFilterSet):
+    type = django_filters.ChoiceFilter(
+        label=_("Type"),
+        field_name="solicitation__type",
+        choices=Solicitation.Type.choices,
+        empty_label=_("All types"),
+    )
