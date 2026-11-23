@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from django.contrib.auth.context_processors import PermWrapper
+from django.core.cache import cache
 from django.db import connection
 from django.template import Context, Template
 from django.template.loader import render_to_string
@@ -13,13 +14,24 @@ from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.tests.factories import OpportunityFactory, UserVisitFactory
-from commcare_connect.organization.context_selector import end_label, opportunity_end_label, selector_tree
+from commcare_connect.organization.context_selector import (
+    clear_visit_stats_cache,
+    end_label,
+    opportunity_end_label,
+    selector_tree,
+)
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ProgramWatcher
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.program.utils import AccessLevel
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
+
+
+@pytest.fixture(autouse=True)
+def empty_cache():
+    """Visit stats are cached, and a test's entries outlive its rolled-back transaction."""
+    cache.clear()
 
 
 @pytest.fixture
@@ -212,13 +224,28 @@ def test_visit_stats_roll_up_to_program_and_org(pm_org, program):
         assert node["visit_summary"] == f"3 visits · Last visit {latest.strftime('%d %b, %Y')}"
 
 
-def test_new_visits_show_the_next_time_the_tree_loads(nm_org, program):
-    """Visit totals are counted on every load, so a visit made since the last load shows straight away."""
+def test_visit_stats_are_cached(nm_org, program):
+    """A second load reuses the cached visit stats, so a visit nobody announced doesn't show yet."""
     opp = OpportunityFactory(organization=nm_org, program=program)
     UserVisitFactory(opportunity=opp)
     user = _member(nm_org)
     selector_tree(user)
     UserVisitFactory(opportunity=opp)
+
+    (program_node,) = _tree_for(user)["B NM org"]["programs"]
+
+    assert program_node["visit_summary"].startswith("1 visit ·")
+
+
+def test_clearing_the_cache_shows_new_visits(nm_org, program, django_capture_on_commit_callbacks):
+    """Once a new visit clears its opportunity's cached stats, the next load counts it."""
+    opp = OpportunityFactory(organization=nm_org, program=program)
+    UserVisitFactory(opportunity=opp)
+    user = _member(nm_org)
+    selector_tree(user)
+    UserVisitFactory(opportunity=opp)
+    with django_capture_on_commit_callbacks(execute=True):
+        clear_visit_stats_cache(opp.id)
 
     (program_node,) = _tree_for(user)["B NM org"]["programs"]
 
@@ -230,6 +257,7 @@ def test_query_count_does_not_grow_with_orgs(pm_org, program):
     user = _member(pm_org)
     OpportunityFactory(program=program)
     selector_tree(user)  # Fills the user's permission cache, which would otherwise count once.
+    cache.clear()  # Count the visit stats query too.
     with CaptureQueriesContext(connection) as one_org:
         selector_tree(user)
 
@@ -238,6 +266,7 @@ def test_query_count_does_not_grow_with_orgs(pm_org, program):
         MembershipFactory(user=user, organization=org)
         program.watchers.add(org)
         OpportunityFactory(organization=org, program=program)
+    cache.clear()
     with CaptureQueriesContext(connection) as three_orgs:
         selector_tree(user)
 

@@ -51,6 +51,7 @@ from commcare_connect.opportunity.tasks import (
     notify_user_for_scored_assessment,
 )
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
+from commcare_connect.organization.context_selector import clear_visit_stats_cache
 from commcare_connect.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -549,6 +550,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.over_limit_reasons = over_limit_reasons
 
         user_visit.save()
+        clear_visit_stats_cache(opportunity.id)
 
         if work_area:
             work_area.update_status()
