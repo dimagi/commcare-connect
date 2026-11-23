@@ -13,26 +13,14 @@ Weigh what a defect could break and how likely that is, not how big the diff is.
 
 ## Two modes
 
-- **Before the PR exists** (local branch, or called while drafting a PR description): run steps 1–4 and the label check in 6.1, then hand back the label and the Impact section for the PR body. `gh pr create --label` fails on a label the repo lacks, so create it first.
+- **Before the PR exists** (local branch, or called while drafting a PR description): run steps 1–3 and 5, and the label check in 6.1, then hand back the label and the Impact section the author approved, for the PR body. `gh pr create --label` fails on a label the repo lacks, so create it first.
 - **On an existing PR** (a number, URL, or the current branch's PR): run every step.
 
 ## 1. Gather
 
-Before the PR exists:
+Before the PR exists, diff against a freshly fetched `origin/main` with three dots (`origin/main...HEAD`), so only this branch's commits count. On an existing PR, `gh pr view <PR> --json number,url,labels,body,files,commits,baseRefName,headRefOid` and `gh pr diff <PR>`.
 
-```bash
-git fetch origin main
-git diff origin/main...HEAD --stat
-git diff origin/main...HEAD
-git log origin/main..HEAD --oneline
-```
-
-On an existing PR:
-
-```bash
-gh pr view <PR> --json number,url,labels,body,files,commits,baseRefName
-gh pr diff <PR>
-```
+**Search the PR's code, not your checkout.** On an existing PR, if `HEAD` isn't `headRefOid`, run `git fetch origin pull/<PR>/head` and pass that SHA as the revision in every step 2 search (`git grep -n "<symbol>" <sha> -- …`, `git show <sha>:<path>`). Otherwise callers and tests the PR adds are missed. `<rev>` below means that SHA, or `HEAD` before the PR exists.
 
 Reuse what the caller already gathered instead of fetching it again, including the author's answer about their own testing. Don't ask about testing yet: step 3.6 decides whether the answer can change the grade.
 
@@ -42,9 +30,9 @@ Run these on the changed files (`git diff --name-only origin/main...HEAD`, or th
 
 - **Migrations:** any changed path matching `*/migrations/*.py`. Read each one: schema only (`AddField`, `AlterField` with a default, `AddIndex`) or does it touch data (`RunPython`, `RunSQL`, `RemoveField`, `DeleteModel`, a `RenameField` other code still reads)? Is there a reverse operation?
 - **Flag gating:** does the diff add a check against a name from `commcare_connect/flags/flag_names.py` or `switch_names.py` around the new behaviour? Does it **remove** one that guarded shipped behaviour?
-- **Fan-in:** for each changed function, class or template that other code uses, count callers outside the changed files: `git grep -n "<symbol>" -- 'commcare_connect/**' ':!**/tests/**'`, or `{% include "<template>"` for templates. Note how many Django apps those callers sit in.
+- **Fan-in:** for each changed function, class or template that other code uses, count callers outside the changed files: `git grep -n "<symbol>" <rev> -- 'commcare_connect/**' ':!**/tests/**'`, or `{% include "<template>"` for templates. Note how many Django apps those callers sit in. Use `git grep` rather than a call-graph tool: much of Connect is wired by string (template includes, URL names in `reverse()`, Celery task names), which static analysis misses.
 - **Dependencies:** any change to `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` or `.github/workflows/`.
-- **Tests:** which changed paths have a test in the diff, or an existing test under `commcare_connect/<app>/tests/` that exercises them.
+- **Tests:** which changed paths have a test in the diff, or an existing test at `<rev>` under `commcare_connect/<app>/tests/` that exercises them. Also note tests the diff deletes, skips or loosens, and which code they covered.
 
 ## 3. Grade each dimension
 
@@ -61,7 +49,9 @@ Give each dimension the highest level any part of the change reaches, with a rea
 - **High:** on a core flow, and a defect could block it, lose submitted work, or produce a wrong status, count or amount. For the org access flow, High here means a defect could lock people out of work they need to do; a defect that grants access to the wrong people is graded under Security (3.3), not here, so the same risk isn't counted twice.
 - **Medium:** a feature program managers or org admins use regularly but that isn't a core flow (opportunity dashboards, worker pages, exports, microplanning, audit reports, tasks).
 - **Low:** admin-only pages, internal reports, prelogin pages; or copy, styling, logging or analytics on a core-flow page that can't change its outcome.
-- **None:** no code that runs in production changed: docs, tests, CI, developer tooling, `.claude/`.
+- **None:** no code that runs in production changed: docs, new or strengthened tests, CI, developer tooling, `.claude/`.
+
+**Removing tests is not None.** Deleting, skipping or loosening tests leaves the code they covered unguarded. Grade Core flow by that code as if it had changed, capped at Medium since its behaviour didn't change, and record its test evidence in 3.6 as `Partial` or `Untested`.
 
 ### 3.2 Data and reversibility
 
@@ -103,16 +93,16 @@ If the author only read the diff, or neither they nor the tests exercise the pat
 
 **Ask only when the answer can change the grade.** If no primary dimension is above Low, and the author hasn't already said, ask: "What did you personally do to test this?" Never invent testing. If a primary dimension is already Medium or High, don't ask: grade from the tests in the diff and the existing tests alone, and say so in the details (`author not asked: grade was already High`).
 
-Record it as `Covered`, `Partial` or `Untested`, or `N/A` when no code that runs in production changed.
+Record it as `Covered`, `Partial` or `Untested`, or `N/A` when no code that runs in production changed and no tests were removed or loosened.
 
 ### 3.7 Overall
 
-Overall = the highest primary dimension, then apply the test evidence modifier (it raises only from Low to Medium). Nothing lowers a High. If every primary dimension is None (docs, tests or tooling only), the overall level is Low: there is no `No Risk` label.
+Overall = the highest primary dimension, then apply the test evidence modifier (it raises only from Low to Medium). Nothing lowers a High. If every primary dimension is None (docs, added tests or tooling only), the overall level is Low: there is no `No Risk` label.
 
 ## 4. Read what is already there (existing PR only)
 
 - **Current label:** any of the three risk labels on the PR. If there are several, note them all; step 6 removes the extras.
-- **Earlier Impact section:** the block between `<!-- pr-impact:start -->` and `<!-- pr-impact:end -->`. If its first line reads `(author's call; graded <Level>)`, the author overrode an earlier grade.
+- **Earlier Impact section:** the block between `<!-- pr-impact:start -->` and `<!-- pr-impact:end -->`. If its bold `**Risk: …**` line contains `(author's call; graded <Level>)`, the author overrode an earlier grade.
 
 ## 5. Ask the author
 
@@ -120,9 +110,9 @@ Show the proposal in this shape and wait:
 
 > Proposed risk: **High**. Changes accrual recalculation on re-approval, on the payment core flow.
 >
-> | Core flow | Data   | Security | Contracts | Reach  | Tests   |
-> | --------- | ------ | -------- | --------- | ------ | ------- |
-> | **High**  | Medium | None     | None      | Medium | Covered |
+> | Core flow | Data     | Security | Contracts | Reach  | Tests   |
+> | --------- | -------- | -------- | --------- | ------ | ------- |
+> | **High**  | **High** | None     | None      | Medium | Covered |
 >
 > Currently labeled: Medium Risk. _(existing PR only)_
 >
@@ -139,21 +129,21 @@ Then build the **Impact section**:
 
 **Risk: High.** <paragraph>
 
-| Core flow | Data   | Security | Contracts | Reach  | Tests   |
-| --------- | ------ | -------- | --------- | ------ | ------- |
-| **High**  | Medium | None     | None      | Medium | Covered |
+| Core flow | Data     | Security | Contracts | Reach  | Tests   |
+| --------- | -------- | -------- | --------- | ------ | ------- |
+| **High**  | **High** | None     | None      | Medium | Covered |
 
 <details><summary>Why each rating</summary>
 
 - **Core flow — High:** recomputes `CompletedWork` accrual.
-- **Data — Medium:** no migration, but rewrites stored amounts; not flag-gated.
+- **Data — High:** no migration, but recomputes stored amounts; not flag-gated.
 - **Reach — Medium:** `update_status` has callers in `opportunity` and `form_receiver`.
 
 </details>
 <!-- pr-impact:end -->
 ```
 
-- Bold the column that set the overall level. Write `None` in the table for untouched areas, never leave a cell blank or `—`.
+- Bold every column that set the overall level. Write `None` in the table for untouched areas, never leave a cell blank or `—`.
 - In the details, list every dimension that isn't None, Low included, so reviewers can see what the safe-but-present changes are (`**Data — Low:** adds nullable \`notes\` column; reversible.`). Add the test evidence line when it raised the level or when the author wasn't asked.
 - If the author overrode the grade, the bold line reads `**Risk: High** (author's call; graded Medium).` and the paragraph gives the author's reason, in their words if they gave one.
 
@@ -169,9 +159,7 @@ If the author skips the label, there is no Impact section either. On an existing
 
 ## 6. Apply
 
-One `gh pr edit` swaps the label and rewrites the body, so the PR never carries two risk labels.
-
-1. **Label exists?** (both modes) `gh label list --search Risk --json name`. Create the chosen label if the repo lacks it, and nothing else:
+1. **Label exists?** (both modes) Create the chosen label only if the repo lacks it, with these exact colours and descriptions:
 
    ```bash
    gh label create "Low Risk"    --color 0E8A16 --description "Small blast radius; unlikely to break existing behaviour"
@@ -181,20 +169,14 @@ One `gh pr edit` swaps the label and rewrites the body, so the PR never carries 
 
    Never `--force`: it would rewrite a label the repo already has.
 
-2. **Body.** Write the PR body to a temp file in the scratchpad with the Impact section in place:
+2. **Body.** Place the Impact section:
 
    - If the body has a `pr-impact:start`/`end` block, replace the block (and keep the `### Impact` heading above it).
    - Otherwise insert `### Impact` and the block as the first subsection under `## Safety Assurance`, before `### Safety story`.
    - No `## Safety Assurance` section: add it with just the Impact section, after `## Technical Summary`.
    - Touch nothing else in the body.
 
-3. **One edit:**
-
-   ```bash
-   gh pr edit <PR> --add-label "High Risk" --remove-label "Medium Risk" --body-file <tmp>
-   ```
-
-   Pass `--remove-label` for every other risk label on the PR, and omit it when there is none. If the level is unchanged, skip the label flags and only rewrite the body if the Impact section changed. If nothing changed, skip the edit.
+3. **One `gh pr edit`** swaps the label and rewrites the body together, so the PR never carries two risk labels. Add the chosen label unless it's already there, and `--remove-label` every other risk label on the PR, even when the chosen one is unchanged. Pass `--body-file` only if the Impact section changed. If neither labels nor body change, skip the edit.
 
 Then report the level, the label change (`Medium Risk → High Risk`), and the PR URL.
 
