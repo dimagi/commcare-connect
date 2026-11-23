@@ -16,9 +16,18 @@ API requests have no organization in their URL, so the UI's check can't be reuse
 
 We will decide access in one place, with functions that take a user and a resource rather than a request.
 
-- An organization's relationship to an opportunity gives ADMIN to the delivering organization, the supervising organization, the program's organization and the program's funder, and VIEW to the program's watchers.
-- A user's role in an organization caps that: admin gives ADMIN, member STANDARD, viewer VIEW.
-- A user's access to a resource is the highest, across their organizations, of the lower of those two levels.
+- A user's access level on an opportunity, through one organization they belong to:
+
+  | User's role in the organization | Organization delivers, supervises, runs or funds the program | Organization watches the program |
+  | ------------------------------- | ------------------------------------------------------------ | -------------------------------- |
+  | admin                           | ADMIN                                                        | VIEW                             |
+  | member                          | STANDARD                                                     | VIEW                             |
+  | viewer                          | VIEW                                                         | VIEW                             |
+
+- A user in more than one of the opportunity's organizations gets the highest access level any of those organizations gives them.
+
+  Example: a member of the delivering organization who is also an admin of a watcher organization gets STANDARD.
+
 - Program-manager actions require ADMIN through an organization other than the delivering organization.
 - Users with the `ALL_ORG_ACCESS` permission have ADMIN everywhere.
 - The UI computes the same rule for the URL's organization only.
@@ -32,6 +41,8 @@ We will decide access in one place, with functions that take a user and a resour
 - Delivering-organization admins can no longer add payment units or activate opportunities through the API, which breaks clients that rely on it.
 - Admins of the supervising organization and the funder gain API write access, and watchers gain API read access.
 - A user in several organizations gets, in one API call, the access the UI gives only after switching organization.
+- An API caller can't limit a call to one of their organizations; they always get their highest access level.
+- The audit trail records which user made an API change, not which organization they acted for.
 - Automation clients whose tokens lack the `write` scope can no longer write.
 - A change to the access rules is made once.
 
