@@ -24,7 +24,7 @@ function contextSelector() {
 
     toggle() {
       this.open = !this.open;
-      if (this.open && this.status !== 'loaded') this.load();
+      if (this.open && ['idle', 'error'].includes(this.status)) this.load();
     },
 
     async load() {
