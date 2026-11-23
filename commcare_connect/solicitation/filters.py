@@ -19,7 +19,8 @@ class SolicitationDirectoryFilterSet(DirectoryFilterSet):
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("All Organizations")}),
     )
     type = django_filters.MultipleChoiceFilter(
-        choices=Solicitation.Type.choices,
+        # EOI or RFP, as the listing shows them.
+        choices=[(solicitation_type.value, solicitation_type.name) for solicitation_type in Solicitation.Type],
         label=_("Type"),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "placeholder": _("Any Type")}),
     )

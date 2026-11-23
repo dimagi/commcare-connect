@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
-from commcare_connect.organization.tables import DirectoryTable
+from commcare_connect.organization.tables import WRAPPING_COLUMN_ATTRS, DirectoryTable
 from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 
@@ -47,9 +47,11 @@ WRAPPING_HEADER_ATTRS = {"th": {"class": "whitespace-normal"}}
 
 
 class SolicitationDirectoryTable(DirectoryTable):
-    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
-    program = columns.Column(verbose_name=_("Program"), accessor="program__name")
-    title = columns.Column(verbose_name=_("Title"))
+    organization = columns.Column(
+        verbose_name=_("Organization"), accessor="organization__name", attrs=WRAPPING_COLUMN_ATTRS
+    )
+    program = columns.Column(verbose_name=_("Program"), accessor="program__name", attrs=WRAPPING_COLUMN_ATTRS)
+    title = columns.Column(verbose_name=_("Title"), attrs=WRAPPING_COLUMN_ATTRS)
     type = columns.Column(verbose_name=_("Type"))
     status = columns.TemplateColumn(verbose_name=_("Status"), template_name="solicitation/status_badge.html")
     public = columns.Column(verbose_name=_("Public"))
@@ -79,6 +81,10 @@ class SolicitationDirectoryTable(DirectoryTable):
         sequence = (*fields, "actions")
         default = "—"
         empty_text = _("No solicitations found.")
+
+    def render_type(self, record):
+        # EOI or RFP; the full names would widen the table.
+        return Solicitation.Type(record.type).name
 
     def render_public(self, value):
         return _("Yes") if value else _("No")

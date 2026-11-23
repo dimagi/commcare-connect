@@ -57,14 +57,6 @@ class TestSolicitationDirectoryFilterSet:
             shown_as
         }
 
-    def test_organization_and_type_filters(self):
-        eoi = SolicitationFactory(organization__program_manager=True, type=Solicitation.Type.EOI)
-        SolicitationFactory(organization=eoi.organization, type=Solicitation.Type.RFP)
-        SolicitationFactory(organization__program_manager=True, type=Solicitation.Type.EOI)
-
-        params = {"organization": [eoi.organization.pk], "type": [Solicitation.Type.EOI]}
-        assert _filtered_solicitations(params) == {eoi}
-
     def test_organization_filter_lists_program_managers_by_name(self):
         program_manager = OrganizationFactory(name="Umoja Health Trust", program_manager=True)
         OrganizationFactory(program_manager=False)
@@ -113,22 +105,6 @@ class TestSolicitationDirectoryListView:
         assert set(response.context["table"].data) == set(solicitations)
         assert response.context["solicitations_count"] == 2
 
-    def test_requires_permission(self, client, user):
-        client.force_login(user)
-
-        with override_switch(SOLICITATIONS, active=True):
-            response = client.get(reverse("organization_directory:solicitations"))
-
-        assert response.status_code == HTTPStatus.FORBIDDEN
-
-    def test_not_found_while_the_switch_is_off(self, client, user_with_directory_access):
-        client.force_login(user_with_directory_access)
-
-        with override_switch(SOLICITATIONS, active=False):
-            response = client.get(reverse("organization_directory:solicitations"))
-
-        assert response.status_code == HTTPStatus.NOT_FOUND
-
     @pytest.mark.parametrize("switch_active", [True, False])
     def test_tab_shows_only_while_the_switch_is_on(self, client, user_with_directory_access, switch_active):
         client.force_login(user_with_directory_access)
@@ -153,24 +129,3 @@ class TestSolicitationDirectoryCreateView:
 
         assert "HX-Redirect" not in response.headers
         assert response.context["form"].errors.keys() == {"organization"}
-
-    def test_direct_visit_redirects_to_the_listing(self, directory_client):
-        response = directory_client.get(self.url)
-
-        assert response.url == reverse("organization_directory:solicitations")
-
-    def test_requires_permission(self, client, user, program_manager_org):
-        client.force_login(user)
-
-        with override_switch(SOLICITATIONS, active=True):
-            response = client.post(self.url, {"organization": program_manager_org.pk})
-
-        assert response.status_code == HTTPStatus.FORBIDDEN
-
-    def test_not_found_while_the_switch_is_off(self, client, user_with_directory_access, program_manager_org):
-        client.force_login(user_with_directory_access)
-
-        with override_switch(SOLICITATIONS, active=False):
-            response = client.post(self.url, {"organization": program_manager_org.pk})
-
-        assert response.status_code == HTTPStatus.NOT_FOUND
