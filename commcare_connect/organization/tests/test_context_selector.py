@@ -182,6 +182,14 @@ def test_opportunity_end_label_explains_why_it_is_inactive(opp_kwargs, expected_
     assert opportunity_end_label(opportunity).startswith(expected_prefix)
 
 
+def test_orgs_are_sorted_by_name(pm_org, nm_org):
+    user = _member(nm_org)
+    MembershipFactory(user=user, organization=OrganizationFactory(name="C org"))
+    MembershipFactory(user=user, organization=pm_org)
+
+    assert [org["name"] for org in selector_tree(user)] == ["A PM org", "B NM org", "C org"]
+
+
 def test_programs_and_opportunities_are_sorted_by_end_date(pm_org):
     today = datetime.date.today()
     for name, days in [("Ended", -10), ("Later", 30), ("Sooner", 5)]:
