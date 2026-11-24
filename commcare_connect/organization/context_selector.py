@@ -243,7 +243,7 @@ def clear_visit_stats_cache(opportunity_id: int) -> None:
 
     Clearing after the commit stops a selector load that runs in between from caching the old totals again.
     """
-    transaction.on_commit(partial(cache.delete, _visit_stats_cache_key(opportunity_id)))
+    transaction.on_commit(partial(cache.delete, _visit_stats_cache_key(opportunity_id)), robust=True)
 
 
 def _visit_stats_cache_key(opportunity_id: int) -> str:
