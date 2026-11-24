@@ -31,7 +31,8 @@ that runs from about six weeks ago to now. All but `solicitations` also build op
 - `delivery_review`: clean and flagged visits (duplicate, no GPS, too short), approved, rejected or still pending
   with the network manager, and agreed or disagreed by the program manager.
 - `payments`: approved work paid to workers in full and in part, and invoices that are paid, ready to pay, and
-  waiting for program-manager review.
+  waiting for program-manager review. The network manager has an office address and a main contact in the LLO
+  Directory, so the invoice PDFs show them.
 - `payment_units`: one opportunity paying two kinds of visit at different rates, workers paid in full and in part,
   and an invoice whose line items split the work by payment unit.
 - `solicitations`: RFPs and EOIs in every state: public and open across countries, delivery types and deadlines
