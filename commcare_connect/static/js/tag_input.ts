@@ -417,7 +417,9 @@ export default class TagInput {
       (event) => {
         this.#update(finishAll);
         if (!this.valid) {
+          // htmx submits from its own listener on the form, so stopping here is what blocks it.
           event.preventDefault();
+          event.stopImmediatePropagation();
           this.#input.reportValidity();
         }
       },
