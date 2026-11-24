@@ -62,6 +62,7 @@ def test_solicitations_shows_every_state(sim):
     private = solicitations.open().get(public=False)
     assert private.invitations.filter(organization__name__in=scenario.ORG_NAMES).exists()
     assert solicitations.filter(status=Solicitation.Status.DRAFT).count() == 1
+    assert solicitations.scheduled().count() == 1
     assert solicitations.expired().count() == 1
     assert solicitations.filter(status=Solicitation.Status.CLOSED).count() == 1
 
