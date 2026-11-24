@@ -118,9 +118,10 @@ Check the workflow's own triggers before treating green checks as reassurance:
 sed -n '1,20p' .github/workflows/<file>.yml
 ```
 
-A `workflow_dispatch`-only workflow (like `deploy.yml`) is never exercised by CI, so green
+A workflow triggered only by `workflow_dispatch` or by pushes to a deploy branch (like
+`deploy.yml`, which runs on pushes to `autostaging`) is never exercised by PR CI, so green
 checks are _irrelevant_ rather than reassuring, and the first real execution is a
-production run. Say so explicitly in the review — "3/3 green" on an unexercised workflow
+staging or production run. Say so explicitly in the review — "3/3 green" on an unexercised workflow
 is the most misleading thing you can report. When CI can't verify it, the verification
 burden moves entirely onto the contract diff plus a manual dispatch to staging.
 

@@ -18,6 +18,9 @@ lists.
 import argparse
 import json
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import NamedTuple
 
 from lockfiles import blob, fetch, parse_npm_lock, parse_uv_lock, remote_for, sh, tomllib
 
@@ -67,62 +70,126 @@ def show(versions):
     return ordered[0] if len(ordered) == 1 else "{" + ", ".join(ordered) + "}"
 
 
-def report(label, old, new, direct, file_changed=False, present=True):
-    moved = {n: (old[n], new[n]) for n in set(old) & set(new) if old[n] != new[n]}
-    added = {n: new[n] for n in set(new) - set(old)}
-    removed = {n: old[n] for n in set(old) - set(new)}
+@dataclass
+class LockChange:
+    """One lockfile at the merge base and at the PR head, plus the direct deps."""
 
+    old: dict
+    new: dict
+    direct: set
+    file_changed: bool = False
+    present: bool = True
+
+    @property
+    def moved(self):
+        return {n: (self.old[n], self.new[n]) for n in set(self.old) & set(self.new) if self.old[n] != self.new[n]}
+
+    @property
+    def added(self):
+        return {n: self.new[n] for n in set(self.new) - set(self.old)}
+
+    @property
+    def removed(self):
+        return {n: self.old[n] for n in set(self.old) - set(self.new)}
+
+    @property
+    def has_movement(self):
+        return any((self.moved, self.added, self.removed))
+
+
+class Stack(NamedTuple):
+    label: str
+    lockfile: str
+    parse: Callable
+    manifest: str
+    direct: Callable
+
+
+STACKS = [
+    Stack("Python (uv.lock)", "uv.lock", parse_uv_lock, "pyproject.toml", direct_python),
+    Stack("JavaScript (package-lock.json)", "package-lock.json", parse_npm_lock, "package.json", direct_npm),
+]
+
+
+def load_change(stack, merge_base, head):
+    old_text, new_text = blob(merge_base, stack.lockfile), blob(head, stack.lockfile)
+    return LockChange(
+        stack.parse(old_text),
+        stack.parse(new_text),
+        stack.direct(blob(head, stack.manifest)),
+        file_changed=old_text != new_text,
+        present=bool(old_text or new_text),
+    )
+
+
+def report(label, change):
     print(f"\n{'=' * 72}\n{label}\n{'=' * 72}")
-    if not present:
+    if not change.present:
         # "no changes" would imply this stack exists and is untouched.
         print("  not present in this repo")
         return
-    if not (moved or added or removed):
-        if file_changed:
-            # e.g. a requirement-specifier bump that re-resolves to the same
-            # versions. Real change, invisible here -- send the reader to the diff.
-            print("  lockfile TOUCHED but no resolved version moved")
-            print("  -> read `gh pr diff` directly; the change is in the constraints")
-        else:
-            print("  no changes")
+    if not change.has_movement:
+        print_no_movement(change.file_changed)
         return
+    print_moved(change.moved, change.direct)
+    print_listing("Added", change.added, change.direct)
+    print_listing("Removed", change.removed, change.direct)
+    print_summary(change.moved, change.direct)
 
-    def is_major(o, n):
-        """A major move is any change in the set of major versions locked."""
-        return majors(o) != majors(n)
 
-    def tags(name, o=None, n=None):
-        t = []
-        if name.lower() in direct:
-            t.append("direct")
-        if o and n and is_major(o, n):
-            t.append("MAJOR")
-        return f"  [{', '.join(t)}]" if t else ""
+def print_no_movement(file_changed):
+    if file_changed:
+        # e.g. a requirement-specifier bump that re-resolves to the same
+        # versions. Real change, invisible here -- send the reader to the diff.
+        print("  lockfile TOUCHED but no resolved version moved")
+        print("  -> read `gh pr diff` directly; the change is in the constraints")
+    else:
+        print("  no changes")
 
-    if moved:
-        print(f"\n  Version changes ({len(moved)}):")
 
-        # majors and direct deps first -- that is the reading order that matters
-        def rank(item):
-            name, (o, n) = item
-            return (not is_major(o, n), name.lower() not in direct, name.lower())
+def print_moved(moved, direct):
+    if not moved:
+        return
+    print(f"\n  Version changes ({len(moved)}):")
 
-        for name, (o, n) in sorted(moved.items(), key=rank):
-            print(f"    {name}: {show(o)} -> {show(n)}{tags(name, o, n)}")
-    if added:
-        print(f"\n  Added ({len(added)}):")
-        for name, v in sorted(added.items()):
-            print(f"    {name}: {show(v)}{tags(name)}")
-    if removed:
-        print(f"\n  Removed ({len(removed)}):")
-        for name, v in sorted(removed.items()):
-            print(f"    {name}: {show(v)}{tags(name)}")
+    # majors and direct deps first -- that is the reading order that matters
+    def rank(item):
+        name, versions = item
+        return (not is_major(*versions), name.lower() not in direct, name.lower())
 
-    direct_majors = [n for n, (o, n2) in moved.items() if is_major(o, n2) and n.lower() in direct]
-    trans_majors = [n for n, (o, n2) in moved.items() if is_major(o, n2) and n.lower() not in direct]
+    for name, (o, n) in sorted(moved.items(), key=rank):
+        print(f"    {name}: {show(o)} -> {show(n)}{tags(name, direct, (o, n))}")
+
+
+def print_listing(title, packages, direct):
+    if not packages:
+        return
+    print(f"\n  {title} ({len(packages)}):")
+    for name, v in sorted(packages.items()):
+        print(f"    {name}: {show(v)}{tags(name, direct)}")
+
+
+def print_summary(moved, direct):
+    major_moves = [n for n, versions in moved.items() if is_major(*versions)]
+    direct_majors = [n for n in major_moves if n.lower() in direct]
+    trans_majors = [n for n in major_moves if n.lower() not in direct]
     print(f"\n  Summary: {len(moved)} moved, {len(direct_majors)} direct major, {len(trans_majors)} transitive major")
     if trans_majors:
         print(f"  Transitive majors (not in the PR body): {', '.join(sorted(trans_majors))}")
+
+
+def is_major(old, new):
+    """A major move is any change in the set of major versions locked."""
+    return majors(old) != majors(new)
+
+
+def tags(name, direct, versions=None):
+    t = []
+    if name.lower() in direct:
+        t.append("direct")
+    if versions and is_major(*versions):
+        t.append("MAJOR")
+    return f"  [{', '.join(t)}]" if t else ""
 
 
 def main():
@@ -153,19 +220,8 @@ def main():
             f"{args.pr} --json state,mergedAt` before reviewing further."
         )
 
-    for label, path, parse, direct_path, direct_fn in [
-        ("Python (uv.lock)", "uv.lock", parse_uv_lock, "pyproject.toml", direct_python),
-        ("JavaScript (package-lock.json)", "package-lock.json", parse_npm_lock, "package.json", direct_npm),
-    ]:
-        old_text, new_text = blob(merge_base, path), blob(head, path)
-        report(
-            label,
-            parse(old_text),
-            parse(new_text),
-            direct_fn(blob(head, direct_path)),
-            file_changed=old_text != new_text,
-            present=bool(old_text or new_text),
-        )
+    for stack in STACKS:
+        report(stack.label, load_change(stack, merge_base, head))
 
 
 if __name__ == "__main__":
