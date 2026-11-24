@@ -239,6 +239,8 @@ class SMSStatusCallbackView(APIView):
     def post(self, *args, **kwargs):
         message_sid = self.request.data.get("MessageSid", None)
         message_status = self.request.data.get("MessageStatus", None)
+        if not message_sid:
+            return Response({"error": "MessageSid is required."}, status=400)
         user_invite = get_object_or_404(UserInvite, message_sid=message_sid)
         if not user_invite.status == UserInviteStatus.accepted:
             if message_status == "delivered":
