@@ -21,7 +21,7 @@ function validateUrl(value) {
   }
   return (
     (url !== null && URL_PROTOCOLS.includes(url.protocol)) ||
-    gettext('Enter a valid URL, starting with https://')
+    gettext('Enter a valid URL, starting with http:// or https://')
   );
 }
 
