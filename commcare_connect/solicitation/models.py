@@ -3,6 +3,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Now
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -14,17 +15,23 @@ from commcare_connect.utils.db import BaseModel
 
 
 class SolicitationQuerySet(models.QuerySet):
-    """A solicitation closes at its deadline even before the sweep task updates its stored status,
-    so check openness through open() / Solicitation.is_open, never by comparing status directly."""
+    """A solicitation goes live at its go-live date and closes at its deadline even before the sweep task updates
+    its stored status, so check openness through open() / Solicitation.is_open, never by comparing status directly."""
 
     def _active(self):
-        return self.filter(status=Solicitation.Status.ACTIVE)
+        return self.filter(
+            Q(status=Solicitation.Status.ACTIVE) | Q(status=Solicitation.Status.SCHEDULED, go_live_date__lte=Now())
+        )
 
     def open(self):
         return self._active().filter(application_deadline__gt=Now())
 
     def expired(self):
         return self._active().filter(application_deadline__lte=Now())
+
+    def scheduled(self):
+        """Scheduled solicitations that haven't gone live yet."""
+        return self.filter(status=Solicitation.Status.SCHEDULED, go_live_date__gt=Now())
 
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
@@ -42,6 +49,7 @@ class Solicitation(BaseModel):
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")
+        SCHEDULED = "scheduled", _("Scheduled")
         ACTIVE = "active", _("Active")
         CLOSED = "closed", _("Closed")
         CANCELLED = "cancelled", _("Cancelled")
@@ -66,6 +74,8 @@ class Solicitation(BaseModel):
     expected_start_date = models.DateField(null=True, blank=True)
     expected_end_date = models.DateField(null=True, blank=True)
     application_deadline = models.DateTimeField()
+    # When a scheduled solicitation goes live; empty when it was published straight away.
+    go_live_date = models.DateTimeField(null=True, blank=True)
     estimated_scale = models.CharField(max_length=255, blank=True)  # e.g. "5,000 households, 3 districts"
     contact_email = models.EmailField()
 
@@ -76,18 +86,33 @@ class Solicitation(BaseModel):
     hide_scores_until_submit = models.BooleanField(default=True)
     closure_reason = models.TextField(blank=True)  # given when a PM closes early or cancels
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(status="scheduled") | Q(go_live_date__isnull=False), name="scheduled_has_go_live_date"
+            )
+        ]
+
     def __str__(self):
         return self.title
 
     @property
     def effective_status(self):
-        if self.status == self.Status.ACTIVE and self.application_deadline <= now():
+        status = self.Status(self.status)
+        if status == self.Status.SCHEDULED and self.go_live_date <= now():
+            status = self.Status.ACTIVE
+        if status == self.Status.ACTIVE and self.application_deadline <= now():
             return self.Status.CLOSED
-        return self.Status(self.status)
+        return status
 
     @property
     def is_open(self):
         return self.effective_status == self.Status.ACTIVE
+
+    @property
+    def is_scheduled(self):
+        """Scheduled and not yet live: hidden from other organizations, and back to draft is still possible."""
+        return self.effective_status == self.Status.SCHEDULED
 
     @property
     def is_editable(self):

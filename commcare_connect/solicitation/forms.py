@@ -189,7 +189,7 @@ class SolicitationForm(forms.ModelForm):
 
     def _validate_deadline(self, cleaned_data):
         deadline = cleaned_data.get("application_deadline")
-        if not deadline or self.instance.status != Solicitation.Status.ACTIVE:
+        if not deadline or not self.instance.is_open:
             return
         # clean() runs before the instance is updated, so it still holds the stored deadline. The input
         # only has minute precision, so seconds are dropped to let an unchanged deadline through.
