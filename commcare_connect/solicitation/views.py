@@ -87,6 +87,17 @@ class EditableSolicitationMixin(WaffleSwitchMixin):
         return Solicitation.objects.editable().filter(organization=self.request.org)
 
 
+class SolicitationStatusChangeMixin:
+    """Moves the solicitation to `status` when the form is saved, recording who did it."""
+
+    status = None
+
+    def form_valid(self, form):
+        form.instance.status = self.status
+        form.instance.modified_by = self.request.user.email
+        return super().form_valid(form)
+
+
 class SolicitationStepMixin(EditableSolicitationMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
@@ -212,7 +223,9 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
-class BaseSolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
+class BaseSolicitationClosureView(
+    SolicitationStatusChangeMixin, EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView
+):
     """Ends a solicitation with a reason, after which it can't be edited or applied to.
 
     The form is the modal on the list page.
@@ -220,14 +233,8 @@ class BaseSolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin,
 
     form_class = SolicitationClosureForm
     template_name = "solicitation/closure_form.html"
-    status = None
     title = None
     hint = None
-
-    def form_valid(self, form):
-        form.instance.status = self.status
-        form.instance.modified_by = self.request.user.email
-        return super().form_valid(form)
 
     def get_success_url(self):
         return reverse("solicitation:list", args=[self.request.org.slug])
