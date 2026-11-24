@@ -54,3 +54,10 @@ def update_solicitation_statuses():
     closed = Solicitation.objects.expired().update(status=Solicitation.Status.CLOSED)
     if closed:
         logger.info("Closed %s expired solicitation(s)", closed)
+    live = (
+        Solicitation.objects.open()
+        .filter(status=Solicitation.Status.SCHEDULED)
+        .update(status=Solicitation.Status.ACTIVE)
+    )
+    if live:
+        logger.info("Took %s scheduled solicitation(s) live", live)

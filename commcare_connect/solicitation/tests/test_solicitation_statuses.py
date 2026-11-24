@@ -71,3 +71,14 @@ def test_go_live_rule(go_live_offset, deadline_offset, expected_status):
     assert solicitation.is_scheduled is expected_scheduled
     assert Solicitation.objects.open().filter(pk=solicitation.pk).exists() is expected_open
     assert Solicitation.objects.scheduled().filter(pk=solicitation.pk).exists() is expected_scheduled
+
+
+@pytest.mark.parametrize("go_live_offset, deadline_offset, expected_status", SCHEDULE_CASES)
+def test_update_solicitation_statuses_takes_scheduled_live(go_live_offset, deadline_offset, expected_status):
+    solicitation = scheduled_solicitation(go_live_offset, deadline_offset)
+
+    update_solicitation_statuses()
+    update_solicitation_statuses()  # safe to re-run
+
+    solicitation.refresh_from_db()
+    assert solicitation.status == expected_status
