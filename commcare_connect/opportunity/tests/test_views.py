@@ -2056,19 +2056,15 @@ class TestEditPaymentUnit:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("optional", [False, True])
-def test_link_deliver_units_reuses_unit_from_inactive_opportunity(opportunity, optional):
-    inactive_payment_unit = PaymentUnitFactory(opportunity=OpportunityFactory(active=False))
-    reused = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=inactive_payment_unit, optional=not optional)
-    unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+def test_link_deliver_units(opportunity, optional):
+    unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, optional=not optional)
     payment_unit = PaymentUnitFactory(opportunity=opportunity)
-    selected = [str(reused.id), str(unattached.id)]
+    selected = [str(unattached.id)]
 
     link_deliver_units(payment_unit, [] if optional else selected, selected if optional else [])
 
-    for deliver_unit in (reused, unattached):
-        deliver_unit.refresh_from_db()
-        assert deliver_unit.payment_unit == payment_unit
-        assert deliver_unit.optional == optional
+    unattached.refresh_from_db()
+    assert (unattached.payment_unit, unattached.optional) == (payment_unit, optional)
 
 
 @pytest.mark.django_db

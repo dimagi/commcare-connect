@@ -30,7 +30,7 @@ from commcare_connect.opportunity.filters import (
     UserTasksFilterSet,
 )
 from commcare_connect.opportunity.forms import (
-    PaymentExportForm,
+    ExportFormatForm,
     VisitExportForm,
 )
 from commcare_connect.opportunity.forms.assigned_tasks import (
@@ -562,7 +562,7 @@ class WorkerView(BaseWorkerListView):
 
     def get_extra_context(self, opportunity, org_slug):
         context = {
-            "export_form": PaymentExportForm(),
+            "export_form": ExportFormatForm(),
             "search_term": self._get_search_term(),
         }
         if self.request.htmx:
@@ -718,7 +718,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             if not (self._payment_import_errors() and self.show_import_outcome):
                 task_id = None
         return {
-            "export_form": PaymentExportForm(),
+            "export_form": ExportFormatForm(),
             "payment_import_task_id": task_id,
         }
 

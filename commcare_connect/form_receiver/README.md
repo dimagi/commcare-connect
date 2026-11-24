@@ -157,7 +157,7 @@ Each `deliver` block becomes one `UserVisit`.
 - **Counting:** steps 2–3 leave out `over_limit` and `trial` visits. The claim end-date limits compare against _today_ on the server; the daily limit uses the form's `timeStart` date.
 - **Over-limit reasons:** every breached limit is recorded on `UserVisit.over_limit_reasons`, widest first: `claim_ended`, `claim_limit_ended`, `max_visits`, `max_daily`. They are kept if a reviewer later changes the status. Visits that went over limit before 2026-10-07 have none recorded; `UserVisit.get_over_limit_reasons_display()` labels those "Not recorded" in the visit export and the verification page.
 - **CompletedWork:** one per `(access, entity_id, payment_unit)`. `update_payment_accrued_for_user(..., incremental=True)` then recalculates its status and `payment_accrued` from all its visits. That recalculation, not the receiver, decides the final `CompletedWork` status.
-- **Work areas:** a `work_area_id` in the block (a `WorkArea.case_id` UUID) links the visit and calls `WorkArea.update_status()`.
+- **Work areas:** a `work_area_id` in the block (a `WorkArea.case_id` UUID) links the visit and calls `WorkArea.update_status()`. Status counts visits from every worker, not just the area's current one: any visit moves `NOT_VISITED` → `VISITED`, and approved visits from all workers together reaching `expected_visit_count` give `EXPECTED_VISIT_REACHED`. Status is only recalculated when a visit arrives, visits are approved with the approve action on the visits page, or the expected visit count is edited. Rejecting visits and the visit-status import don't recalculate it. A recalculation can move `EXPECTED_VISIT_REACHED` back to `VISITED` if approved visits are now below the target, for example after the target is raised.
 
 The verification flags themselves are listed in `../opportunity/README.md`.
 
@@ -172,7 +172,8 @@ The verification flags themselves are listed in `../opportunity/README.md`.
 
 | Record                           | Created from              | Unique on                                        |
 | -------------------------------- | ------------------------- | ------------------------------------------------ |
-| `LearnModule`, `DeliverUnit`     | first block seen          | none; `get_or_create` on app + slug only         |
+| `LearnModule`                    | first block seen          | none; `get_or_create` on app + slug only         |
+| `DeliverUnit`                    | first block seen          | `opportunity, app, slug`                         |
 | `CompletedModule`                | `module` block            | `xform_id, module, opportunity_access`           |
 | `Assessment`                     | `assessment` block        | none; `get_or_create` lookup includes `xform_id` |
 | `UserVisit`                      | `deliver` block           | `xform_id, entity_id, deliver_unit`              |
@@ -220,6 +221,25 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 - **Learn:** `User score must be an integer`; `Learn Assessment is already completed`.
 - **Deliver:** `User does not have access to opportunity …`; `Payment unit is not configured for the deliver unit …`; `User has not claimed opportunity …`; `User has no claim limit for payment unit …`; `Invalid work area case id specified …`; `Work area not found`.
 - **Work area update:** pending request already exists; user not assigned to the work area; invalid status or transition; missing `reason` / `photo_evidence`; photo attachment not found on the form.
+
+## Metrics
+
+`metrics.py` sends three Sentry metrics for every `POST` to the receiver. All automated checks (limits, duplicates, verification flags, auto-approve and auto-reject, payment accrual) run inside the request, so a form is fully processed when its transaction commits. The Celery tasks that run afterwards (attachments, notifications) are not included.
+
+| Metric                          | Type         | Measures                                                                                     |
+| ------------------------------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `form_receiver.forms`           | count        | Forms received                                                                               |
+| `form_receiver.processing_time` | distribution | Milliseconds from Connect receiving the request to the transaction committing (or the error) |
+| `form_receiver.end_to_end_time` | distribution | Milliseconds from HQ's `received_on` to the commit. `processed` forms only                   |
+
+The end-to-end time includes HQ's forwarding queue and retry delays, and relies on HQ's and Connect's clocks agreeing.
+
+Each metric has these attributes:
+
+- `outcome`: `processed` (an active opportunity uses the app), `ignored` (200, but no active opportunity uses the app), `duplicate` (a resent visit, module or inaccessibility request), `rejected` (4xx, including invalid payloads) or `error` (500).
+- `app_type`: `deliver`, `learn`, or `none` when the form was not processed.
+
+A 200 is recorded only after its transaction commits, so a rolled-back form is never counted as processed. Without `SENTRY_DSN` nothing is sent.
 
 ## Debugging
 

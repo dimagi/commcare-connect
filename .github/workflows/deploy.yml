@@ -71,6 +71,7 @@ jobs:
       id-token: write # assume the github_deploy AWS role
       contents: write # create the GitHub release
       deployments: write
+      pull-requests: write # label PRs shipped to production
     env:
       DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
       # Staging always deploys autostaging and production always deploys main, whichever branch triggered the run
@@ -114,6 +115,24 @@ jobs:
           DEPLOY_SHA="$(git rev-parse HEAD)"
           echo "DEPLOY_SHA=${DEPLOY_SHA}" >> "$GITHUB_ENV"
           echo "APP_RELEASE=${SAFE_REF_NAME}.${DEPLOY_SHA}" >> "$GITHUB_ENV"
+
+      # Read before this run creates its own release, which then becomes the latest
+      - name: Find the previous production release
+        if: ${{ env.DEPLOY_ENV == 'production' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! PREV_RELEASE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2> "$RUNNER_TEMP/err")"; then
+            if grep -q 'HTTP 404' "$RUNNER_TEMP/err"; then
+              echo "No production release yet, so there are no PRs to label"
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/err" >&2
+            echo "::warning::Could not read the latest release, so PRs won't be labelled as deployed"
+            exit 1
+          fi
+          echo "PREV_RELEASE=${PREV_RELEASE}" >> "$GITHUB_ENV"
 
       # Record the deploy in GitHub's Deployments API so each environment shows what is running there.
       # Created explicitly (not via the job-level `environment:` key) so the record points at the SHA
@@ -250,6 +269,33 @@ jobs:
             -f log_url="${LOG_URL}" \
             -f environment_url="${DEPLOY_URL}" \
             -F auto_inactive=true > /dev/null
+
+      # GitHub only shows a deployment on a PR when it targets the PR's head commit, and production deploys a commit
+      # on main, so label the PRs merged since the previous release instead.
+      - name: Label PRs deployed to production
+        if: ${{ success() && env.DEPLOY_ENV == 'production' && env.PREV_RELEASE }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL: 'deployed: production'
+        run: |
+          gh label create "${LABEL}" --repo "${GITHUB_REPOSITORY}" --force --color 0e8a16 \
+            --description 'Merged PR included in a production deploy' \
+            || echo "::warning::Could not create the ${LABEL} label"
+          # Each first-parent commit on main is one PR's merge (or squash) commit; the checkout is shallow
+          git fetch --quiet --unshallow --no-tags origin "refs/tags/${PREV_RELEASE}:refs/tags/${PREV_RELEASE}"
+          git rev-list --first-parent "${PREV_RELEASE}..${DEPLOY_SHA}" \
+            | while read -r sha; do
+                gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" \
+                  --jq '.[] | select(.merged_at != null and .base.ref == env.DEPLOY_BRANCH) | .number' \
+                  || echo "::warning::Could not look up the PR for commit ${sha}" >&2
+              done \
+            | sort -un \
+            | while read -r pr; do
+                echo "Labelling #${pr}"
+                gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/labels" -f "labels[]=${LABEL}" --silent \
+                  || echo "::warning::Could not label #${pr}"
+              done
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@e28cf165c92ffef168d23c5c9000cffc8a25e117 # v1.24.0

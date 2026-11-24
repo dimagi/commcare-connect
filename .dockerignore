@@ -8,3 +8,15 @@ npm-debug.log
 .pytest_cache
 .venv
 resources
+.git
+.github
+.claude
+.config
+.opencodereview
+docs
+site
+deploy
+staticfiles
+**/__pycache__
+**/*.pyc
+.ruff_cache
