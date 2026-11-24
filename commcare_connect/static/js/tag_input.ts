@@ -397,7 +397,7 @@ export default class TagInput {
 
   #copyAllTags(event: ClipboardEvent): void {
     event.preventDefault();
-    event.clipboardData?.setData('text/plain', this.values.join('\n'));
+    event.clipboardData?.setData('text/plain', storedValue(this.#state));
   }
 
   #bindContainerEvents(): void {
