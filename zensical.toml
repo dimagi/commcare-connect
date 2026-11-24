@@ -64,6 +64,7 @@ nav = [
   { "Architecture decisions" = [
     { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
     { "ADR-0002: TypeScript for front-end modules" = "adr/0002-typescript-for-front-end-modules.md" },
+    { "ADR-0003: Unit of payable work" = "adr/0003-completed-work-unit-of-payable-work.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
