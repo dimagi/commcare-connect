@@ -10,6 +10,8 @@
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
   <script src="{% static 'bundles/js/org_creation_wizard-bundle.js' %}"></script>
+  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% static 'bundles/js/organization_profile-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block title %}
   {% trans "Connect - New Organization" %}
