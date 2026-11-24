@@ -31,7 +31,7 @@
     "tailwindcss": "^4.3.3",
     "tippy.js": "^6.3.7",
     "tom-select": "^2.7.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.73.0",
     "webpack": "^5.112.2",
     "webpack-bundle-tracker": "^3.2.4",
