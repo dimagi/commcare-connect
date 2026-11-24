@@ -74,6 +74,7 @@ nav = [
     { "ADR-0010: Invoice billing watermark" = "adr/0010-invoice-billing-watermark.md" },
     { "ADR-0011: Organization access levels" = "adr/0011-organization-scoped-access-levels.md" },
     { "ADR-0012: Worker identity" = "adr/0012-worker-identity-connectid-and-hq.md" },
+    { "ADR-0013: One active opportunity per app" = "adr/0013-one-active-opportunity-per-app.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
