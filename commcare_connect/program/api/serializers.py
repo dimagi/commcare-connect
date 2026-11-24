@@ -336,5 +336,5 @@ class ProgramOpportunityResponseSerializer(serializers.ModelSerializer):
             "cc_domain": app.cc_domain,
             "cc_app_id": app.cc_app_id,
             "name": app.name,
-            "deliver_units": DeliverUnitResponseSerializer(DeliverUnit.objects.filter(app=app), many=True).data,
+            "deliver_units": DeliverUnitResponseSerializer(DeliverUnit.objects.for_opportunity(obj), many=True).data,
         }

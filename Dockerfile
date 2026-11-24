@@ -19,8 +19,8 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBUG=0
 
 RUN apt-get update \
-  # psycopg2, gettext geodjango etc dependencies
-  && apt-get install -y libpq-dev gettext curl libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 binutils libproj-dev gdal-bin \
+  # psycopg2, gettext geodjango etc dependencies; postgresql-client provides psql for `manage.py dbshell`
+  && apt-get install -y libpq-dev gettext curl libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 binutils libproj-dev gdal-bin postgresql-client \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*
