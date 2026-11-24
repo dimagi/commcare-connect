@@ -37,7 +37,7 @@ dependencies = [
     "redis>=8.0.0",
     "sentry-sdk>=2.75.0",
     "shapely>=2.2.0",
-    "tablib[xlsx]>=3.5.0",
+    "tablib[xlsx]>=3.10.0",
     "twilio>=9.13.0",
     "whitenoise>=6.5.0",
 ]

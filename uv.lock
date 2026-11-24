@@ -519,7 +519,7 @@ requires-dist = [
     { name = "redis", specifier = ">=8.0.0" },
     { name = "sentry-sdk", specifier = ">=2.75.0" },
     { name = "shapely", specifier = ">=2.2.0" },
-    { name = "tablib", extras = ["xlsx"], specifier = ">=3.5.0" },
+    { name = "tablib", extras = ["xlsx"], specifier = ">=3.10.0" },
     { name = "twilio", specifier = ">=9.13.0" },
     { name = "whitenoise", specifier = ">=6.5.0" },
 ]
