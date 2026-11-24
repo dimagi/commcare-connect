@@ -69,6 +69,7 @@ nav = [
     { "ADR-0005: Visit status at ingest" = "adr/0005-visit-status-at-ingest.md" },
     { "ADR-0006: Cached payment accrual" = "adr/0006-cached-payment-accrual.md" },
     { "ADR-0007: HQ form forwarding" = "adr/0007-hq-form-forwarding-ingest.md" },
+    { "ADR-0008: Recording payments" = "adr/0008-record-payments-not-move-money.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
