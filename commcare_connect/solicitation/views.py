@@ -187,7 +187,8 @@ class SolicitationQuestionsView(SolicitationFormSetStepView):
 class SolicitationPublishView(SolicitationStepMixin, UpdateView):
     """Reviews the solicitation, then publishes it now or schedules it to go live, once nothing blocks it.
 
-    A scheduled solicitation can't be edited, so this page is where it's published now or rescheduled.
+    A scheduled solicitation can't be edited, so this page is where it's published now, rescheduled or moved back
+    to draft.
     """
 
     step = "publish"
@@ -225,6 +226,27 @@ class SolicitationPublishView(SolicitationStepMixin, UpdateView):
         if not self.object.public:
             return reverse("solicitation:invitations", args=[self.request.org.slug, self.object.solicitation_id])
         return super().get_success_url()
+
+
+class SolicitationUnscheduleView(
+    SolicitationStatusChangeMixin, EditableSolicitationMixin, SuccessMessageMixin, UpdateView
+):
+    """Takes a scheduled solicitation back to draft before it goes live, so it can be edited again."""
+
+    status = Solicitation.Status.DRAFT
+    fields = []
+    http_method_names = ["post"]
+    success_message = _("Solicitation moved back to draft.")
+
+    def get_queryset(self):
+        return Solicitation.objects.scheduled().filter(organization=self.request.org)
+
+    def form_valid(self, form):
+        form.instance.go_live_date = None
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("solicitation:details", args=[self.request.org.slug, self.object.solicitation_id])
 
 
 class BaseSolicitationClosureView(

@@ -12,7 +12,7 @@ from commcare_connect.utils.tables import DMYTColumn, IndexColumn, select_column
 def details_url(record, table):
     if record.is_editable:
         return reverse("solicitation:details", args=(table.request.org.slug, record.solicitation_id))
-    # A scheduled solicitation can't be edited; its review page shows when it goes live.
+    # A scheduled solicitation can't be edited; its review page shows when it goes live and moves it back to draft.
     if record.is_scheduled:
         return reverse("solicitation:publish", args=(table.request.org.slug, record.solicitation_id))
     return None

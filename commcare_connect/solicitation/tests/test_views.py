@@ -1,9 +1,11 @@
 import re
+from datetime import timedelta
 from http import HTTPStatus
 from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
+from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
@@ -231,6 +233,7 @@ class TestSolicitationSteps:
 
         if step == "publish":
             assert response.status_code == HTTPStatus.OK
+            assert step_url("unschedule", solicitation) in response.content.decode()
         else:
             assert response.status_code == HTTPStatus.NOT_FOUND
 
@@ -339,6 +342,43 @@ class TestSolicitationSteps:
 
         assert response.status_code == HTTPStatus.OK
         assert response.context["path"][-1] == {"title": "New solicitation"}
+
+
+@pytest.mark.django_db
+class TestSolicitationUnschedule:
+    def test_moves_back_to_draft(self, pm_client, program_manager_org, program_manager_org_user_admin):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.post(step_url("unschedule", solicitation))
+
+        solicitation.refresh_from_db()
+        assert response.url == step_url("details", solicitation)
+        assert (solicitation.status, solicitation.go_live_date, solicitation.modified_by) == (
+            Solicitation.Status.DRAFT,
+            None,
+            program_manager_org_user_admin.email,
+        )
+        assert pm_client.get(step_url("criteria", solicitation)).status_code == HTTPStatus.OK
+
+    @pytest.mark.parametrize(
+        "factory_kwargs, own_org",
+        [
+            ({"status": Solicitation.Status.DRAFT}, True),
+            ({"status": Solicitation.Status.ACTIVE}, True),
+            # Its go-live date has passed, so it's live even before update_solicitation_statuses runs.
+            ({"scheduled": True, "go_live_date": now() - timedelta(hours=1)}, True),
+            ({"scheduled": True}, False),
+        ],
+    )
+    def test_only_own_solicitations_not_yet_live(self, pm_client, program_manager_org, factory_kwargs, own_org):
+        organization = program_manager_org if own_org else OrganizationFactory(program_manager=True)
+        solicitation = SolicitationFactory(organization=organization, **factory_kwargs)
+        # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
+        url = reverse("solicitation:unschedule", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        assert pm_client.post(url).status_code == HTTPStatus.NOT_FOUND
+        solicitation.refresh_from_db()
+        assert solicitation.status == factory_kwargs.get("status", Solicitation.Status.SCHEDULED)
 
 
 PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory, "reviewers": SolicitationReviewerFactory}

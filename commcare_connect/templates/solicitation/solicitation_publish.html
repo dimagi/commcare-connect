@@ -178,15 +178,22 @@
       </section>
       <p class="rounded-lg warning-light p-4 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-        {% translate "Publishing locks the criteria and questions for good." %}
+        {% translate "Publishing locks the criteria and questions for good. A scheduled solicitation can go back to draft until it goes live." %}
       </p>
       <div class="flex gap-3 justify-end">
-        {# A scheduled solicitation's earlier steps can't be edited. #}
+        {# A scheduled solicitation's earlier steps open once it's back in draft. #}
         {% if previous_step_url and not solicitation.is_scheduled %}
           <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
         {% endif %}
         <a class="button button-md outline-style"
            href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
+        {% if solicitation.is_scheduled %}
+          <button type="submit"
+                  class="button button-md outline-style"
+                  formaction="{% url "solicitation:unschedule" request.org.slug solicitation.solicitation_id %}">
+            {% translate "Move back to draft" %}
+          </button>
+        {% endif %}
         <button type="submit"
                 class="button button-md primary-dark"
                 {% if errors %}disabled{% endif %}>
