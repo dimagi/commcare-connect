@@ -115,7 +115,7 @@ docs = [
 production = [
     "django-allow-cidr>=0.7.1",
     "django-anymail[amazon-ses]>=10.1",
-    "django-storages[boto3]>=1.13.2",
+    "django-storages[boto3]>=1.14.6",
     "gunicorn[gevent]>=21.2.0",
     "psycopg2>=2.9.13",
 ]
