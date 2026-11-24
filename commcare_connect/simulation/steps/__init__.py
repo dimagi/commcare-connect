@@ -18,16 +18,17 @@ from .browser import Browser
 from .payments import PaymentSteps
 from .review import ReviewSteps
 from .setup import SetupSteps
-from .types import PaymentUnitSpec
+from .solicitations import SolicitationSteps
+from .types import PaymentUnitSpec, SolicitationSpec
 from .workers import WorkerSteps
 
-__all__ = ["Sim", "PaymentUnitSpec"]
+__all__ = ["Sim", "PaymentUnitSpec", "SolicitationSpec"]
 
 
-class Sim(SetupSteps, WorkerSteps, ReviewSteps, PaymentSteps):
+class Sim(SetupSteps, WorkerSteps, ReviewSteps, PaymentSteps, SolicitationSteps):
     """Acts as ``pm_admin`` for program-manager steps and ``nm_admin`` for network-manager steps.
 
-    Both may be the same user, who then sees each side of a managed opportunity by switching organization.
+    Both may be the same user, who then sees each side of an opportunity by switching organization.
     """
 
     def __init__(self, *, pm_admin, nm_admin, seed=42, log=print):

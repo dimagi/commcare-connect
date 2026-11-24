@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.auth.models import Permission
 from django.urls import resolve, reverse
+from django.utils.text import slugify
 from oauth2_provider.models import get_application_model
 from waffle import switch_is_active
 
@@ -11,16 +12,18 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import ENABLE_PROGRAM_ACCESS_REDESIGN
 from commcare_connect.opportunity.models import DeliverUnit, DeliverUnitFlagRules, DeliveryType, HQApiKey, Opportunity
 from commcare_connect.organization.forms import OrganizationChangeForm
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Contact, Organization
 from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.simulation.constants import SIM_DELIVER_APP_PREFIX, SIM_DOMAIN, SIM_LEARN_APP_PREFIX
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.permission_const import LLO_DIRECTORY_MANAGEMENT_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
+from .form_data import management_form
 from .types import PaymentUnitSpec
 
 SIM_HQ_URL = "https://hq.simulation.local"
 SIM_STAFF_USERNAME = "simulation-org-settings"
+SIM_DIRECTORY_STAFF_USERNAME = "simulation-llo-directory"
 LEARN_PASSING_SCORE = 70
 VERIFICATION_SAVED = "Verification rules saved successfully."
 # The verification page drops these fields when the opportunity verifies visits automatically.
@@ -42,8 +45,46 @@ class SetupSteps:
             organization = Organization.objects.get(slug=resolve(response.url).kwargs["org_slug"])
             if program_manager:
                 _enable_program_manager(self.browser(_org_settings_staff()), organization)
+                organization.refresh_from_db()
             self.log(f"Created organization {organization.slug}{' (program manager)' if program_manager else ''}")
         return organization
+
+    def org_profile(self, organization, *, admin, **changes):
+        """Save ``organization``'s profile on Organization Home as ``admin``, changing only ``changes``.
+
+        ``changes`` are ``OrganizationChangeForm`` fields, such as ``office_address``.
+        """
+        with self.step():
+            # The page posts the saved profile back, so start from it, not from a possibly stale instance.
+            organization.refresh_from_db()
+            _submit_org_home(self.browser(admin), organization, changes)
+            organization.refresh_from_db()
+            self.log(f"Updated {', '.join(changes)} of {organization.slug}")
+
+    def contact(self, organization, *, name, email, title="", phone="", main=False):
+        """Add a contact for ``organization`` in the LLO Directory. Returns the ``Contact``.
+
+        The directory is for Dimagi staff, so the form is submitted as the simulation's directory staff user.
+        ``main`` makes them the organization's main point of contact.
+        """
+        # The form saves the email stripped, so the contact is looked up by the stripped value.
+        email = email.strip()
+        data = {
+            "name": name,
+            "organization": organization.pk,
+            "title": title,
+            "is_main_poc": main,
+            "email": email,
+            "phone": phone,
+            "notes": "",
+        }
+        with self.step():
+            self.browser(_llo_directory_staff()).post(
+                reverse("organization_directory:contact_create"), data, htmx=True
+            )
+            contact = Contact.objects.get(email__iexact=email)
+            self.log(f"Added contact {contact.name} to {organization.slug}{' (main)' if main else ''}")
+        return contact
 
     def program(
         self,
@@ -65,7 +106,7 @@ class SetupSteps:
         data = {
             "name": name,
             "description": f"{name} (simulated)",
-            "delivery_type": _delivery_type().pk,
+            "delivery_type": delivery_type().pk,
             "budget": budget,
             "currency": currency,
             "country": country,
@@ -121,7 +162,7 @@ class SetupSteps:
         verification_flags=None,
         deliver_unit_flags=None,
     ):
-        """Create a managed opportunity for ``nm_org`` under ``program`` through the setup wizard, as ``pm_admin``.
+        """Create an opportunity for ``nm_org`` under ``program`` through the setup wizard, as ``pm_admin``.
 
         Submits the program's "Create opportunity" page (which syncs the learn modules and deliver units), the
         "Add payment unit" form once per ``PaymentUnitSpec`` in ``payment_units`` (one default unit when omitted)
@@ -170,34 +211,48 @@ class SetupSteps:
 
 def _enable_program_manager(browser, organization):
     """Submit Organization Home's profile form unchanged except for "Enable Program Manager"."""
+    _submit_org_home(browser, organization, {"program_manager": True})
+
+
+def _submit_org_home(browser, organization, changes):
+    """Submit Organization Home's profile form with its current values, except for ``changes``."""
     current = OrganizationChangeForm(instance=organization, user=browser.user)
-    data = {name: _checkbox(current[name].value()) for name in current.fields}
+    values = {name: current[name].value() for name in current.fields} | changes
+    data = {name: _checkbox(value) for name, value in values.items()}
     data = {name: value for name, value in data.items() if value is not None and value is not False}
-    data["program_manager"] = "on"
     browser.post(reverse("organization:home", args=(organization.slug,)), data)
 
 
 def _org_settings_staff():
-    """The Dimagi staff member who manages organization settings: a configuration user holding only
-    ``ORG_MANAGEMENT_SETTINGS_ACCESS``, with no memberships and no usable password, so get-or-created."""
+    """The Dimagi staff member who manages organization settings."""
+    return _staff_user(SIM_STAFF_USERNAME, "Simulation org settings", ORG_MANAGEMENT_SETTINGS_ACCESS)
+
+
+def _llo_directory_staff():
+    """The Dimagi staff member who manages the LLO Directory."""
+    return _staff_user(SIM_DIRECTORY_STAFF_USERNAME, "Simulation LLO directory", LLO_DIRECTORY_MANAGEMENT_ACCESS)
+
+
+def _staff_user(username, name, permission):
+    """A configuration user holding only ``permission``, with no memberships and no usable password, so
+    get-or-created."""
     staff, created = User.objects.get_or_create(
-        username=SIM_STAFF_USERNAME,
-        defaults={"email": f"{SIM_STAFF_USERNAME}@simulation.local", "name": "Simulation org settings"},
+        username=username, defaults={"email": f"{username}@simulation.local", "name": name}
     )
     if created:
         staff.set_unusable_password()
         staff.save()
-    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
+    app_label, codename = permission.split(".")
     staff.user_permissions.add(Permission.objects.get(content_type__app_label=app_label, codename=codename))
     return staff
 
 
-def _delivery_type():
-    """Delivery types are managed in Django admin only, so the simulation's is get-or-created."""
-    delivery_type, _created = DeliveryType.objects.get_or_create(
-        slug="simulation", defaults={"name": "Simulation", "description": "Programs built by the simulation"}
+def delivery_type(name="Simulation"):
+    """Delivery types are managed in Django admin only, so the simulation's are get-or-created by name."""
+    found, _created = DeliveryType.objects.get_or_create(
+        slug=slugify(name), defaults={"name": name, "description": f"{name}, created by the simulation"}
     )
-    return delivery_type
+    return found
 
 
 def _invited(program, organization):
@@ -289,7 +344,7 @@ def _payment_unit_data(opportunity, spec):
 
 def _deliver_units_by_slug(opportunity, slugs):
     """The opportunity's deliver units named by ``slugs``; a slug that names none is a scenario mistake."""
-    available = {du.slug: du for du in DeliverUnit.objects.filter(app=opportunity.deliver_app)}
+    available = {du.slug: du for du in DeliverUnit.objects.for_opportunity(opportunity)}
     unknown = set(slugs) - set(available)
     if unknown:
         raise ValueError(f"No deliver unit {sorted(unknown)} in {opportunity.name}; it has {sorted(available)}.")
@@ -332,27 +387,20 @@ def _verification_data(opportunity, verification_flags, deliver_unit_flags):
     configured = DeliverUnitFlagRules.objects.filter(opportunity=opportunity)
     # The same queryset the view builds the rule forms' initial deliver units from. Their deliver unit field is
     # disabled, so the browser doesn't send it.
-    deliver_units = list(opportunity.deliver_app.deliver_units.exclude(id__in=configured.values_list("deliver_unit")))
+    deliver_units = list(
+        DeliverUnit.objects.for_opportunity(opportunity).exclude(id__in=configured.values_list("deliver_unit"))
+    )
     for index, deliver_unit in enumerate(deliver_units):
         rules = {"duration": 0} | deliver_unit_flags.get(deliver_unit.slug, {})
         data |= {f"deliver_unit-{index}-{key}": _checkbox(value) for key, value in rules.items() if value is not False}
-    data |= _management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
-    data |= _management_form("form_json", total=1, max_num=1000)
+    data |= management_form("deliver_unit", total=len(deliver_units), max_num=len(deliver_units))
+    data |= management_form("form_json", total=1, max_num=1000)
     return data
 
 
 def _checkbox(value):
     """A ticked checkbox posts "on"; other inputs post their value."""
     return "on" if value is True else value
-
-
-def _management_form(prefix, *, total, max_num):
-    return {
-        f"{prefix}-TOTAL_FORMS": total,
-        f"{prefix}-INITIAL_FORMS": 0,
-        f"{prefix}-MIN_NUM_FORMS": 0,
-        f"{prefix}-MAX_NUM_FORMS": max_num,
-    }
 
 
 def _verification_saved(response):

@@ -62,6 +62,11 @@ urlpatterns = [
     ),
     path("opportunity/<int:opp_id>/assigned_tasks/", views.AssignedTaskDataView.as_view(), name="assigned_task_data"),
     path(
+        "opportunity/<int:opp_id>/assigned_tasks/create/",
+        views.AssignedTaskCreateView.as_view(),
+        name="assigned_task_create",
+    ),
+    path(
         "opportunity/<int:opp_id>/work_area_groups/",
         views.WorkAreaGroupDataView.as_view(),
         name="work_area_group_data",

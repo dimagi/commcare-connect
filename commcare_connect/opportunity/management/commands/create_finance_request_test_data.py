@@ -1,6 +1,6 @@
 """Seed approved invoices for trying the "Send to Finance" flow locally.
 
-Makes the given user an admin of a program manager organization whose program runs a managed
+Makes the given user an admin of a program manager organization whose program runs an
 opportunity for a separate network manager organization, then adds invoices the program manager
 has approved (Ready to Pay). Rerunning reuses the organizations, program and opportunity and adds
 more invoices. Pair it with JIRA_SERVICE_DESK_DRY_RUN so nothing reaches Jira.
@@ -31,7 +31,7 @@ OPPORTUNITY_NAME = "Finance Request Test Opportunity"
 
 
 class Command(BaseCommand):
-    help = "Create Ready to Pay invoices on a managed opportunity for trying the Send to Finance flow locally."
+    help = "Create Ready to Pay invoices on an opportunity for trying the Send to Finance flow locally."
 
     def add_arguments(self, parser):
         parser.add_argument("email", help="Email of an existing user, who becomes the program manager.")

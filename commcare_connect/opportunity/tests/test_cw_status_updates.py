@@ -10,7 +10,6 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
-    OpportunityFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
@@ -24,22 +23,11 @@ def _run_update(completed_work):
     completed_work.refresh_from_db()
 
 
-def _setup_non_managed(auto_approve=True):
-    """Create a non-managed opportunity with auto_approve_payments."""
+def _setup(auto_approve=True):
+    """Create an opportunity access whose opportunity has auto_approve_payments set."""
     opp_access = OpportunityAccessFactory()
     opp_access.opportunity.auto_approve_payments = auto_approve
     opp_access.opportunity.save()
-    return opp_access
-
-
-def _setup_managed(auto_approve=True):
-    """Create a managed opportunity with auto_approve_payments."""
-    managed_opp = OpportunityFactory()
-    opp_access = OpportunityAccessFactory()
-    opp_access.opportunity = managed_opp
-    opp_access.opportunity.auto_approve_payments = auto_approve
-    opp_access.opportunity.save()
-    opp_access.save()
     return opp_access
 
 
@@ -60,6 +48,8 @@ def _make_cw(opp_access, payment_unit, status=CompletedWorkStatus.pending):
 
 
 def _make_visit(opp_access, deliver_unit, completed_work, status, review_status=None, reason=""):
+    """Create a visit. Approved visits default to review_status=agree unless review_status is given,
+    because a deliver unit only counts as approved once it has an approved visit the PM agreed with."""
     kwargs = dict(
         opportunity=opp_access.opportunity,
         user=opp_access.user,
@@ -78,17 +68,17 @@ def _make_visit(opp_access, deliver_unit, completed_work, status, review_status=
 
 
 # =============================================================================
-# Non-managed, Required DUs Only
+# Required DUs Only
 # =============================================================================
 
 
 @pytest.mark.django_db
-class TestNonManagedRequiredOnly:
-    """Non-managed opportunity with only required deliver units."""
+class TestRequiredOnly:
+    """Opportunity with only required deliver units."""
 
     def test_any_visit_rejected(self):
         """Any visit has status=rejected → CW rejected."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -103,7 +93,7 @@ class TestNonManagedRequiredOnly:
 
     def test_1_required_du_1_approved_visit(self):
         """1 required DU, 1 approved visit → approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -116,7 +106,7 @@ class TestNonManagedRequiredOnly:
 
     def test_2_required_dus_each_1_approved(self):
         """2 required DUs, each has 1 approved visit → approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du1 = _make_required_du(opp_access, pu)
         du2 = _make_required_du(opp_access, pu)
@@ -132,7 +122,7 @@ class TestNonManagedRequiredOnly:
     def test_1_required_du_approved_plus_over_limit(self):
         """1 required DU: visits = [approved, over_limit] → approved.
         DU has approved_count=1 > 0, over_limit visit is neutral."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -147,7 +137,7 @@ class TestNonManagedRequiredOnly:
     def test_1_required_du_approved_plus_pending(self):
         """1 required DU: visits = [approved, pending] → approved.
         DU has ≥1 approved visit, pending visit is neutral."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -162,7 +152,7 @@ class TestNonManagedRequiredOnly:
     def test_1_required_du_approved_plus_duplicate(self):
         """1 required DU: visits = [approved, duplicate] → approved.
         Duplicate visit is neutral for per-DU check."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -176,7 +166,7 @@ class TestNonManagedRequiredOnly:
 
     def test_2_required_dus_du1_approved_du2_only_pending(self):
         """2 required DUs: DU1 approved, DU2 only pending → unchanged (pending)."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du1 = _make_required_du(opp_access, pu)
         du2 = _make_required_du(opp_access, pu)
@@ -191,7 +181,7 @@ class TestNonManagedRequiredOnly:
 
     def test_incomplete_cw_promoted_to_pending_when_visits_exist(self):
         """CW was incomplete, visits exist but not all approved → promoted to pending."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
@@ -204,7 +194,7 @@ class TestNonManagedRequiredOnly:
 
     def test_pending_cw_stays_pending_when_visits_not_all_approved(self):
         """CW was pending, visits not all approved → stays pending."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.pending)
@@ -218,7 +208,7 @@ class TestNonManagedRequiredOnly:
     def test_rejected_cw_preserved_when_offending_visit_corrected_to_pending(self):
         """CW was rejected, offending visit corrected to pending → stays rejected.
         Terminal status preserved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.rejected)
@@ -231,7 +221,7 @@ class TestNonManagedRequiredOnly:
 
     def test_rejected_cw_updated_to_approved_when_all_visits_now_approved(self):
         """CW was rejected, all visits corrected to approved → approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.rejected)
@@ -245,7 +235,7 @@ class TestNonManagedRequiredOnly:
     def test_approved_cw_preserved_when_visit_reverts_to_pending(self):
         """CW was approved, a visit reverts to pending → stays approved.
         Terminal status preserved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.approved)
@@ -258,7 +248,7 @@ class TestNonManagedRequiredOnly:
 
     def test_auto_approve_disabled_no_status_change(self):
         """auto_approve_payments=False → no status update regardless of visits."""
-        opp_access = _setup_non_managed(auto_approve=False)
+        opp_access = _setup(auto_approve=False)
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -269,239 +259,10 @@ class TestNonManagedRequiredOnly:
 
         assert cw.status == CompletedWorkStatus.pending
 
-
-# =============================================================================
-# Non-managed, Required + Optional DUs
-# =============================================================================
-
-
-@pytest.mark.django_db
-class TestNonManagedReqPlusOpt:
-    """Non-managed opportunity with required and optional deliver units."""
-
-    def test_any_visit_rejected(self):
-        """Any visit rejected → CW rejected. Branch 1 always wins."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.rejected, reason="Bad data")
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.rejected
-
-    def test_all_visits_approved_required_and_optional(self):
-        """All visits approved (required + optional) → approved."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
-    def test_all_required_approved_optional_has_approved_plus_over_limit(self):
-        """All required approved; ≥1 optional approved; optional also has over_limit → approved.
-        Over_limit visit is neutral for per-DU check."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.over_limit)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
-    def test_all_required_approved_no_optional_has_approved_all_pending(self):
-        """All required approved; NO optional has approved (all optional visits pending) → not approved.
-        Optional check fails (any() over optional DUs = False)."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_all_required_approved_only_approved_visits_no_optional_approved(self):
-        """All required approved (only approved visits); no optional has approved visit → not approved.
-        Optional DUs exist so any() over optional must find ≥1 approved."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        # optional DU has a pending visit (not approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_all_required_approved_optional_du_has_no_visits_at_all(self):
-        """All required approved (only approved visits); optional DU has no approved visits → not approved.
-        Optional DUs exist but any() = False → not approved.
-        Note: we add a pending visit on the optional DU to bypass the completed_count guard
-        and actually exercise the approval logic."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)  # bypass count guard
-
-        _run_update(cw)
-
-        # CW should NOT be approved because optional DU has no approved visits
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_incomplete_cw_with_required_and_optional_approved(self):
-        """CW was incomplete; required approved; ≥1 optional approved → approved."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
-    def test_incomplete_cw_promoted_to_pending_when_optional_not_approved(self):
-        """CW was incomplete; required approved but optional not → pending (promoted from incomplete)."""
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_incomplete_cw_updates_when_only_required_du_has_visit(self):
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)  # exists but has no visits
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.pending)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_incomplete_cw_updates_when_only_required_du_approved(self):
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_rejected_visit_on_required_du_no_optional_visits(self):
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.pending)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.rejected, reason="Bad data")
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.rejected
-
-    def test_payment_not_calculated_until_optional_du_submitted(self):
-        opp_access = _setup_non_managed()
-        pu = _make_payment_unit(opp_access, amount=100)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-        assert cw.saved_payment_accrued == 0
-        assert cw.saved_completed_count == 0
-
-
-# =============================================================================
-# Managed, Required DUs Only
-# =============================================================================
-
-
-@pytest.mark.django_db
-class TestManagedRequiredOnly:
-    """Managed opportunity with only required deliver units."""
-
-    def test_any_visit_rejected(self):
-        """Any visit rejected → CW rejected. review_status irrelevant."""
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        du = _make_required_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, du, cw, VisitValidationStatus.rejected, reason="Bad")
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.rejected
-
-    def test_all_approved_all_agree(self):
-        """All visits approved + all review_status=agree → approved."""
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        du = _make_required_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
     def test_all_approved_none_agree_review_pending(self):
         """All visits approved; none have agree (review pending) → not approved.
         Per-DU agree=0 → not approved → stays current status."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -512,25 +273,10 @@ class TestManagedRequiredOnly:
 
         assert cw.status == CompletedWorkStatus.pending
 
-    def test_approved_plus_agree_and_over_limit(self):
-        """1 required DU: visits = [approved+agree, over_limit] → approved.
-        DU has approved+agree, over_limit visit is neutral."""
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        du = _make_required_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-        _make_visit(opp_access, du, cw, VisitValidationStatus.over_limit)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
     def test_all_approved_mixed_reviews_some_agree_some_pending(self):
         """All visits approved; mixed reviews: some agree, some pending.
         Per-DU check — DU has agree > 0 from one visit → approved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -545,7 +291,7 @@ class TestManagedRequiredOnly:
     def test_2_required_dus_mixed_reviews_one_du_no_agree(self):
         """2 required DUs: DU1 has approved+agree, DU2 has approved+pending_review → not approved.
         Per-DU: DU2 has agree=0 → all_required_approved fails."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du1 = _make_required_du(opp_access, pu)
         du2 = _make_required_du(opp_access, pu)
@@ -561,7 +307,7 @@ class TestManagedRequiredOnly:
     def test_rejected_cw_all_approved_not_all_agree(self):
         """CW was rejected; all visits now approved; not all agree → rejected preserved.
         Per-DU agree=0 → not approved → incomplete promotion doesn't apply → rejected preserved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.rejected)
@@ -575,7 +321,7 @@ class TestManagedRequiredOnly:
     def test_approved_cw_preserved_when_reviewer_changes_agree_to_pending(self):
         """CW was approved; reviewer changes agree → pending → stays approved.
         Terminal status preserved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.approved)
@@ -588,7 +334,7 @@ class TestManagedRequiredOnly:
 
     def test_incomplete_cw_promoted_to_pending_not_all_agree(self):
         """CW was incomplete; all visits approved but not agreed → pending (promoted from incomplete)."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
@@ -599,80 +345,156 @@ class TestManagedRequiredOnly:
 
         assert cw.status == CompletedWorkStatus.pending
 
-    def test_rejected_cw_updated_to_approved_when_all_approved_and_agreed(self):
-        """CW was rejected; all visits now approved+agree → approved."""
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        du = _make_required_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.rejected)
-
-        _make_visit(opp_access, du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.approved
-
 
 # =============================================================================
-# Managed, Required + Optional DUs
+# Required + Optional DUs
 # =============================================================================
 
 
 @pytest.mark.django_db
-class TestManagedReqPlusOpt:
-    """Managed opportunity with required and optional deliver units."""
+class TestReqPlusOpt:
+    """Opportunity with required and optional deliver units."""
 
     def test_any_visit_rejected(self):
-        """Any visit rejected → CW rejected. Branch 1 wins."""
-        opp_access = _setup_managed()
+        """Any visit rejected → CW rejected. Branch 1 always wins."""
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du = _make_optional_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
 
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.rejected, reason="Bad")
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.rejected, reason="Bad data")
 
         _run_update(cw)
 
         assert cw.status == CompletedWorkStatus.rejected
 
-    def test_all_approved_and_agree_required_and_optional(self):
-        """All visits approved + agree (required + optional) → approved."""
-        opp_access = _setup_managed()
+    def test_all_visits_approved_required_and_optional(self):
+        """All visits approved (required + optional) → approved."""
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du = _make_optional_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
 
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
 
         _run_update(cw)
 
         assert cw.status == CompletedWorkStatus.approved
 
-    def test_required_approved_agree_optional_approved_agree_plus_over_limit(self):
-        """Required: approved+agree. Optional: approved+agree + extra over_limit → approved.
+    def test_all_required_approved_optional_has_approved_plus_over_limit(self):
+        """All required approved; ≥1 optional approved; optional also has over_limit → approved.
         Over_limit visit is neutral for per-DU check."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du = _make_optional_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
 
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
         _make_visit(opp_access, opt_du, cw, VisitValidationStatus.over_limit)
 
         _run_update(cw)
 
         assert cw.status == CompletedWorkStatus.approved
 
+    def test_all_required_approved_no_optional_has_approved_all_pending(self):
+        """All required approved; NO optional has approved (all optional visits pending) → not approved.
+        Optional check fails (any() over optional DUs = False).
+        The optional DU needs a visit, even a pending one, or the completed_count guard skips the CW
+        before the approval logic runs."""
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access)
+        req_du = _make_required_du(opp_access, pu)
+        opt_du = _make_optional_du(opp_access, pu)
+        cw = _make_cw(opp_access, pu)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)  # bypass count guard
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.pending
+
+    def test_incomplete_cw_with_required_and_optional_approved(self):
+        """CW was incomplete; required approved; ≥1 optional approved → approved."""
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access)
+        req_du = _make_required_du(opp_access, pu)
+        opt_du = _make_optional_du(opp_access, pu)
+        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.approved)
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.approved
+
+    def test_incomplete_cw_promoted_to_pending_when_optional_not_approved(self):
+        """CW was incomplete; required approved but optional not → pending (promoted from incomplete)."""
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access)
+        req_du = _make_required_du(opp_access, pu)
+        opt_du = _make_optional_du(opp_access, pu)
+        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.pending
+
+    def test_incomplete_cw_updates_when_only_required_du_has_visit(self):
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access)
+        req_du = _make_required_du(opp_access, pu)
+        _make_optional_du(opp_access, pu)  # exists but has no visits
+        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.pending)
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.pending
+
+    def test_rejected_visit_on_required_du_no_optional_visits(self):
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access)
+        req_du = _make_required_du(opp_access, pu)
+        _make_optional_du(opp_access, pu)
+        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.pending)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.rejected, reason="Bad data")
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.rejected
+
+    def test_payment_not_calculated_until_optional_du_submitted(self):
+        opp_access = _setup()
+        pu = _make_payment_unit(opp_access, amount=100)
+        req_du = _make_required_du(opp_access, pu)
+        _make_optional_du(opp_access, pu)
+        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
+
+        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
+
+        _run_update(cw)
+
+        assert cw.status == CompletedWorkStatus.pending
+        assert cw.saved_payment_accrued == 0
+        assert cw.saved_completed_count == 0
+
     def test_required_approved_agree_optional_approved_review_pending(self):
         """Required: approved+agree. Optional: approved but review pending → not approved.
         Optional DU agree=0 → optional check fails → not approved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du = _make_optional_du(opp_access, pu)
@@ -688,7 +510,7 @@ class TestManagedReqPlusOpt:
     def test_required_agree_one_optional_agree_another_optional_only_approved(self):
         """Required: approved+agree. Optional1: approved+agree. Optional2: approved only → approved.
         any() over optionals — Optional1 passes → approved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du1 = _make_optional_du(opp_access, pu)
@@ -703,28 +525,10 @@ class TestManagedReqPlusOpt:
 
         assert cw.status == CompletedWorkStatus.approved
 
-    def test_required_agree_optional_no_approved_visits(self):
-        """Required: approved+agree. Optional: no approved visits → not approved.
-        any() = False → not approved.
-        Note: we add a pending visit on the optional DU to bypass the completed_count guard
-        and actually exercise the approval logic."""
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        opt_du = _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-        _make_visit(opp_access, opt_du, cw, VisitValidationStatus.pending)  # bypass count guard
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
     def test_required_agree_optional_approved_disagree(self):
         """Required: approved+agree. Optional: approved+disagree → not approved.
         Optional agree=0 → fails."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du = _make_required_du(opp_access, pu)
         opt_du = _make_optional_du(opp_access, pu)
@@ -740,7 +544,7 @@ class TestManagedReqPlusOpt:
     def test_not_all_required_satisfied_optional_has_approved_agree(self):
         """Not all required DUs satisfied; optional has approved+agree → not approved.
         Required DUs must all pass first."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du1 = _make_required_du(opp_access, pu)
         req_du2 = _make_required_du(opp_access, pu)
@@ -757,7 +561,7 @@ class TestManagedReqPlusOpt:
 
     def test_incomplete_cw_not_all_required_promoted_to_pending(self):
         """CW was incomplete; not all required satisfied; optional approved+agree → pending."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         req_du1 = _make_required_du(opp_access, pu)
         req_du2 = _make_required_du(opp_access, pu)
@@ -772,34 +576,6 @@ class TestManagedReqPlusOpt:
 
         assert cw.status == CompletedWorkStatus.pending
 
-    def test_managed_incomplete_cw_required_approved_agree_no_optional_visits(self):
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-
-    def test_managed_payment_not_calculated_until_optional_du_submitted(self):
-        opp_access = _setup_managed()
-        pu = _make_payment_unit(opp_access, amount=100)
-        req_du = _make_required_du(opp_access, pu)
-        _make_optional_du(opp_access, pu)
-        cw = _make_cw(opp_access, pu, status=CompletedWorkStatus.incomplete)
-
-        _make_visit(opp_access, req_du, cw, VisitValidationStatus.approved)
-
-        _run_update(cw)
-
-        assert cw.status == CompletedWorkStatus.pending
-        assert cw.saved_payment_accrued == 0
-        assert cw.saved_completed_count == 0
-
 
 # =============================================================================
 # EDGE CASES
@@ -811,7 +587,7 @@ class TestEdgeCases:
     def test_over_limit_visit_neutral_for_status(self):
         """over_limit visits: not rejected, not approved. Effectively neutral.
         Does increment unit_counts but doesn't contribute to approved counts."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -827,7 +603,7 @@ class TestEdgeCases:
 
     def test_duplicate_visit_neutral_for_status(self):
         """duplicate visits: same as over_limit — neutral for status."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -843,7 +619,7 @@ class TestEdgeCases:
 
     def test_trial_visit_neutral_for_status(self):
         """trial visits: same as over_limit/duplicate — neutral for status."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -860,7 +636,7 @@ class TestEdgeCases:
     def test_no_required_no_optional_deliver_units_vacuous_approval(self):
         """No required DUs and no optional DUs → vacuous approval.
         all([]) = True and no optionals → returns True → approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         # No deliver units created for this payment unit
         cw = _make_cw(opp_access, pu)
@@ -878,7 +654,7 @@ class TestEdgeCases:
     def test_no_required_dus_with_optional_approved(self):
         """No required DUs, optional DU with approved visit → approved.
         all([]) = True for required (vacuous). any() finds approved optional."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         opt_du = _make_optional_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -892,7 +668,7 @@ class TestEdgeCases:
     def test_multiple_visits_same_required_du_1_approved_1_pending(self):
         """Multiple visits on same required DU: 1 approved + 1 pending.
         Only needs ≥1 approved per DU → approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -904,9 +680,9 @@ class TestEdgeCases:
 
         assert cw.status == CompletedWorkStatus.approved
 
-    def test_managed_agreement_per_du_not_global(self):
-        """Managed: DU has both agree and non-agree visit. DU still passes (only needs ≥1 agree)."""
-        opp_access = _setup_managed()
+    def test_review_agreement_per_du_not_global(self):
+        """DU has both agree and non-agree visit. DU still passes (only needs ≥1 agree)."""
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -921,7 +697,7 @@ class TestEdgeCases:
 
     def test_rejection_reason_concatenated_from_all_visits(self):
         """When rejected, reason is concatenated from all visits with reasons."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -947,7 +723,7 @@ class TestPaymentCalculations:
 
     def test_payment_accrued_when_approved(self):
         """Approved CW → payment = approved_count * amount."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access, amount=150)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -965,7 +741,7 @@ class TestPaymentCalculations:
 
     def test_zero_payment_when_not_approved(self):
         """Pending CW → payment = 0 even if some visits are approved."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access, amount=100)
         du1 = _make_required_du(opp_access, pu)
         du2 = _make_required_du(opp_access, pu)
@@ -981,7 +757,7 @@ class TestPaymentCalculations:
 
     def test_zero_payment_when_rejected(self):
         """Rejected CW → payment = 0."""
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access, amount=100)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -995,7 +771,7 @@ class TestPaymentCalculations:
 
     def test_zero_payment_when_auto_approve_disabled(self):
         """auto_approve=False → payment = 0 even with approved visits."""
-        opp_access = _setup_non_managed(auto_approve=False)
+        opp_access = _setup(auto_approve=False)
         pu = _make_payment_unit(opp_access, amount=100)
         du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -1009,7 +785,7 @@ class TestPaymentCalculations:
 
     def test_approved_count_stored_even_when_status_not_approved(self):
         """Counts are stored regardless of status, but payment is only calculated when approved."""
-        opp_access = _setup_managed()
+        opp_access = _setup()
         pu = _make_payment_unit(opp_access, amount=100)
         req_du = _make_required_du(opp_access, pu)
         cw = _make_cw(opp_access, pu)
@@ -1036,7 +812,7 @@ class TestParentChildPaymentUnit:
         ],
     )
     def test_parent_and_child_both_approved_in_either_order(self, ordering):
-        opp_access = _setup_non_managed()
+        opp_access = _setup()
 
         parent_pu = _make_payment_unit(opp_access)
         parent_du = _make_required_du(opp_access, parent_pu)

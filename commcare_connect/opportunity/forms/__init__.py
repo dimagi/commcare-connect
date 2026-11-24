@@ -1249,7 +1249,7 @@ class AddBudgetNewUsersForm(forms.Form):
         total_budget = cleaned_data.get("total_budget")
 
         if not self.program_manager:
-            raise forms.ValidationError("Only program managers are allowed to add budgets for managed opportunities.")
+            raise forms.ValidationError("Only program managers are allowed to add budgets.")
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
@@ -1683,7 +1683,9 @@ class DeliverUnitFlagsForm(forms.ModelForm):
                 ),
             )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, [self.instance.deliver_unit_id]),
+            disabled=True,
+            empty_label=None,
         )
 
     def save(self, commit=True):
@@ -1726,8 +1728,9 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         )
         self.helper.render_hidden_fields = True
 
+        saved_unit_ids = self.instance.deliver_unit.values_list("pk", flat=True) if self.instance.pk else []
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            queryset=DeliverUnit.objects.for_opportunity_including(self.opportunity, saved_unit_ids),
             widget=forms.CheckboxSelectMultiple,
         )
 
