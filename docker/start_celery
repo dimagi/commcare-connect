@@ -4,5 +4,4 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-export REMAP_SIGTERM=SIGQUIT
 exec celery -A config.celery_app worker -l INFO --concurrency 2 --max-tasks-per-child 20 ${CELERY_WORKER_BEAT:+--beat}
