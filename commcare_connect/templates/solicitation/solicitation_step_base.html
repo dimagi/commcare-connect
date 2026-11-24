@@ -25,13 +25,13 @@
            href="{% url "solicitation:invitations" request.org.slug solicitation.solicitation_id %}">{% translate "Invited organizations" %}</a>
       {% endif %}
     </div>
-    {# Later steps need a saved solicitation, so they only link once the details are saved. #}
+    {# Later steps need a saved solicitation, so they only link once the details are saved. A scheduled one's steps can't be edited. #}
     <div class="stepper">
       {% for name, label in step_labels.items %}
         {% if not forloop.first %}<hr class="border-t-2 border-dashed border-gray-300 w-full">{% endif %}
         {% with "solicitation:"|add:name as url_name %}
           <a class="{% if step == name %}active{% endif %}"
-             {% if solicitation.pk %}href="{% url url_name request.org.slug solicitation.solicitation_id %}"{% endif %}>
+             {% if solicitation.pk and not solicitation.is_scheduled %}href="{% url url_name request.org.slug solicitation.solicitation_id %}"{% endif %}>
             <h6>{{ forloop.counter }}</h6>
             <span>{{ label }}</span>
           </a>

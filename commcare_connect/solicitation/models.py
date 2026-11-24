@@ -115,6 +115,11 @@ class Solicitation(BaseModel):
         return self.effective_status == self.Status.SCHEDULED
 
     @property
+    def is_publishable(self):
+        """Not live yet, so the PM still decides when it goes live: a draft, or scheduled before its go-live date."""
+        return self.status == self.Status.DRAFT or self.is_scheduled
+
+    @property
     def is_editable(self):
         """Closed and cancelled solicitations are finished, so only drafts and open ones can be edited."""
         return self.status == self.Status.DRAFT or self.is_open

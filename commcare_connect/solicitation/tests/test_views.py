@@ -16,6 +16,7 @@ from commcare_connect.solicitation.models import (
 )
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails
+from commcare_connect.solicitation.tests.conftest import deadline
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
@@ -202,6 +203,36 @@ class TestSolicitationSteps:
         draft.refresh_from_db()
         assert (draft.status == Solicitation.Status.ACTIVE) is published
         assert response.status_code == (HTTPStatus.FOUND if published else HTTPStatus.OK)
+
+    @pytest.mark.parametrize("scheduled", [False, True])
+    @pytest.mark.parametrize(
+        "go_live_days, expected_status", [(None, Solicitation.Status.ACTIVE), (2, Solicitation.Status.SCHEDULED)]
+    )
+    def test_publish_now_or_reschedule(self, pm_client, program_manager_org, scheduled, go_live_days, expected_status):
+        """Until it goes live, a draft or scheduled solicitation can be published now or (re)scheduled."""
+        solicitation = SolicitationFactory(
+            organization=program_manager_org, country=_get_default_country(), scheduled=scheduled
+        )
+        SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=100)
+        data = {} if go_live_days is None else {"schedule": "on", "go_live_date": deadline(go_live_days)}
+
+        response = pm_client.post(step_url("publish", solicitation), data)
+
+        assert response.status_code == HTTPStatus.FOUND
+        solicitation.refresh_from_db()
+        saved_go_live = solicitation.go_live_date and solicitation.go_live_date.strftime("%Y-%m-%dT%H:%M")
+        assert (solicitation.status, saved_go_live) == (expected_status, data.get("go_live_date"))
+
+    @pytest.mark.parametrize("step", STEPS)
+    def test_scheduled_solicitation_opens_only_its_review_page(self, pm_client, program_manager_org, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.get(step_url(step, solicitation))
+
+        if step == "publish":
+            assert response.status_code == HTTPStatus.OK
+        else:
+            assert response.status_code == HTTPStatus.NOT_FOUND
 
     @pytest.mark.parametrize("step", ["criteria", "questions"])
     def test_active_solicitation_locks_criteria_and_questions(self, pm_client, program_manager_org, step):

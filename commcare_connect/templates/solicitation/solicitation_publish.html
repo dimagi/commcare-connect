@@ -1,8 +1,15 @@
 {% extends "solicitation/solicitation_step_base.html" %}
 {% load i18n %}
 {% load humanize %}
+{% load crispy_forms_tags %}
 {% block step_content %}
-  {% if solicitation.status == "draft" and errors %}
+  {% if solicitation.is_scheduled %}
+    <p class="rounded-lg primary-light p-4 flex items-center gap-2">
+      <i class="fa-solid fa-calendar-check" aria-hidden="true"></i>
+      {% blocktranslate with date=solicitation.go_live_date|date:"d M Y, H:i T" %}Scheduled to go live on {{ date }}. Until then, other organizations can't see it or apply. Turn off Schedule to publish it now.{% endblocktranslate %}
+    </p>
+  {% endif %}
+  {% if solicitation.is_publishable and errors %}
     <div class="rounded-lg negative-light p-4 flex flex-col gap-2"
          role="alert">
       <p class="font-medium flex items-center gap-2">
@@ -161,22 +168,31 @@
       <p class="hint">{% translate "No questions yet." %}</p>
     {% endfor %}
   </section>
-  {% if solicitation.status == "draft" %}
-    <form method="post" class="flex flex-col gap-4">
+  {% if solicitation.is_publishable %}
+    <form method="post"
+          class="flex flex-col gap-4"
+          x-data="{ schedule: {{ form.schedule.value|yesno:'true,false' }} }">
       {% csrf_token %}
+      <section class="card_bg">
+        {% crispy form %}
+      </section>
       <p class="rounded-lg warning-light p-4 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-        {% translate "Publishing locks the criteria and questions. This can't be undone." %}
+        {% translate "Publishing locks the criteria and questions for good." %}
       </p>
       <div class="flex gap-3 justify-end">
-        {% if previous_step_url %}
+        {# A scheduled solicitation's earlier steps can't be edited. #}
+        {% if previous_step_url and not solicitation.is_scheduled %}
           <a class="button button-md outline-style" href="{{ previous_step_url }}">{% translate "Back" %}</a>
         {% endif %}
         <a class="button button-md outline-style"
            href="{% url "solicitation:list" request.org.slug %}">{% translate "Cancel" %}</a>
         <button type="submit"
                 class="button button-md primary-dark"
-                {% if errors %}disabled{% endif %}>{% translate "Publish" %}</button>
+                {% if errors %}disabled{% endif %}>
+          <span x-show="!schedule">{% translate "Publish now" %}</span>
+          <span x-show="schedule" x-cloak>{% translate "Schedule" %}</span>
+        </button>
       </div>
     </form>
   {% endif %}

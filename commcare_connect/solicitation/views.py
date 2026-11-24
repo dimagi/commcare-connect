@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views.generic import DetailView, FormView, UpdateView
+from django.views.generic import FormView, UpdateView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
@@ -23,6 +23,7 @@ from commcare_connect.solicitation.forms import (
     SolicitationClosureForm,
     SolicitationForm,
     SolicitationInvitationForm,
+    SolicitationPublishForm,
     SolicitationReviewerForm,
     publish_errors,
 )
@@ -183,17 +184,20 @@ class SolicitationQuestionsView(SolicitationFormSetStepView):
     form_class = QuestionInlineFormSet
 
 
-class SolicitationPublishView(SolicitationStepMixin, DetailView):
-    """Reviews the solicitation and publishes it once nothing blocks it."""
+class SolicitationPublishView(SolicitationStepMixin, UpdateView):
+    """Reviews the solicitation, then publishes it now or schedules it to go live, once nothing blocks it.
+
+    A scheduled solicitation can't be edited, so this page is where it's published now or rescheduled.
+    """
 
     step = "publish"
     previous_step = "questions"
+    form_class = SolicitationPublishForm
     template_name = "solicitation/solicitation_publish.html"
 
     def get_queryset(self):
         return (
-            super()
-            .get_queryset()
+            (super().get_queryset() | Solicitation.objects.scheduled().filter(organization=self.request.org))
             .select_related("currency", "country", "delivery_type", "program")
             .prefetch_related(
                 Prefetch("criteria", queryset=SolicitationEvaluationCriterion.objects.order_by("pk")),
@@ -206,15 +210,15 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
     def get_context_data(self, **kwargs):
         return super().get_context_data(errors=publish_errors(self.object), **kwargs)
 
-    def post(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        if self.object.structure_locked or publish_errors(self.object):
-            return self.render_to_response(self.get_context_data())
-        self.object.status = Solicitation.Status.ACTIVE
-        self.object.modified_by = request.user.email
-        self.object.save(update_fields=["status", "modified_by", "date_modified"])
-        messages.success(request, _("Solicitation published."))
-        return redirect(self.get_success_url())
+    def form_valid(self, form):
+        form.instance.modified_by = self.request.user.email
+        if form.instance.go_live_date:
+            form.instance.status = Solicitation.Status.SCHEDULED
+            messages.success(self.request, _("Solicitation scheduled to go live."))
+        else:
+            form.instance.status = Solicitation.Status.ACTIVE
+            messages.success(self.request, _("Solicitation published."))
+        return super().form_valid(form)
 
     def get_success_url(self):
         # Only invited organizations can apply to a private solicitation, so inviting them is the next step.

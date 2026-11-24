@@ -298,6 +298,54 @@ QuestionInlineFormSet = inlineformset_factory(
 )
 
 
+class SolicitationPublishForm(forms.ModelForm):
+    """Publishes the solicitation now or, with Schedule on, schedules it to go live at the go-live date."""
+
+    schedule = forms.BooleanField(
+        label=_("Schedule"),
+        required=False,
+        help_text=_("Go live automatically at a set time instead of now."),
+    )
+
+    class Meta:
+        model = Solicitation
+        fields = ["go_live_date"]
+        labels = {"go_live_date": _("Go-live date")}
+        help_texts = {"go_live_date": _("Time is in UTC.")}
+        widgets = {"go_live_date": DATETIME_INPUT}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["schedule"].initial = self.instance.go_live_date is not None
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        # `schedule` is the template's Alpine state: it shows the go-live date and names the submit button.
+        self.helper.layout = Layout(
+            Field("schedule", css_class=CHECKBOX_CLASS, wrapper_class=TOGGLE_WRAPPER_CLASS, x_model="schedule"),
+            Div("go_live_date", x_show="schedule"),
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # Checked here, while the solicitation still holds its saved status and go-live date.
+        if not self.instance.is_publishable or publish_errors(self.instance):
+            raise forms.ValidationError(_("Fix the problems listed above before publishing."))
+        if not cleaned_data.get("schedule"):
+            # Publishing now, so a date left in the hidden field doesn't apply.
+            cleaned_data["go_live_date"] = None
+            return cleaned_data
+        go_live_date = cleaned_data.get("go_live_date")
+        if go_live_date is None:
+            if "go_live_date" not in self.errors:
+                self.add_error("go_live_date", _("Pick when the solicitation goes live."))
+        elif go_live_date <= now():
+            self.add_error("go_live_date", _("The go-live date must be in the future."))
+        # The deadline isn't on this form, so the instance still holds the saved one.
+        elif go_live_date >= self.instance.application_deadline:
+            self.add_error("go_live_date", _("The go-live date must be before the application deadline."))
+        return cleaned_data
+
+
 def publish_errors(solicitation):
     """What stops the solicitation from being published, keyed by the step that fixes it."""
     errors = {}
