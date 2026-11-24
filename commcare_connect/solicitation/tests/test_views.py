@@ -302,35 +302,37 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, is_editable, is_open, reviewers_linked",
+        "factory_kwargs, linked",
         [
-            (Solicitation.Status.DRAFT, False, False, True, False, True),
-            (Solicitation.Status.ACTIVE, False, False, True, True, True),
-            (Solicitation.Status.ACTIVE, True, False, True, True, True),
+            ({"status": Solicitation.Status.DRAFT}, {"details", "cancel", "reviewers"}),
+            ({"status": Solicitation.Status.ACTIVE}, {"details", "cancel", "invitations", "close", "reviewers"}),
+            (
+                {"status": Solicitation.Status.ACTIVE, "public": True},
+                {"details", "cancel", "invitations", "close", "reviewers"},
+            ),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, False, False, True),
-            (Solicitation.Status.CLOSED, False, False, False, False, True),
-            (Solicitation.Status.CANCELLED, False, False, False, False, False),
+            ({"status": Solicitation.Status.ACTIVE, "deadline_passed": True}, {"reviewers"}),
+            ({"status": Solicitation.Status.CLOSED}, {"reviewers"}),
+            ({"status": Solicitation.Status.CANCELLED}, set()),
+            # Not editable while scheduled; its review page shows when it goes live.
+            ({"scheduled": True}, {"publish", "reviewers"}),
         ],
     )
-    def test_list_links(
-        self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open, reviewers_linked
-    ):
-        solicitation = SolicitationFactory(
-            organization=program_manager_org,
-            status=status,
-            public=public,
-            deadline_passed=deadline_passed,
-        )
+    def test_list_links(self, pm_client, program_manager_org, factory_kwargs, linked):
+        solicitation = SolicitationFactory(organization=program_manager_org, **factory_kwargs)
 
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         content = response.content.decode()
-        assert (step_url("details", solicitation) in content) is is_editable
-        assert (step_url("cancel", solicitation) in content) is is_editable
-        assert (step_url("invitations", solicitation) in content) is is_open
-        assert (step_url("close", solicitation) in content) is is_open
-        assert (step_url("reviewers", solicitation) in content) is reviewers_linked
+        steps = ("details", "publish", "invitations", "cancel", "close", "reviewers")
+        assert {step for step in steps if step_url(step, solicitation) in content} == linked
+
+    def test_list_shows_the_go_live_date(self, pm_client, program_manager_org):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert f"Goes live {solicitation.go_live_date:%d %b %Y, %H:%M} UTC" in response.content.decode()
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
