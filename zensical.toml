@@ -70,6 +70,7 @@ nav = [
     { "ADR-0006: Cached payment accrual" = "adr/0006-cached-payment-accrual.md" },
     { "ADR-0007: HQ form forwarding" = "adr/0007-hq-form-forwarding-ingest.md" },
     { "ADR-0008: Recording payments" = "adr/0008-record-payments-not-move-money.md" },
+    { "ADR-0009: Currency conversion" = "adr/0009-local-currency-with-fixed-usd-conversion.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
