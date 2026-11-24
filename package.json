@@ -2,9 +2,9 @@
   "name": "commcare_connect",
   "version": "0.1.0",
   "devDependencies": {
-    "@babel/core": "^7.16.5",
-    "@babel/preset-env": "^7.16.5",
-    "@babel/preset-typescript": "^7.29.7",
+    "@babel/core": "^8.1.2",
+    "@babel/preset-env": "^8.0.7",
+    "@babel/preset-typescript": "^8.0.7",
     "@eslint/js": "^10.0.1",
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@mapbox/mapbox-gl-draw": "^1.5.2",
