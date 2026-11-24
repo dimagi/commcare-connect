@@ -5,7 +5,8 @@ from django.utils.timezone import now
 
 from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.solicitation.tasks import update_solicitation_statuses
-from commcare_connect.solicitation.tests.factories import SolicitationFactory
+from commcare_connect.solicitation.tests.factories import SolicitationFactory, SolicitationInvitationFactory
+from commcare_connect.users.tests.factories import MembershipFactory
 
 Status = Solicitation.Status
 PAST = timedelta(days=-1)
@@ -74,11 +75,18 @@ def test_go_live_rule(go_live_offset, deadline_offset, expected_status):
 
 
 @pytest.mark.parametrize("go_live_offset, deadline_offset, expected_status", SCHEDULE_CASES)
-def test_update_solicitation_statuses_takes_scheduled_live(go_live_offset, deadline_offset, expected_status):
+def test_update_solicitation_statuses_takes_scheduled_live(
+    go_live_offset, deadline_offset, expected_status, mock_send_mail
+):
     solicitation = scheduled_solicitation(go_live_offset, deadline_offset)
+    invited_org = MembershipFactory().organization
+    SolicitationInvitationFactory(solicitation=solicitation, organization=invited_org)
 
     update_solicitation_statuses()
-    update_solicitation_statuses()  # safe to re-run
+    update_solicitation_statuses()  # safe to re-run: nothing is emailed twice
 
     solicitation.refresh_from_db()
     assert solicitation.status == expected_status
+    # Invitations held back while it was scheduled are emailed once it goes live, and not if it closed unseen.
+    sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
+    assert sent_to == ([invited_org.get_member_emails()] if expected_status == Status.ACTIVE else [])

@@ -9,6 +9,8 @@ from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.formats import date_format
+from django.utils.timezone import localtime
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import FormView, UpdateView
 from django_tables2 import SingleTableMixin, SingleTableView
@@ -218,6 +220,11 @@ class SolicitationPublishView(SolicitationStepMixin, UpdateView):
             messages.success(self.request, _("Solicitation scheduled to go live."))
         else:
             form.instance.status = Solicitation.Status.ACTIVE
+            # Organizations invited while it was scheduled haven't been emailed yet. Locked so one being invited
+            # right now is either saved first and listed here, or waits and then finds it live.
+            Solicitation.objects.select_for_update().get(pk=self.object.pk)
+            invitation_ids = list(self.object.invitations.values_list("pk", flat=True))
+            transaction.on_commit(partial(send_solicitation_invite_emails, invitation_ids))
             messages.success(self.request, _("Solicitation published."))
         return super().form_valid(form)
 
@@ -333,9 +340,12 @@ class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMix
 
     def get_context_data(self, **kwargs):
         solicitation_crumb = {"title": self.solicitation.title}
-        # The details page only exists while the solicitation can be edited.
+        # The details page only exists while the solicitation can be edited; a scheduled one is managed from its
+        # review page.
         if self.solicitation.is_editable:
             solicitation_crumb["url"] = self.solicitation_url("details")
+        elif self.solicitation.is_scheduled:
+            solicitation_crumb["url"] = self.solicitation_url("publish")
         path = [
             {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
             solicitation_crumb,
@@ -385,8 +395,7 @@ class SolicitationParticipantsDeleteView(SolicitationParticipantsMixin, FormView
 class InvitationsMixin(SolicitationParticipantsMixin):
     url_name = "invitations"
     related_name = "invitations"
-    # Organizations are only invited while a solicitation is open: published and before its deadline.
-    solicitations = Solicitation.objects.open()
+    solicitations = Solicitation.objects.invitable()
 
 
 class SolicitationInvitationsView(InvitationsMixin, SolicitationParticipantsView):
@@ -395,22 +404,43 @@ class SolicitationInvitationsView(InvitationsMixin, SolicitationParticipantsView
     title = _("Invited organizations")
     add_title = _("Invite organizations")
     add_submit = _("Invite")
-    added_message = _("Invited %(count)d organization(s).")
     remove_title = _("Remove invitations")
     remove_message = _("Remove __count__ invitation(s)? Those organizations will no longer be able to apply.")
-    send_emails = staticmethod(send_solicitation_invite_emails)
 
     @property
     def hint(self):
         if self.solicitation.public:
-            return _(
+            hint = _(
                 "This solicitation is public: any organization can apply, and invited organizations' members "
                 "get an email asking them to."
             )
-        return _(
-            "This solicitation is private: only invited organizations can apply. Each invited organization's "
-            "members get an email."
-        )
+        else:
+            hint = _(
+                "This solicitation is private: only invited organizations can apply. Each invited organization's "
+                "members get an email."
+            )
+        if not self.solicitation.is_scheduled:
+            return hint
+        go_live = date_format(localtime(self.solicitation.go_live_date), "d M Y, H:i T")
+        scheduled_note = _("It goes live on %(date)s, so the emails go out then.") % {"date": go_live}
+        return f"{hint} {scheduled_note}"
+
+    def form_valid(self, form):
+        # Locked before the invitations are saved, so the solicitation can't go live in between and miss them.
+        locked = Solicitation.objects.select_for_update().get(pk=self.solicitation.pk)
+        self.solicitation_is_live = locked.status == Solicitation.Status.ACTIVE
+        return super().form_valid(form)
+
+    def send_emails(self, invitation_ids):
+        # Until the solicitation goes live, update_solicitation_statuses holds them back and sends them then.
+        if self.solicitation_is_live:
+            send_solicitation_invite_emails(invitation_ids)
+
+    @property
+    def added_message(self):
+        if self.solicitation_is_live:
+            return _("Invited %(count)d organization(s).")
+        return _("Invited %(count)d organization(s). They'll be emailed when the solicitation goes live.")
 
     def get_table_data(self):
         return self.get_participants().select_related("organization", "invited_by").order_by("organization__name")

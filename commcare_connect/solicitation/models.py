@@ -33,6 +33,10 @@ class SolicitationQuerySet(models.QuerySet):
         """Scheduled solicitations that haven't gone live yet."""
         return self.filter(status=Solicitation.Status.SCHEDULED, go_live_date__gt=Now())
 
+    def invitable(self):
+        """Organizations can be invited from when a solicitation is scheduled or published until its deadline."""
+        return self.open() | self.scheduled()
+
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()
@@ -113,6 +117,11 @@ class Solicitation(BaseModel):
     def is_scheduled(self):
         """Scheduled and not yet live: hidden from other organizations, and back to draft is still possible."""
         return self.effective_status == self.Status.SCHEDULED
+
+    @property
+    def is_invitable(self):
+        """Organizations can be invited from when it's scheduled or published until its deadline."""
+        return self.is_open or self.is_scheduled
 
     @property
     def is_publishable(self):
