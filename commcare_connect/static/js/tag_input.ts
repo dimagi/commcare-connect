@@ -397,7 +397,7 @@ export default class TagInput {
 
   #copyAllTags(event: ClipboardEvent): void {
     event.preventDefault();
-    event.clipboardData?.setData('text/plain', this.values.join('\n'));
+    event.clipboardData?.setData('text/plain', storedValue(this.#state));
   }
 
   #bindContainerEvents(): void {
@@ -417,7 +417,9 @@ export default class TagInput {
       (event) => {
         this.#update(finishAll);
         if (!this.valid) {
+          // htmx submits from its own listener on the form, so stopping here is what blocks it.
           event.preventDefault();
+          event.stopImmediatePropagation();
           this.#input.reportValidity();
         }
       },

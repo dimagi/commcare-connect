@@ -1,12 +1,15 @@
 // Email and EOI link tags for the organization profile forms: the create wizard, Organization Home
 // and the directory's add/edit modal.
-import { gettext } from './i18n';
+import { gettext, interpolate } from './i18n';
 import TagInput from './tag_input';
 
 // Loose on purpose: the server's EmailValidator has the final say.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // The schemes Django's URLValidator accepts.
 const URL_PROTOCOLS = ['http:', 'https:', 'ftp:', 'ftps:'];
+const URL_PREFIXES = URL_PROTOCOLS.map((protocol) => `${protocol}//`).join(
+  ', ',
+);
 
 function validateEmail(value) {
   return EMAIL.test(value) || gettext('Enter a valid email address.');
@@ -21,7 +24,9 @@ function validateUrl(value) {
   }
   return (
     (url !== null && URL_PROTOCOLS.includes(url.protocol)) ||
-    gettext('Enter a valid URL, starting with https://')
+    interpolate(gettext('Enter a valid URL, starting with one of: %s'), [
+      URL_PREFIXES,
+    ])
   );
 }
 
