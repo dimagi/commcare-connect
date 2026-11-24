@@ -67,6 +67,7 @@ nav = [
     { "ADR-0003: Unit of payable work" = "adr/0003-completed-work-unit-of-payable-work.md" },
     { "ADR-0004: Per-worker claim limits" = "adr/0004-per-worker-claim-limits.md" },
     { "ADR-0005: Visit status at ingest" = "adr/0005-visit-status-at-ingest.md" },
+    { "ADR-0006: Cached payment accrual" = "adr/0006-cached-payment-accrual.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
