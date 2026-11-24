@@ -8,7 +8,7 @@
 
 ## Context
 
-Every delivery form has to be checked against the worker's limits (ADR-0004), against earlier visits to the same beneficiary, and against the opportunity's verification rules before anyone reviews it. Workers often submit several forms at once when their phone syncs, so the forms for one worker arrive concurrently. A visit is judged twice. Verification decides whether it is valid: the system decides from the opportunity's verification flags, and on opportunities without automatic verification the delivering organization decides flagged visits by hand. The program manager then reviews the visits the organization approved by hand.
+Every delivery form has to be checked against the worker's limits (ADR-0004), against earlier visits to the same beneficiary, and against the opportunity's verification rules before anyone reviews it. Workers often submit several forms at once when their phone syncs, so the forms for one worker arrive concurrently. A visit is judged twice. Verification decides whether it is valid, and the system decides it from the opportunity's verification flags. Older opportunities without automatic verification still have the delivering organization decide flagged visits by hand, and the program manager then reviews the visits the organization approved.
 
 ## Decision
 
@@ -19,8 +19,9 @@ We will set each `UserVisit`'s status synchronously while the form is received, 
 - `UserVisit.over_limit_reasons` records every limit the visit breached.
 - A visit is a `duplicate` when the same worker already has a visit to the same deliver unit with the same `entity_id`. If the opportunity's `duplicate` verification flag is on, it keeps that status and is flagged; if it is off, it goes back to `pending` and is checked like any other visit. Under automatic verification the flag is always off and can't be turned on.
 - A `pending` visit with no flags is approved with `review_status=agree` (`Opportunity.auto_approve_visits`, on for every opportunity).
-- A flagged `pending` visit is rejected when `Opportunity.automatic_visit_verification` is on, and approving or rejecting visits by hand is disabled. Otherwise it stays `pending` until the delivering organization approves it, with a justification, or rejects it.
-- `UserVisit.review_status` (`pending`, `agree`, `disagree`) holds the program manager's review of visits the delivering organization approved by hand. A visit counts toward payment only when `status=approved` and `review_status=agree`.
+- A flagged `pending` visit is rejected when `Opportunity.automatic_visit_verification` is on, and approving or rejecting visits by hand is disabled. Every new opportunity gets automatic verification while the `automatic_visit_verification` switch is on, and the product has no setting to turn it off.
+- Manual verification remains only on opportunities created without automatic verification: a flagged visit stays `pending` until the delivering organization approves it, with a justification, or rejects it.
+- `UserVisit.review_status` (`pending`, `agree`, `disagree`) holds the program manager's review of visits the delivering organization approved by hand, so it applies only under manual verification. A visit counts toward payment only when `status=approved` and `review_status=agree`.
 - Counting visits and checking duplicates happens inside a transaction that holds a `select_for_update` lock on the worker's `OpportunityClaimLimit` row for that payment unit.
 
 ## Consequences
