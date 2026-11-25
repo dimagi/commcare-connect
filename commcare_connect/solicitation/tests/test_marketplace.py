@@ -317,6 +317,18 @@ def test_private_detail_is_only_for_members_of_invited_organizations(
 
 
 @pytest.mark.usefixtures("solicitations_on")
+def test_private_detail_is_found_by_members_of_the_posting_organization(client, org_user_member, organization):
+    solicitation = private(organization=organization)
+    SolicitationInvitationFactory(solicitation=solicitation)
+    client.force_login(org_user_member)
+
+    response = client.get(detail_url(solicitation))
+    attachment_response = client.get(attachment_url(attachment_for(solicitation)))
+
+    assert (response.status_code, attachment_response.status_code) == (200, 200)
+
+
+@pytest.mark.usefixtures("solicitations_on")
 def test_private_detail_is_not_found_logged_out(client):
     solicitation = private()
     SolicitationInvitationFactory(solicitation=solicitation)

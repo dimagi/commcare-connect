@@ -316,7 +316,7 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
 
 class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
     """One open solicitation's scope, budget and deadline, without its questions or criteria. Private ones are
-    only found by members of the organizations they invited."""
+    only found by members of the organization that posted them and of the organizations they invited."""
 
     waffle_switch = SOLICITATIONS
     template_name = "solicitation/marketplace_detail.html"

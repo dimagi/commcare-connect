@@ -36,11 +36,12 @@ class SolicitationQuerySet(models.QuerySet):
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()
 
     def visible_to(self, user):
-        """Public solicitations, and private ones that invited an organization ``user`` belongs to."""
+        """Public solicitations, and private ones that ``user``'s organization posted or was invited to."""
         if not user.is_authenticated:
             return self.filter(public=True)
         invited = SolicitationInvitation.objects.filter(solicitation=OuterRef("pk"), organization__members=user)
-        return self.filter(Q(public=True) | Q(Exists(invited)))
+        posted = Organization.objects.filter(pk=OuterRef("organization_id"), members=user)
+        return self.filter(Q(public=True) | Q(Exists(invited)) | Q(Exists(posted)))
 
 
 class Solicitation(BaseModel):
