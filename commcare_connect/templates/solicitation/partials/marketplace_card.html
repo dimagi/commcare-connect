@@ -21,7 +21,8 @@
       {% blocktranslate with name=solicitation.organization.name %}Posted by <strong class="text-gray-900">{{ name }}</strong>{% endblocktranslate %}
     </p>
     <h2 class="card_title">
-      <a href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{{ solicitation.title }}</a>
+      <a class="card-link-target"
+         href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{{ solicitation.title }}</a>
     </h2>
   </div>
   <p class="card_description line-clamp-2">{{ solicitation.description|truncatechars:300 }}</p>

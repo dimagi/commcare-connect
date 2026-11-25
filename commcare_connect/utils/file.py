@@ -45,6 +45,6 @@ def stored_file_response(field_file, filename):
     """
     try:
         handle = field_file.open("rb")
-    except FileNotFoundError:
-        raise Http404()
+    except FileNotFoundError as e:
+        raise Http404() from e
     return FileResponse(handle, as_attachment=True, filename=filename)
