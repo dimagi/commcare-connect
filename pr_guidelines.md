@@ -14,7 +14,7 @@ This document outlines best practices for creating and reviewing pull requests i
 #### 1. Comprehensive Descriptions
 
 - **Include demos and screenshots**: Visual aids help reviewers understand the changes quickly
-- **Reference Jira tickets**: Include links to tickets with comprehensive summaries and motivation for the change. Write each link as `closes <ticket link>` (e.g. `closes https://dimagi.atlassian.net/browse/CCCT-123`), the same way GitHub links issues
+- **Reference Jira tickets**: Include links to tickets with comprehensive summaries and motivation for the change. If this PR fully resolves the issue then write each link as `closes <ticket link>` (e.g. `closes [CCCT-123](https://dimagi.atlassian.net/browse/CCCT-123)`), the same way GitHub links issues.
 - **Link to staging environments**: Provide test/demo environment links if needed where reviewers can interact with the feature
 - **Fill in the PR template**: Every heading in `.github/PULL_REQUEST_TEMPLATE.md` is expected. Under **Documentation**, list the Confluence pages a user-facing change makes out of date, or write "None"; don't leave it empty
 
