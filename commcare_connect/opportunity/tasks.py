@@ -951,6 +951,7 @@ def send_task_completion_notification(assigned_task_id: int):
             "key": "task_completion",
             "session_endpoint_id": "cc_app_home",
         },
+        send_push=False,
     )
     send_message(message)
 
