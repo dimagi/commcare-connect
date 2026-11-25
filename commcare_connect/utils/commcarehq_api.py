@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import httpx
 from asgiref.sync import async_to_sync
@@ -21,6 +22,14 @@ class CommCareHQAccessDenied(CommCareHQAPIException):
 ACCESS_DENIED_STATUS_CODES = (401, 403, 404)
 # The access check runs inside a web request, so it must answer before the load balancer gives up on it.
 HQ_ACCESS_TIMEOUT = 50
+# HQ project space names (its legacy_domain_re): letters, digits, "_", "-", "." and ":", so never "/" or "?".
+HQ_DOMAIN_RE = re.compile(r"[\w.:-]+", re.ASCII)
+
+
+def is_valid_hq_domain_name(domain: str) -> bool:
+    """Whether the text is shaped like an HQ project space name, and so is safe to put in an HQ URL path. It
+    doesn't ask HQ whether the project space exists."""
+    return bool(HQ_DOMAIN_RE.fullmatch(domain)) and bool(domain.strip("."))
 
 
 def get_domains_for_user(api_key):
@@ -63,7 +72,8 @@ def get_app_structure(api_key, app):
 
 
 def check_api_key_access(api_key: HQApiKey, paths) -> list[Exception | None]:
-    """Ask HQ, concurrently, whether `api_key` may GET each of `paths`, such as `app_path`.
+    """Ask HQ, concurrently, whether `api_key` may GET each of `paths`, such as `app_path` and
+    `mobile_workers_path`.
 
     Returns one entry per path, in order: None when HQ answers with a 2xx, otherwise the exception
     (CommCareHQAccessDenied when HQ refused the key). A check that fails unexpectedly, such as on a malformed
@@ -73,6 +83,13 @@ def check_api_key_access(api_key: HQApiKey, paths) -> list[Exception | None]:
 
 def app_path(cc_domain, cc_app_id):
     return f"/a/{cc_domain}/api/v0.5/application/{cc_app_id}/"
+
+
+def mobile_workers_path(cc_domain):
+    """One user of the domain's mobile worker list. HQ guards listing and creating mobile workers with the same
+    permissions, "Edit Mobile Workers" plus "Access APIs", so a key that can read it can also create the mobile
+    worker every new Connect Worker needs to start learning."""
+    return f"/a/{cc_domain}/api/v0.5/user/?limit=1"
 
 
 def _fetch_app(api_key, cc_domain, cc_app_id, timeout) -> httpx.Response:
