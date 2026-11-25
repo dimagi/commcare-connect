@@ -3,6 +3,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Now
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -33,6 +34,13 @@ class SolicitationQuerySet(models.QuerySet):
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()
+
+    def visible_to(self, user):
+        """Public solicitations, and private ones that invited an organization ``user`` belongs to."""
+        if not user.is_authenticated:
+            return self.filter(public=True)
+        invited = SolicitationInvitation.objects.filter(solicitation=OuterRef("pk"), organization__members=user)
+        return self.filter(Q(public=True) | Q(Exists(invited)))
 
 
 class Solicitation(BaseModel):

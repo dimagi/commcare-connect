@@ -25,4 +25,11 @@
       <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i T" }}</time>
     </dd>
   </dl>
+  {# Closed solicitations leave the marketplace, so only an open one links there. #}
+  {% if solicitation.is_open %}
+    <div class="mt-auto flex flex-wrap items-center gap-2">
+      <a class="button button-sm outline-style"
+         href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{% translate "See details" %}</a>
+    </div>
+  {% endif %}
 </article>

@@ -1,6 +1,8 @@
 from django.urls import path
 
 from commcare_connect.solicitation.views import (
+    MarketplaceAttachmentView,
+    MarketplaceDetailView,
     MarketplaceListView,
     SolicitationCriteriaView,
     SolicitationDetailsView,
@@ -30,4 +32,10 @@ urlpatterns = [
 # The public marketplace: not scoped to an organization, and reachable without logging in.
 marketplace_urlpatterns = [
     path("", view=MarketplaceListView.as_view(), name="list"),
+    path("<uuid:solicitation_id>/", view=MarketplaceDetailView.as_view(), name="detail"),
+    path(
+        "<uuid:solicitation_id>/attachments/<int:attachment_id>/",
+        view=MarketplaceAttachmentView.as_view(),
+        name="attachment",
+    ),
 ]

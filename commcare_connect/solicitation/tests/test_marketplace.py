@@ -2,6 +2,7 @@ import datetime
 import re
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -12,19 +13,19 @@ from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.opportunity.models import Country
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.solicitation.filters import MarketplaceFilterSet
-from commcare_connect.solicitation.models import Solicitation
-from commcare_connect.solicitation.tests.factories import SolicitationFactory
+from commcare_connect.solicitation.models import Solicitation, SolicitationAttachment
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationEvaluationCriterionFactory,
+    SolicitationFactory,
+    SolicitationInvitationFactory,
+    SolicitationQuestionFactory,
+)
 from commcare_connect.solicitation.tests.test_solicitation_statuses import DEADLINE_CASES
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 pytestmark = pytest.mark.django_db
 
 MARKETPLACE_URL = reverse("marketplace:list")
-
-
-@pytest.fixture
-def solicitations_on():
-    with override_switch(SOLICITATIONS, active=True):
-        yield
 
 
 def listed(**kwargs):
@@ -271,3 +272,107 @@ def test_sidebar_marketplace_link_follows_the_switch(client, organization, org_u
         content = client.get(reverse("opportunity:list", args=(organization.slug,))).content.decode()
 
     assert (f'href="{MARKETPLACE_URL}"' in content) is switch_on
+
+
+def private(**kwargs):
+    return SolicitationFactory(status=Solicitation.Status.ACTIVE, public=False, **kwargs)
+
+
+def detail_url(solicitation):
+    return reverse("marketplace:detail", args=[solicitation.solicitation_id])
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_detail_shows_scope_but_not_questions_or_criteria(client):
+    solicitation = listed(description="Reach 5,000 households.")
+    SolicitationQuestionFactory(solicitation=solicitation, text="Describe your team")
+    SolicitationEvaluationCriterionFactory(solicitation=solicitation, label="Past performance")
+
+    response = client.get(detail_url(solicitation))
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Reach 5,000 households." in content
+    assert "Describe your team" not in content
+    assert "Past performance" not in content
+
+
+def invite(solicitation, organization, invited):
+    """Invites ``organization`` to ``solicitation``, or another organization when ``invited`` is False."""
+    SolicitationInvitationFactory(
+        solicitation=solicitation, organization=organization if invited else OrganizationFactory()
+    )
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("invited, status_code", [(True, 200), (False, 404)])
+def test_private_detail_is_only_for_members_of_invited_organizations(
+    client, org_user_member, organization, invited, status_code
+):
+    solicitation = private()
+    invite(solicitation, organization, invited)
+    client.force_login(org_user_member)
+
+    assert client.get(detail_url(solicitation)).status_code == status_code
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_private_detail_is_not_found_logged_out(client):
+    solicitation = private()
+    SolicitationInvitationFactory(solicitation=solicitation)
+
+    assert client.get(detail_url(solicitation)).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_cards_link_to_the_detail(client):
+    solicitation = listed()
+
+    assert detail_url(solicitation) in client.get(MARKETPLACE_URL).content.decode()
+
+
+def attachment_for(solicitation):
+    return SolicitationAttachment.objects.create(
+        solicitation=solicitation, file=SimpleUploadedFile("scope.pdf", b"%PDF"), filename="Scope of work.pdf"
+    )
+
+
+def attachment_url(attachment):
+    return reverse("marketplace:attachment", args=[attachment.solicitation.solicitation_id, attachment.pk])
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_detail_shows_budget_deadline_and_attachments(client):
+    solicitation = listed(budget_min=10_000, budget_max=50_000, application_deadline=in_days(10, hour=9))
+    attachment = attachment_for(solicitation)
+
+    content = client.get(detail_url(solicitation)).content.decode()
+
+    assert "10,000 – 50,000" in content
+    assert in_days(10, hour=9).strftime("%-d %b %Y, 09:00") in content
+    assert attachment_url(attachment) in content
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_attachment_downloads_through_the_app(client):
+    attachment = attachment_for(listed())
+
+    response = client.get(attachment_url(attachment))
+
+    assert response.status_code == 200
+    assert b"".join(response.streaming_content) == b"%PDF"
+    assert 'filename="Scope of work.pdf"' in response["Content-Disposition"]
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("invited, status_code", [(True, 200), (False, 404)])
+def test_private_attachment_is_only_for_members_of_invited_organizations(
+    client, org_user_member, organization, invited, status_code
+):
+    attachment = attachment_for(private())
+    invite(attachment.solicitation, organization, invited)
+    client.force_login(org_user_member)
+
+    response = client.get(attachment_url(attachment))
+
+    assert response.status_code == status_code

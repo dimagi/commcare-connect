@@ -1,0 +1,78 @@
+{% extends "solicitation/marketplace_base.html" %}
+{% load i18n %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <h1 class="title">{{ solicitation.title }}</h1>
+        </div>
+        <p class="hint">{{ solicitation.organization.name }} · {{ solicitation.get_type_display }}</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <section class="card_bg lg:col-span-2 flex flex-col gap-2">
+        <h2 class="title-sm">{% translate "Scope of work" %}</h2>
+        <div class="text-sm">{{ solicitation.description|linebreaks }}</div>
+      </section>
+      <section class="card_bg flex flex-col gap-3">
+        <h2 class="title-sm">{% translate "Details" %}</h2>
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+          <dt class="text-gray-500">{% translate "Deadline" %}</dt>
+          <dd>
+            <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i T" }}</time>
+          </dd>
+          {% include "solicitation/partials/budget.html" %}
+          {% if solicitation.country %}
+            <dt class="text-gray-500">{% translate "Country" %}</dt>
+            <dd>
+              {{ solicitation.country.name }}
+            </dd>
+          {% endif %}
+          {% if solicitation.delivery_type %}
+            <dt class="text-gray-500">{% translate "Delivery type" %}</dt>
+            <dd>
+              {{ solicitation.delivery_type.name }}
+            </dd>
+          {% endif %}
+          {% if solicitation.estimated_scale %}
+            <dt class="text-gray-500">{% translate "Estimated scale" %}</dt>
+            <dd>
+              {{ solicitation.estimated_scale }}
+            </dd>
+          {% endif %}
+          {% if solicitation.expected_start_date %}
+            <dt class="text-gray-500">{% translate "Expected start" %}</dt>
+            <dd>
+              {{ solicitation.expected_start_date|date:"j M Y" }}
+            </dd>
+          {% endif %}
+          {% if solicitation.expected_end_date %}
+            <dt class="text-gray-500">{% translate "Expected end" %}</dt>
+            <dd>
+              {{ solicitation.expected_end_date|date:"j M Y" }}
+            </dd>
+          {% endif %}
+          <dt class="text-gray-500">{% translate "Contact" %}</dt>
+          <dd>
+            <a class="underline" href="mailto:{{ solicitation.contact_email }}">{{ solicitation.contact_email }}</a>
+          </dd>
+        </dl>
+        {% with attachments=solicitation.attachments.all %}
+          {% if attachments %}
+            <h3 class="title-sm">{% translate "Attachments" %}</h3>
+            <ul class="flex flex-col gap-1 text-sm">
+              {% for attachment in attachments %}
+                <li>
+                  <a class="underline"
+                     href="{% url 'marketplace:attachment' solicitation.solicitation_id attachment.pk %}">{{ attachment.filename }}</a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+      </section>
+    </div>
+  </div>
+{% endblock content %}
