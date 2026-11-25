@@ -406,7 +406,7 @@ class TestIDToken:
 
     @pytest.mark.usefixtures("no_rsa_private_key")
     def test_hs256_authorization_code_flow_issues_id_token_signed_with_client_secret(self, client):
-        plaintext_secret = "hs256-secret"
+        plaintext_secret = "hs256-secret-long-enough-for-rfc7518-minimum"
         application = _oidc_application(algorithm=Application.HS256_ALGORITHM, plaintext_secret=plaintext_secret)
         user = UserFactory()
         client.force_login(user)

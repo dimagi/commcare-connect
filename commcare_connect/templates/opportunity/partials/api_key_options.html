@@ -1,0 +1,5 @@
+{# Options for the API key select, swapped in after the user adds a key. Keeps the admin's unsaved pick, else the opportunity's key. #}
+{% for value, label in choices %}
+  <option value="{{ value }}"
+          {% if value|stringformat:"s" == selected %}selected{% endif %}>{{ label }}</option>
+{% endfor %}

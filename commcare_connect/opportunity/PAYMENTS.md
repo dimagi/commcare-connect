@@ -67,7 +67,7 @@ erDiagram
 
 ### DeliverUnit
 
-A deliver block in the deliver app's forms (identified by `slug`). It belongs to an opportunity and to that opportunity's deliver app, and points at the `PaymentUnit` it pays toward. When a new opportunity reuses an app, it gets its own units, so setting up its payment units leaves the earlier opportunity's units alone. Units created before this have `opportunity` set by migration 0155, or left empty when no opportunity uses their app (CCCT-3057). A `PaymentUnit` can have several deliver units:
+A deliver block in the deliver app's forms (identified by `slug`). It belongs to an opportunity and to that opportunity's deliver app, and points at the `PaymentUnit` it pays toward. When a new opportunity reuses an app, it gets its own units, so setting up its payment units leaves the earlier opportunity's units alone. A unit's payment unit always belongs to the unit's own opportunity. Migrations 0156–0158 gave units from before this an owner, split the ones several opportunities had used, and deleted those no opportunity used (CCCT-3057). A `PaymentUnit` can have several deliver units:
 
 - **Required** (`optional=False`): every required unit must be submitted for the payment unit to count as completed.
 - **Optional** (`optional=True`): at least one optional unit must also be submitted, if any exist.
