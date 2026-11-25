@@ -286,7 +286,6 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 
 # Public marketplace ---------------------------------------------------------------------------------------------
 
-# What a marketplace card shows besides the solicitation itself.
 CARD_RELATED = ("organization", "country", "delivery_type")
 
 
