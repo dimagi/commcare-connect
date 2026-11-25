@@ -120,10 +120,15 @@
   @apply outline-none;
 }
 
-/* A dl along the bottom of a card_bg, one column per fact with its label above the value.
+/* A dl laid out as one column per fact, each dt above its dd. Pair it with card-facts or hero-facts. */
+.facts-row {
+  @apply grid auto-cols-fr grid-flow-col grid-rows-[auto_auto] gap-x-4;
+}
+
+/* A facts-row along the bottom of a card_bg.
    The negative margins cancel card_bg's p-6 so the strip reaches the card's edges. */
 .card-facts {
-  @apply -mx-6 -mb-6 mt-auto grid auto-cols-fr grid-flow-col grid-rows-[auto_auto] gap-x-4 rounded-b-lg border-t border-gray-100 bg-gray-50 px-6 py-3;
+  @apply -mx-6 -mb-6 mt-auto rounded-b-lg border-t border-gray-100 bg-gray-50 px-6 py-3;
 }
 
 .card-facts dt {

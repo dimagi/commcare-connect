@@ -1,9 +1,7 @@
 {% load i18n %}
 <article class="card_bg card-link flex h-full flex-col gap-3">
   <div class="flex flex-wrap items-center gap-2">
-    <span class="badge badge-sm {% if solicitation.type == "eoi" %}badge-teal{% else %}badge-indigo{% endif %}">
-      <i class="fa-solid {% if solicitation.type == "eoi" %}fa-hand{% else %}fa-file-contract{% endif %} mr-1"></i>{{ solicitation.get_type_display }}
-    </span>
+    {% include "solicitation/partials/type_badge.html" %}
     {% if solicitation.closes_soon %}
       <span class="badge badge-sm badge-amber">
         <i class="fa-regular fa-clock mr-1"></i>
@@ -41,7 +39,7 @@
       {% endif %}
     </ul>
   {% endif %}
-  <dl class="card-facts">
+  <dl class="facts-row card-facts">
     {% include "solicitation/partials/budget.html" %}
     <dt>{% translate "Deadline" %}</dt>
     <dd>

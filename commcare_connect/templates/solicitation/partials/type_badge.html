@@ -1,0 +1,3 @@
+<span class="badge badge-sm {% if solicitation.type == "eoi" %}badge-teal{% else %}badge-indigo{% endif %}">
+  <i class="fa-solid {% if solicitation.type == "eoi" %}fa-hand{% else %}fa-file-contract{% endif %} mr-1"></i>{{ solicitation.get_type_display }}
+</span>
