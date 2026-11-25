@@ -26,6 +26,14 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/org_creation_wizard.js',
     ),
+    invite_workers: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/invite_workers.js',
+    ),
+    organization_profile: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/organization_profile.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
@@ -44,7 +52,7 @@ module.exports = {
   module: {
     rules: [
       {
-        test: /\.js$/,
+        test: /\.[jt]s$/,
         exclude: /node_modules/,
         loader: 'babel-loader',
       },
@@ -71,7 +79,7 @@ module.exports = {
   },
   resolve: {
     modules: ['node_modules'],
-    extensions: ['.js', '.jsx'],
+    extensions: ['.js', '.jsx', '.ts'],
   },
   devtool: 'eval-cheap-source-map',
 };

@@ -5,9 +5,9 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.coverage_progress import CoverageDateFilter
 from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.filters import CSRFExemptForm
 from commcare_connect.opportunity.models import PaymentUnit, UserVisit
 from commcare_connect.users.models import User
+from commcare_connect.utils.filters import CSRFExemptForm
 
 INPUT_CSS = (
     "w-full rounded-md border border-gray-300 px-3 py-2 "

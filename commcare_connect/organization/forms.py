@@ -82,7 +82,9 @@ class OrganizationProfileForm(forms.ModelForm):
                 "This would be used to create the Organization URL, "
                 "and you will not be able to change the URL in future."
             ),
-            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
+            # The separators named here are set in static/js/organization_profile.js.
+            "contact_emails": gettext_lazy("Press comma, space or Enter after each email address."),
+            "eoi_links": gettext_lazy("Expression of Interest (EOI) links. Press space or Enter after each one."),
         }
 
     def __init__(self, *args, **kwargs):
@@ -166,6 +168,11 @@ class OrganizationProfileForm(forms.ModelForm):
         return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
+EXISTING_ORGANIZATION_HELP_TEXTS = OrganizationProfileForm.Meta.help_texts | {
+    "name": gettext_lazy("Renaming the organization does not change its URL."),
+}
+
+
 class OrganizationCreateForm(OrganizationProfileForm):
     """Creates an organization from the create wizard.
 
@@ -201,9 +208,7 @@ class OrganizationChangeForm(OrganizationProfileForm):
         labels = OrganizationProfileForm.Meta.labels | {
             "program_manager": gettext_lazy("Enable Program Manager"),
         }
-        help_texts = OrganizationProfileForm.Meta.help_texts | {
-            "name": gettext_lazy("Renaming the organization does not change its URL."),
-        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user")
@@ -275,9 +280,11 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "latest_msa_link",
             "latest_work_order_link",
             "notes",
+            "is_test",
         )
         widgets = OrganizationProfileForm.Meta.widgets | {
             "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "is_test": forms.Select(choices=((False, gettext_lazy("No")), (True, gettext_lazy("Yes")))),
             "regions": forms.TextInput(),
             "office_address": forms.TextInput(),
         }
@@ -292,12 +299,9 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
             "latest_msa_link": gettext_lazy("Latest MSA Link"),
             "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
             "notes": gettext_lazy("Organization Notes"),
+            "is_test": gettext_lazy("Test Organization?"),
         }
-        help_texts = {
-            "name": gettext_lazy("Renaming the organization does not change its URL."),
-            "contact_emails": gettext_lazy("One email address per line."),
-            "eoi_links": gettext_lazy("One Expression of Interest (EOI) link per line."),
-        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -322,6 +326,7 @@ class OrganizationDirectoryForm(OrganizationProfileForm):
                 "has_used_connect",
                 "team_size",
                 "flws_managed",
+                "is_test",
                 _full_width("countries"),
                 _full_width("regions"),
                 _full_width("primary_sectors"),
@@ -356,7 +361,7 @@ class ContactForm(forms.ModelForm):
             "name": gettext_lazy("Contact Full Name"),
             "organization": gettext_lazy("Organization Name"),
             "title": gettext_lazy("Role / Title"),
-            "is_main_poc": gettext_lazy("Main POC?"),
+            "is_main_poc": gettext_lazy("Main Point of Contact?"),
             "email": gettext_lazy("Email Address"),
             "phone": gettext_lazy("Phone Number"),
             "notes": gettext_lazy("Contact Notes"),
@@ -377,7 +382,10 @@ class ContactForm(forms.ModelForm):
                 _full_width("name"),
                 _full_width("organization"),
                 "title",
-                "is_main_poc",
+                layout.Div(
+                    "is_main_poc",
+                    layout.HTML('{% include "organization/directory/poc_change_warning_slot.html" %}'),
+                ),
                 "email",
                 "phone",
                 _full_width("notes"),
@@ -575,3 +583,22 @@ class AddCredentialForm(forms.Form):
         user_data = self.cleaned_data["users"]
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
+
+
+class ContactPocChangeForm(forms.Form):
+    """Reads a contact form's point of contact fields to find the main point of contact they would replace."""
+
+    organization = forms.IntegerField()
+    is_main_poc = forms.BooleanField(required=False)
+    contact = forms.UUIDField(required=False)
+    name = forms.CharField(required=False)
+
+    def main_poc_to_replace(self):
+        if not self.is_valid() or not self.cleaned_data["is_main_poc"]:
+            return None
+        return (
+            Contact.objects.filter(organization_id=self.cleaned_data["organization"], is_main_poc=True)
+            .exclude(contact_id=self.cleaned_data["contact"])
+            .select_related("organization")
+            .first()
+        )
