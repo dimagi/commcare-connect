@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.solicitation.views import (
+    MarketplaceListView,
     SolicitationCriteriaView,
     SolicitationDetailsView,
     SolicitationInvitationDeleteView,
@@ -24,4 +25,9 @@ urlpatterns = [
         view=SolicitationInvitationDeleteView.as_view(),
         name="delete_invitations",
     ),
+]
+
+# The public marketplace: not scoped to an organization, and reachable without logging in.
+marketplace_urlpatterns = [
+    path("", view=MarketplaceListView.as_view(), name="list"),
 ]

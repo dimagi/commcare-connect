@@ -44,6 +44,11 @@ updates:
     labels:
       - dependencies
     groups:
+      # Babel's core and presets peer on each other's major version, so bumping one alone breaks
+      # `npm ci`. Listed first so every @babel/* update, major included, lands in this group.
+      babel:
+        patterns:
+          - '@babel/*'
       npm-non-major:
         update-types:
           - minor
