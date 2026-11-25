@@ -50,7 +50,7 @@ from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.utils import is_opportunity_pm, program_access_level_from_request
 from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_access_errors
+from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_path, check_api_key_access
 from commcare_connect.utils.forms import ManagedOptionForm
 
 logger = logging.getLogger(__name__)
@@ -963,7 +963,7 @@ def _verify_api_key_access(form, api_key, apps):
         return
     if api_key.id == form.instance.api_key_id and apps == _stored_apps(form.instance):
         return
-    errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
+    errors = check_api_key_access(api_key, [app_path(domain, app_id) for _app_type, domain, app_id in apps])
     for (app_type, domain, _app_id), error in zip(apps, errors):
         if isinstance(error, CommCareHQAccessDenied):
             form.add_error(
