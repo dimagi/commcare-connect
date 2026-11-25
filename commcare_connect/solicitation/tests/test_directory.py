@@ -53,9 +53,11 @@ class TestSolicitationDirectoryFilterSet:
     def test_status_filter_matches_the_status_shown(self, status, deadline_passed, shown_as):
         solicitation = SolicitationFactory(status=status, deadline_passed=deadline_passed)
 
-        assert {status for status in Status if solicitation in _filtered_solicitations({"status": [status]})} == {
-            shown_as
-        }
+        assert {
+            candidate_status
+            for candidate_status in Status
+            if solicitation in _filtered_solicitations({"status": [candidate_status]})
+        } == {shown_as}
 
     def test_organization_filter_lists_program_managers_by_name(self):
         program_manager = OrganizationFactory(name="Umoja Health Trust", program_manager=True)
