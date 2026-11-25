@@ -4,7 +4,7 @@
   <div class="flex flex-col gap-4 w-full">
     {% include "components/breadcrumbs.html" with path=path %}
     <div>
-      <h1 class="title">{{ solicitation.title }}</h1>
+      <h1 class="page-title">{{ solicitation.title }}</h1>
       <p class="hint">{{ solicitation.organization.name }} · {{ solicitation.get_type_display }}</p>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

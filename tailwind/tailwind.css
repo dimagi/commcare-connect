@@ -98,6 +98,42 @@
   @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
+/* A card_bg whose first link is stretched over it, so the whole card is clickable. */
+.card-link {
+  @apply relative border border-transparent transition-all duration-200;
+}
+
+.card-link:hover {
+  @apply border-brand-sky shadow-md;
+}
+
+.card-link:focus-within {
+  @apply border-brand-sky ring-brand-indigo shadow-md ring-2;
+}
+
+.card-link a:first-of-type::after {
+  content: '';
+  @apply absolute inset-0 rounded-lg;
+}
+
+.card-link a:first-of-type:focus-visible {
+  @apply outline-none;
+}
+
+/* A dl along the bottom of a card_bg, one column per fact with its label above the value.
+   The negative margins cancel card_bg's p-6 so the strip reaches the card's edges. */
+.card-facts {
+  @apply -mx-6 -mb-6 mt-auto grid auto-cols-fr grid-flow-col grid-rows-[auto_auto] gap-x-4 rounded-b-lg border-t border-gray-100 bg-gray-50 px-6 py-3;
+}
+
+.card-facts dt {
+  @apply text-xs font-medium uppercase tracking-wide text-gray-500;
+}
+
+.card-facts dd {
+  @apply text-sm font-semibold text-gray-900;
+}
+
 /* The card is the wrapper rather than the fieldset itself: a legend is laid out over
    its fieldset's top border, which on a bordered card leaves the title hanging outside. */
 .form_section legend {
@@ -116,6 +152,10 @@
 
 .title {
   @apply font-medium text-gray-900;
+}
+
+.page-title {
+  @apply text-brand-deep-purple text-2xl font-semibold;
 }
 
 .title-sm {
