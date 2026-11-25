@@ -23,12 +23,12 @@ ACCESS_DENIED_STATUS_CODES = (401, 403)
 # HQ answers 404 for a domain the key's user can't see. The domain list doesn't name a domain, so a 404 there means
 # the server URL is wrong, which is ours to fix.
 DOMAIN_ACCESS_DENIED_STATUS_CODES = (*ACCESS_DENIED_STATUS_CODES, 404)
-# The access check runs inside a web request, so it must answer before the load balancer gives up on it.
-APP_ACCESS_TIMEOUT = 50
 # The setup selects load the domain and app lists inside a web request, so they must answer before the proxies in
 # front of Connect give up on it. Production has CloudFront in front of the load balancer, and its origin timeout
 # defaults to 30s. Callers that can wait longer pass their own timeout.
 HQ_LIST_TIMEOUT = 25
+# The access check also runs inside a web request (the opportunity form's validation), behind the same proxies.
+APP_ACCESS_TIMEOUT = 25
 # HQ can answer an error with a whole HTML page; keep enough of it to tell what went wrong.
 ERROR_BODY_LIMIT = 500
 
