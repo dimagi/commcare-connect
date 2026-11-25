@@ -413,7 +413,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        _verify_api_key_access(self, cleaned_data.get("api_key"), _stored_apps(self.instance))
+        api_key = cleaned_data.get("api_key")
+        if not self.errors and api_key:
+            apps = _stored_apps(self.instance)
+            if _api_key_or_apps_changed(self.instance, api_key, apps):
+                _verify_api_key_access(self, api_key, apps)
         return cleaned_data
 
     def save(self, commit=True):
@@ -650,8 +654,11 @@ class OpportunityInitForm(forms.ModelForm):
                     self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             except KeyError:
                 raise forms.ValidationError("Invalid app data")
-            if not self.errors:
-                _verify_api_key_access(self, cleaned_data.get("api_key"), self._posted_apps())
+            api_key = cleaned_data.get("api_key")
+            if not self.errors and api_key:
+                apps = self._posted_apps()
+                if _api_key_or_apps_changed(self.instance, api_key, apps):
+                    _verify_api_key_access(self, api_key, apps)
             return cleaned_data
 
     def _posted_apps(self):
@@ -952,17 +959,16 @@ def _stored_apps(opportunity):
     return [(app_type, app.cc_domain, app.cc_app_id) for app_type, app in apps if app]
 
 
-def _verify_api_key_access(form, api_key, apps):
-    """On an otherwise valid form, ask HQ whether `api_key` can fetch each `(app_type, cc_domain, cc_app_id)` in
-    `apps`, and add one failure to the form: an access denial if any app has one, since retrying won't fix it,
-    otherwise the first other failure.
+def _api_key_or_apps_changed(opportunity, api_key, apps):
+    """Whether `api_key` or `apps` differ from what `opportunity` stores. A kept key may belong to a colleague, so
+    pointing it at different apps needs the same access check as a new key."""
+    return api_key.id != opportunity.api_key_id or apps != _stored_apps(opportunity)
 
-    Skipped only when the key and the apps are both what the opportunity already stores: a kept key may belong to
-    a colleague, so pointing it at different apps needs the same check as a new key."""
-    if form.errors or not api_key:
-        return
-    if api_key.id == form.instance.api_key_id and apps == _stored_apps(form.instance):
-        return
+
+def _verify_api_key_access(form, api_key, apps):
+    """Ask HQ whether `api_key` can fetch each `(app_type, cc_domain, cc_app_id)` in `apps`, and add one failure
+    to the form: an access denial if any app has one, since retrying won't fix it, otherwise the first other
+    failure. Callers decide whether the check is needed, and run it only on an otherwise valid form."""
     errors = app_access_errors(api_key, [(domain, app_id) for _app_type, domain, app_id in apps])
     for (app_type, domain, _app_id), error in zip(apps, errors):
         if isinstance(error, CommCareHQAccessDenied):
