@@ -10,7 +10,7 @@
 {% endblock javascript %}
 {% block content %}
   {% load crispy_forms_tags %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div id="payment-import-modal-container"></div>
   {% if payment_import_task_id %}
     <div hx-get="{% url 'opportunity:payment_import_status' request.org.slug payment_import_task_id %}"

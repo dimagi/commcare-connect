@@ -12,7 +12,8 @@
           <div class="card_bg">
             <h3 class="card_title mb-2">{{ feature.name }}</h3>
             {% if feature.description %}<p class="card_description mb-2">{{ feature.description }}</p>{% endif %}
-            <a class="mt-2 button button-md primary-dark" href="{{ feature.url }}">{% translate "Open" %} <i class="fa-solid fa-arrow-right"></i></a>
+            <a class="mt-2 button button-md primary-dark"
+               href="{{ feature.url }}">{% translate "Open" %} <i class="fa-solid fa-arrow-right"></i></a>
           </div>
         {% endif %}
       {% endfor %}

@@ -87,21 +87,21 @@
           <i class="fa-solid ml-2 cursor-pointer"
              :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
              @click="isOpen = !isOpen"></i>
-        </div>
-        <div x-show="isOpen"
-             x-cloak
-             @click.outside="isOpen = false"
-             x-transition
-             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-          <span class="text-sm font-medium text-brand-deep-purple">{% trans "Payment Details" %}</span>
-          <div class="flex flex-col py-5 gap-1.5">
-            <span class="text-xs text-brand-blue-light">{% trans "Last Paid" %}</span>
-            <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
-            <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
-            {% if last_payment_details.opportunity_access %}
-              <span class="text-xs text-brand-deep-purple">{{ last_payment_details.opportunity_access.user.name }}</span>
-            {% endif %}
           </div>
+          <div x-show="isOpen"
+               x-cloak
+               @click.outside="isOpen = false"
+               x-transition
+               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+            <span class="text-sm font-medium text-brand-deep-purple">{% trans "Payment Details" %}</span>
+            <div class="flex flex-col py-5 gap-1.5">
+              <span class="text-xs text-brand-blue-light">{% trans "Last Paid" %}</span>
+              <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
+              <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
+              {% if last_payment_details.opportunity_access %}
+                <span class="text-xs text-brand-deep-purple">{{ last_payment_details.opportunity_access.user.name }}</span>
+              {% endif %}
+            </div>
         {% endif %}
       </div>
     </div>

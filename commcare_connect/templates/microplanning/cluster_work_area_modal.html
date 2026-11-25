@@ -44,9 +44,9 @@
         {% if request.GET.clustering_task_id %}
           <button type="button" disabled class="button button-md primary-dark">
             {% if clustering_is_rerun %}
-              {% trans 'Rerun Clustering' %}
+              {% trans "Rerun Clustering" %}
             {% else %}
-              {% trans 'Create Groups' %}
+              {% trans "Create Groups" %}
             {% endif %}
           </button>
         {% else %}
@@ -57,15 +57,15 @@
                   hx-include="[name='building_count']"
                   hx-swap="outerHTML">
             {% if clustering_is_rerun %}
-              {% trans 'Rerun Clustering' %}
+              {% trans "Rerun Clustering" %}
             {% else %}
-              {% trans 'Create Groups' %}
+              {% trans "Create Groups" %}
             {% endif %}
           </button>
         {% endif %}
         <button type="button"
                 class="button button-md outline-style"
-                @click="showCreateWorkAreaGroupsModal = false">{% trans 'Close' %}</button>
+                @click="showCreateWorkAreaGroupsModal = false">{% trans "Close" %}</button>
       </div>
     </div>
   </div>

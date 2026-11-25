@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    {% include 'favicon.html' %}
+    {% include "favicon.html" %}
     <title>Connect</title>
     {% block css %}
       <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
@@ -22,16 +22,20 @@
         <script src="{% static 'js/livesession.js' %}" defer></script>
       {% endif %}
     {% endblock javascript %}
-    {% include 'components/forget_form_submission.html' %}
+    {% include "components/forget_form_submission.html" %}
   </head>
-  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' x-data="{ sidebarOpen: $persist(false).as('sidebarOpen'), hasSidebar:
+  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        x-data="{ sidebarOpen: $persist(false).as('sidebarOpen'), hasSidebar:
     {% block has_sidebar %}true{% endblock %}
-    }" x-init="$nextTick(() => $el.classList.add('transition-[padding-left]', 'duration-300'))" :class="hasSidebar ? (sidebarOpen ? 'pl-64' : 'pl-16') : ''" class="flex flex-col justify-center overflow-x-hidden bg-stone-100 font-work-sans">
+    }"
+        x-init="$nextTick(() => $el.classList.add('transition-[padding-left]', 'duration-300'))"
+        :class="hasSidebar ? (sidebarOpen ? 'pl-64' : 'pl-16') : ''"
+        class="flex flex-col justify-center overflow-x-hidden bg-stone-100 font-work-sans">
     {% block sidenav %}
-      {% include 'layouts/sidenav.html' %}
+      {% include "layouts/sidenav.html" %}
     {% endblock %}
-    <div class="flex-1  px-4">
-      {% include 'layouts/header.html' %}
+    <div class="flex-1 px-4">
+      {% include "layouts/header.html" %}
       <div class="h-5 w-full mt-16"></div>
       <main id="content" class="md:max-w-screen-2xl mx-auto">
         <div id="messages">{% include "components/messages.html" %}</div>

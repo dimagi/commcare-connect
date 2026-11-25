@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% load django_tables2 %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <p class="my-5 text-sm font-medium text-brand-deep-purple">{{ opportunity.name }}</p>
   <div class="flex flex-col w-full gap-2">
     <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
-      {% with list_view_name='opportunity:invoice_list' report_view_name='opportunity:payment_report' current_view_name=request.resolver_match.view_name %}
+      {% with list_view_name="opportunity:invoice_list" report_view_name="opportunity:payment_report" current_view_name=request.resolver_match.view_name %}
         <ul class="tabs">
           <li class="{% if current_view_name == list_view_name %}active{% endif %}">
             <a href="{% url list_view_name org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"

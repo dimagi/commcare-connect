@@ -8,7 +8,8 @@
   <div @click.outside="showAddMemberModal = false" class="modal">
     <div class="flex justify-between items-center pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">{% trans "Invite Member" %}</h2>
-      <button @click="showAddMemberModal = false"
+      <button type="button"
+              @click="showAddMemberModal = false"
               class="text-gray-500 hover:text-gray-700">
         <i class="fa-solid fa-xmark text-xl"></i>
       </button>

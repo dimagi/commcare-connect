@@ -13,7 +13,7 @@
   {% endif %}
 {% endblock javascript %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="card_bg">
     <div class="card_title mb-4">
       {% if is_service_delivery %}
@@ -32,19 +32,20 @@
         <a href="{{ invoice_list_url }}" class="button button-md outline-style">{% translate "Back to Invoices" %}</a>
         <!--  I am a PM -->
         {% if request.is_opportunity_pm %}
-          {% if invoice_status == 'pending_pm_review' %}
+          {% if invoice_status == "pending_pm_review" %}
             <a @click="rejectInvoice()" class="button button-md outline-style">{% translate "Reject" %}</a>
             <a @click="submitInvoice('ready_to_pay')"
                class="button button-md primary-dark">{% translate "Approve for Payment Processing" %}</a>
-          {% elif invoice_status == 'ready_to_pay' %}
+          {% elif invoice_status == "ready_to_pay" %}
             <a @click="rejectInvoice()" class="button button-md outline-style">{% translate "Reject" %}</a>
-            <button hx-post="{% url 'opportunity:invoice_pay' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}{% querystring month=month_param %}"
+            <button type="button"
+                    hx-post="{% url 'opportunity:invoice_pay' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}{% querystring month=month_param %}"
                     hx-vals='{"pk": "{{ form.instance.payment_invoice_id }}"}'
                     class="button button-md primary-dark justify-center !inline-flex"
                     {% if form.instance.payment %}disabled{% endif %}>{% translate "Pay" %}</button>
           {% endif %}
           <!-- I am a NM -->
-        {% elif invoice_status == 'pending_nm_review' %}
+        {% elif invoice_status == "pending_nm_review" %}
           <a @click="cancelInvoice()" class="button button-md outline-style">{% translate "Cancel" %}</a>
           <a @click="openSubmitInvoiceModal()"
              class="button button-md primary-dark">{% translate "Submit to Program Manager" %}</a>
@@ -76,7 +77,8 @@
         {% csrf_token %}
         <div class="mb-4">
           <div class="mb-2">
-            <label for="id_invoice_ticket_link" class="text-gray-700 text-sm font-bold">{% translate "Invoice Ticket" %}</label>
+            <label for="id_invoice_ticket_link"
+                   class="text-gray-700 text-sm font-bold">{% translate "Invoice Ticket" %}</label>
             {% if object.invoice_ticket_link %}
               <a class="fa fa-external-link"
                  target="_blank"
@@ -90,7 +92,7 @@
                  id="id_invoice_ticket_link"
                  value="{{ object.invoice_ticket_link|default_if_none:'' }}">
         </div>
-        <button class="button button-md primary-dark">{% translate "Update" %}</button>
+        <button type="submit" class="button button-md primary-dark">{% translate "Update" %}</button>
       </form>
     </div>
   {% endif %}

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load i18n %}
 {% load django_tables2 %}
 {% load crispy_forms_tags %}
@@ -12,7 +12,7 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="w-full space-y-4"
        x-data="{ showCreateTaskModal: false, showEditTaskModal: false, editTaskError: false, ...resetFilterModalState('userTaskFilterForm'), ...selectableTable() }">
     <div x-show="editTaskError"
@@ -26,11 +26,11 @@
       <button type="button"
               class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
               aria-label="{% trans "Close" %}"
-              @click="editTaskError = false">&times;</button>
+              @click="editTaskError = false">×</button>
     </div>
     {% include "components/worker_page/worker_profile_kpi.html" %}
     <div class="relative">
-      {% include 'components/worker_page/visit_task_tabs.html' %}
+      {% include "components/worker_page/visit_task_tabs.html" %}
       <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
         {% if can_manage_tasks %}
           <button type="button"
@@ -76,7 +76,7 @@
       <div class="modal">
         <div class="header text-lg font-semibold text-brand-deep-purple">
           <h1>{% trans "Filters" %}</h1>
-          <button @click="closeFilter()">
+          <button type="button" @click="closeFilter()">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
@@ -171,7 +171,8 @@
                    role="status"
                    x-cloak
                    class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
-                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent">
+                </div>
                 <span class="sr-only">{% translate "Loading..." %}</span>
               </div>
             </div>
@@ -180,10 +181,10 @@
       </div>
     </div>
     {% if can_manage_tasks %}
-      {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+      {% include "tasks/new_task_modal.html" with modal_name="showCreateTaskModal" form=create_task_form %}
     {% endif %}
-    {% include 'components/confirm_modal.html' %}
-    {% include 'opportunity/edit_assigned_task_modal.html' %}
+    {% include "components/confirm_modal.html" %}
+    {% include "opportunity/edit_assigned_task_modal.html" %}
   </div>
 {% endblock %}
 {% block inline_javascript %}

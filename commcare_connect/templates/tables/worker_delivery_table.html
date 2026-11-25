@@ -5,15 +5,13 @@
     <tbody x-data="{ open: false }">
       <tr {{ row.attrs.as_html }}>
         {% for column, cell in row.items %}
-          <td {{ column.attrs.td.as_html }}>{{ cell }}
-          </td>
+          <td {{ column.attrs.td.as_html }}>{{ cell }}</td>
         {% endfor %}
       </tr>
       {% for sub_row in row.record.bound_sub_rows %}
         <tr {{ sub_row.attrs.as_html }} x-show="open" x-cloak>
           {% for column, cell in sub_row.items %}
-            <td {{ column.attrs.td.as_html }}>{{ cell }}
-            </td>
+            <td {{ column.attrs.td.as_html }}>{{ cell }}</td>
           {% endfor %}
         </tr>
       {% endfor %}
@@ -29,8 +27,7 @@
     <tbody>
       <tr class="border-2 border-gray-100 font-bold">
         {% for column in table.columns %}
-          <td {{ column.attrs.tf.as_html }}>{{ column.footer }}
-          </td>
+          <td {{ column.attrs.tf.as_html }}>{{ column.footer }}</td>
         {% endfor %}
       </tr>
     </tbody>

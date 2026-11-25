@@ -10,15 +10,18 @@
     {% endif %}
     {% if has_suspension_perm %}
       {% if opportunity_access.suspended %}
-        <button hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity.opportunity_id pk=opportunity_access.opportunity_access_id %}"
+        <button type="button"
+                hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity.opportunity_id pk=opportunity_access.opportunity_access_id %}"
                 hx-vals='{"next": "{{ request.get_full_path }}"}'
                 class="button button-sm primary-light">{% translate "Revoke Suspension" %}</button>
       {% else %}
-        <button class="button button-sm primary-light"
+        <button type="button"
+                class="button button-sm primary-light"
                 @click="showSuspendModal = true">{% translate "Suspend" %}</button>
       {% endif %}
     {% endif %}
-    <button class="button-icon"
+    <button type="button"
+            class="button-icon"
             aria-label="{% translate 'Close user status details' %}"
             @click="isStatusModalOpen = false">
       <i class="fa-solid fa-xmark cursor-pointer"></i>
@@ -47,7 +50,8 @@
     <div @click.away="showSuspendModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
         <h2 class="title mb-4">Suspend User</h2>
-        <button @click="showSuspendModal = false"
+        <button type="button"
+                @click="showSuspendModal = false"
                 class="button-icon"
                 aria-label="Close">
           <i class="fa-solid fa-xmark"></i>

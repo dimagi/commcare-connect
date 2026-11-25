@@ -50,7 +50,7 @@
           {% csrf_token %}
           {% crispy form %}
           <div x-show="selectedTaskIsOcs && !ocsConnected" x-cloak class="my-3">
-            {% include 'ocs/_connect_prompt.html' with next_url=request.get_full_path %}
+            {% include "ocs/_connect_prompt.html" with next_url=request.get_full_path %}
           </div>
           <div class="flex justify-between gap-3 pt-2">
             <button type="button"
@@ -64,4 +64,6 @@
       </div>
     </div>
   </div>
+  {# djlint:off H025 #}
 </template>
+{# djlint:on #}

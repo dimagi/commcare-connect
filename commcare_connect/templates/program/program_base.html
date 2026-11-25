@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% block content %}
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4"
        x-data="{showProgramAddModal: false}">
@@ -7,7 +7,8 @@
         <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
         {% if is_program_manager %}
           <div class="flex items-center gap-2">
-            <button class="button button-md button-outline-rounded"
+            <button type="button"
+                    class="button button-md button-outline-rounded"
                     hx-get="{% url "program:init" request.org.slug %}"
                     hx-target="#program-add-form"
                     @htmx:after-request="showProgramAddModal = true">
@@ -54,7 +55,7 @@
                 </div>
               {% endfor %}
               <div class="flex justify-end" x-show="{{ data.rows|length }} > 2">
-                <button class="button-text" @click="expanded = !expanded">
+                <button type="button" class="button-text" @click="expanded = !expanded">
                   <span x-text="expanded ? 'less' : 'more'"></span>
                   <i :class="expanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
                 </button>
@@ -72,7 +73,8 @@
         <div @click.away="showProgramAddModal = false" x-transition class="modal">
           <div class="header flex justify-between items-center mb-2">
             <h2 class="title">Create Program</h2>
-            <button @click="showProgramAddModal = false"
+            <button type="button"
+                    @click="showProgramAddModal = false"
                     class="button-icon"
                     aria-label="Close">
               <i class="fa-solid fa-xmark"></i>

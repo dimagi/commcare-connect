@@ -1,4 +1,4 @@
-{% extends 'program/program_base.html' %}
+{% extends "program/program_base.html" %}
 {% load humanize %}
 {% load i18n %}
 {% load static %}
@@ -24,13 +24,15 @@
             </div>
             <div class="flex items-start justify-end gap-6">
               {% if program.user_has_admin_access %}
-                <button class="button-icon"
+                <button type="button"
+                        class="button-icon"
                         hx-get="{% url "program:edit" request.org.slug program.program_id %}"
                         hx-target="#program-edit-form"
                         @htmx:after-request="showProgramEditModal = true">
                   <i class="fa-solid fa-pen"></i>
                 </button>
-                <button class="button button-sm outline-style"
+                <button type="button"
+                        class="button button-sm outline-style"
                         @click="showInviteModal = true">{% translate "Invite" %}</button>
                 <div x-cloak
                      x-show="showInviteModal"
@@ -39,7 +41,8 @@
                   <div @click.away="showInviteModal = false" x-transition class="modal">
                     <div class="header">
                       <h2 class="title">{% translate "Invite Organization" %}</h2>
-                      <button @click="showInviteModal = false"
+                      <button type="button"
+                              @click="showInviteModal = false"
                               class="button-icon"
                               aria-label="Close">
                         <i class="fa-solid fa-xmark text-xl"></i>
@@ -141,7 +144,9 @@
               </div>
             </div>
             {% if applications %}
-              <button class="button button-sm outline-style" @click="showOpp = !showOpp">
+              <button type="button"
+                      class="button button-sm outline-style"
+                      @click="showOpp = !showOpp">
                 <span class="relative z-20"
                       x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
                 <i class="fa-solid text-xs"
@@ -164,35 +169,37 @@
                         </div>
                       </div>
                       <div class="flex items-start">
-                        {% if application.status == 'rejected' %}
+                        {% if application.status == "rejected" %}
                           <span class="badge badge-md negative-dark">{% translate "Rejected" %}</span>
-                        {% elif application.status == 'declined' %}
+                        {% elif application.status == "declined" %}
                           <span class="badge badge-md negative-dark">{% translate "Declined" %}</span>
-                        {% elif application.status == 'invited' %}
+                        {% elif application.status == "invited" %}
                           <span class="badge badge-md warning-dark">{% translate "Invited" %}</span>
-                        {% elif application.status == 'applied' %}
+                        {% elif application.status == "applied" %}
                           <span class="badge badge-md primary-dark">{% translate "Applied" %}</span>
-                        {% elif application.status == 'accepted' %}
+                        {% elif application.status == "accepted" %}
                           <span class="badge badge-md positive-dark">{% translate "Accepted" %}</span>
                         {% endif %}
                       </div>
                     </div>
                   </div>
                   <div class="flex items-center justify-end">
-                    {% if application.status == 'applied' and program.user_has_admin_access %}
+                    {% if application.status == "applied" and program.user_has_admin_access %}
                       <div class="flex gap-2">
-                        <button class="button button-md outline-style"
+                        <button type="button"
+                                class="button button-md outline-style"
                                 value="reject"
                                 hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}"
                                 hx-swap="outerHTML"
                                 hx-target="body">{% translate "Reject" %}</button>
-                        <button class="button button-md primary-dark"
+                        <button type="button"
+                                class="button button-md primary-dark"
                                 value="accept"
                                 hx-post="{% url 'program:manage_application' request.org.slug application.id 'accept' %}"
                                 hx-swap="outerHTML"
                                 hx-target="body">{% translate "Accept" %}</button>
                       </div>
-                    {% elif application.status == 'accepted' %}
+                    {% elif application.status == "accepted" %}
                       {% if program.user_has_admin_access %}
                         <a class="button button-md button-outline-rounded me-1"
                            href="{% url "program:opportunity_init" request.org.slug program.program_id %}">
@@ -225,7 +232,8 @@
       <div @click.away="showProgramEditModal = false" x-transition class="modal">
         <div class="header flex justify-between items-center mb-2">
           <h2 class="title">{% translate "Edit Program" %}</h2>
-          <button @click="showProgramEditModal = false"
+          <button type="button"
+                  @click="showProgramEditModal = false"
                   class="button-icon"
                   aria-label="Close">
             <i class="fa-solid fa-xmark"></i>

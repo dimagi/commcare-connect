@@ -112,7 +112,8 @@
             <a href="{% url 'account_signup' %}" class="btn btn-primary">Sign Up</a>
           </div>
         </nav>
-        <button class="nav-toggle"
+        <button type="button"
+                class="nav-toggle"
                 id="nav-toggle"
                 aria-label="Open menu"
                 aria-expanded="false"
@@ -193,7 +194,7 @@
             <div class="form-card-body">
               <div id="hubspot-form">
                 <div class="form-fallback" id="hubspot-form-fallback">
-                  <strong>Loading form&hellip;</strong>
+                  <strong>Loading form…</strong>
                 </div>
                 <noscript>
                   <div class="form-fallback">
@@ -260,7 +261,7 @@
             <li>
               <a href="https://dimagi.atlassian.net/wiki/spaces/connectpublic/overview?homepageId=3145401509"
                  target="_blank"
-                 rel="noopener">Help Site &#8599;</a>
+                 rel="noopener">Help Site ↗</a>
             </li>
             <li>
               <a href="{% url 'prelogin:release-notes' %}">Release Notes</a>
@@ -279,13 +280,13 @@
           <span class="foot-col-label eyebrow">Company</span>
           <ul>
             <li>
-              <a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi &#8599;</a>
+              <a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi ↗</a>
             </li>
           </ul>
         </div>
       </div>
       <div class="foot-bottom">
-        <span>&copy; 2026 DIMAGI, INC.</span>
+        <span>© 2026 DIMAGI, INC.</span>
         <span class="foot-legal-links">
           <a href="https://dimagi.com/terms-privacy-dimagi/"
              target="_blank"
@@ -299,9 +300,7 @@
       </div>
     </footer>
     <!-- ───── HUBSPOT FORM ───── -->
-    <script charset="utf-8"
-            type="text/javascript"
-            src="https://js.hsforms.net/forms/embed/v2.js"></script>
+    <script charset="utf-8" src="https://js.hsforms.net/forms/embed/v2.js"></script>
     <script src="{% static 'prelogin/contact-form.js' %}"></script>
     <script src="{% static 'prelogin/app.js' %}?v=8"></script>
   </body>

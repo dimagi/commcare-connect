@@ -5,8 +5,10 @@
   {{ request.org }} - {% translate "Configure Task Types" %}
 {% endblock %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
-  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6" x-init="$watch('showCreateTaskTypeModal', val => { if (!val) { $refs.createTaskForm.reset(); taskMode = $refs.createTaskForm.querySelector('[name=mode]')?.value || 'relearn'; } })" x-data="{ showCreateTaskTypeModal:
+  {% include "components/breadcrumbs.html" with path=path %}
+  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6"
+       x-init="$watch('showCreateTaskTypeModal', val => { if (!val) { $refs.createTaskForm.reset(); taskMode = $refs.createTaskForm.querySelector('[name=mode]')?.value || 'relearn'; } })"
+       x-data="{ showCreateTaskTypeModal:
     {% if form.errors %}
       true
     {% else %}
@@ -24,7 +26,7 @@
       <button type="button"
               class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
               aria-label="Close"
-              @click="editTaskError = false">&times;</button>
+              @click="editTaskError = false">×</button>
     </div>
     <div class="card_bg">
       <div class="flex items-center gap-2 text-sm">

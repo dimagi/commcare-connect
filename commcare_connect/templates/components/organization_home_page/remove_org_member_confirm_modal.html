@@ -8,7 +8,8 @@
        class="modal">
     <div class="flex justify-between items-center pb-2 mb-4">
       <h2 class="text-lg font-medium text-brand-deep-purple">{% trans "Remove Member(s)" %}</h2>
-      <button @click="showConfirmRemoveMembershipModal = false"
+      <button type="button"
+              @click="showConfirmRemoveMembershipModal = false"
               class="text-gray-500 hover:text-gray-700">
         <i class="fa-solid fa-xmark text-xl"></i>
       </button>
@@ -26,7 +27,7 @@
     <div class="flex justify-end gap-2 pt-4">
       <button type="button"
               class="button button-md outline-style"
-              @click="showConfirmRemoveMembershipModal = false">{% trans 'Cancel' %}</button>
+              @click="showConfirmRemoveMembershipModal = false">{% trans "Cancel" %}</button>
       <form action="{% url 'organization:remove_members' request.org.slug %}"
             method="post"
             class="inline">
@@ -38,7 +39,7 @@
                 class="button button-md bg-red-600 hover:bg-red-700 text-white"
                 @click="showConfirmRemoveMembershipModal = false">
           <i class="fa-solid fa-trash"></i>
-          {% trans 'Remove Member(s)' %}
+          {% trans "Remove Member(s)" %}
         </button>
       </form>
     </div>

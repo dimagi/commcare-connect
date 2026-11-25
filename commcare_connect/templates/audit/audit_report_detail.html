@@ -14,6 +14,6 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="w-full flex flex-col gap-4">{% include "audit/audit_report_body.html" %}</div>
 {% endblock %}
