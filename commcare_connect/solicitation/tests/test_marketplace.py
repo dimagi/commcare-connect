@@ -376,3 +376,60 @@ def test_private_attachment_is_only_for_members_of_invited_organizations(
     response = client.get(attachment_url(attachment))
 
     assert response.status_code == status_code
+
+
+NOT_OPEN = [
+    pytest.param({"status": Solicitation.Status.DRAFT}, id="draft"),
+    pytest.param({"status": Solicitation.Status.CLOSED}, id="closed"),
+    pytest.param({"status": Solicitation.Status.CANCELLED}, id="cancelled"),
+    # Before the hourly sweep moves it to closed.
+    pytest.param({"status": Solicitation.Status.ACTIVE, "deadline_passed": True}, id="past its deadline"),
+]
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("fields", NOT_OPEN)
+def test_detail_of_a_solicitation_that_is_not_open_is_not_found(client, fields):
+    solicitation = SolicitationFactory(public=True, **fields)
+
+    assert client.get(detail_url(solicitation)).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
+@pytest.mark.parametrize("fields", NOT_OPEN)
+def test_attachment_of_a_solicitation_that_is_not_open_is_not_found(client, fields):
+    attachment = attachment_for(SolicitationFactory(public=True, **fields))
+
+    assert client.get(attachment_url(attachment)).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_attachment_under_another_solicitation_is_not_found(client):
+    attachment = attachment_for(private())
+    url = reverse("marketplace:attachment", args=[listed().solicitation_id, attachment.pk])
+
+    assert client.get(url).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_private_attachment_is_not_found_logged_out(client):
+    attachment = attachment_for(private())
+    SolicitationInvitationFactory(solicitation=attachment.solicitation)
+
+    assert client.get(attachment_url(attachment)).status_code == 404
+
+
+def test_detail_and_attachment_are_not_found_with_the_switch_off(client):
+    attachment = attachment_for(listed())
+
+    with override_switch(SOLICITATIONS, active=False):
+        assert client.get(detail_url(attachment.solicitation)).status_code == 404
+        assert client.get(attachment_url(attachment)).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_attachment_missing_from_storage_is_not_found(client):
+    attachment = attachment_for(listed())
+    attachment.file.storage.delete(attachment.file.name)
+
+    assert client.get(attachment_url(attachment)).status_code == 404
