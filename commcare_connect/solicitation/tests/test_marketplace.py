@@ -329,6 +329,14 @@ def test_private_detail_is_found_by_members_of_the_posting_organization(client, 
 
 
 @pytest.mark.usefixtures("solicitations_on")
+def test_private_detail_is_not_found_logged_out(client):
+    solicitation = private()
+    SolicitationInvitationFactory(solicitation=solicitation)
+
+    assert client.get(detail_url(solicitation)).status_code == 404
+
+
+@pytest.mark.usefixtures("solicitations_on")
 def test_cards_link_to_the_detail(client):
     solicitation = listed()
 
@@ -382,47 +390,19 @@ def test_private_attachment_is_only_for_members_of_invited_organizations(
     assert response.status_code == status_code
 
 
-FINISHED = [
+NOT_OPEN = [
+    pytest.param({"status": Solicitation.Status.DRAFT}, id="draft"),
     pytest.param({"status": Solicitation.Status.CLOSED}, id="closed"),
     pytest.param({"status": Solicitation.Status.CANCELLED}, id="cancelled"),
     # Before the hourly sweep moves it to closed.
     pytest.param({"status": Solicitation.Status.ACTIVE, "deadline_passed": True}, id="past its deadline"),
 ]
-NOT_OPEN = [pytest.param({"status": Solicitation.Status.DRAFT}, id="draft"), *FINISHED]
 
 
 @pytest.mark.usefixtures("solicitations_on")
-@pytest.mark.parametrize("fields", FINISHED)
-def test_detail_of_a_finished_solicitation_says_it_is_closed(client, fields):
+@pytest.mark.parametrize("fields", NOT_OPEN)
+def test_detail_of_a_solicitation_that_is_not_open_is_not_found(client, fields):
     solicitation = SolicitationFactory(public=True, **fields)
-    attachment = attachment_for(solicitation)
-
-    response = client.get(detail_url(solicitation))
-
-    content = response.content.decode()
-    assert response.status_code == 200
-    assert "no longer accepting applications" in content
-    assert attachment_url(attachment) not in content
-
-
-@pytest.mark.usefixtures("solicitations_on")
-def test_open_detail_does_not_say_it_is_closed(client):
-    assert "no longer accepting applications" not in client.get(detail_url(listed())).content.decode()
-
-
-@pytest.mark.usefixtures("solicitations_on")
-@pytest.mark.parametrize(
-    "fields",
-    [
-        pytest.param({"public": True, "status": Solicitation.Status.DRAFT}, id="public draft"),
-        pytest.param({"public": False, "status": Solicitation.Status.ACTIVE}, id="private"),
-        # A finished private solicitation is still only for the organizations it invited.
-        *(pytest.param({"public": False, **case.values[0]}, id=f"private {case.id}") for case in FINISHED),
-    ],
-)
-def test_detail_is_not_found_logged_out(client, fields):
-    solicitation = SolicitationFactory(**fields)
-    SolicitationInvitationFactory(solicitation=solicitation)
 
     assert client.get(detail_url(solicitation)).status_code == 404
 
