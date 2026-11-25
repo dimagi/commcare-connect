@@ -225,7 +225,7 @@ class TestSolicitationSteps:
         response = pm_client.get(step_url(step, draft))
 
         assert response.context["path"] == [
-            {"title": "Solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
+            {"title": "My solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
             {"title": draft.title},
         ]
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))

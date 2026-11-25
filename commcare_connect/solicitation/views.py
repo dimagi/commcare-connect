@@ -93,7 +93,7 @@ class SolicitationStepMixin(WaffleSwitchMixin):
 
     def get_context_data(self, **kwargs):
         kwargs["path"] = [
-            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
             {"title": self.object.title if self.object.pk else _("New solicitation")},
         ]
         if self.previous_step:
@@ -243,7 +243,7 @@ class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
     def get_context_data(self, **kwargs):
         org_slug = self.request.org.slug
         path = [
-            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
             {
                 "title": self.solicitation.title,
                 "url": reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id]),
