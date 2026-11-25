@@ -1,4 +1,4 @@
-{% load static i18n waffle_tags organization_extras %}
+{% load static i18n waffle_tags organization_extras sidenav %}
 <div x-cloak
      class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
      :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -48,40 +48,27 @@
         </div>
       {% endif %}
       {% switch "solicitations" %}
-        {% with namespaces=request.resolver_match.namespaces %}
-          <div {% if not request.org %}class="mt-5"{% endif %} x-data="{ open:
-            {% if 'solicitation' in namespaces or 'marketplace' in namespaces %}
-              true
-            {% else %}
-              false
+        <div {% if not request.org %}class="mt-5"{% endif %}
+             x-data="{ open: {% sidenav_group_open 'solicitation' 'marketplace' %} }">
+          {% translate "Solicitations" as solicitations_name %}
+          {% include "components/sidenav-group-header.html" with name=solicitations_name icon="file-signature" %}
+          <div x-show="open || !sidebarOpen"
+               :class="sidebarOpen && 'ml-3 border-l border-white/30'">
+            {% if request.org and request.org_access_level.has_view and request.user|is_pm_org_admin:request.org %}
+              {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
+              {% translate "My solicitations" as my_solicitations_name %}
+              {% include "components/sidenav-items.html" with name=my_solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
             {% endif %}
-            }">
-            {% translate "Solicitations" as solicitations_name %}
-            {% include "components/sidenav-group-header.html" with name=solicitations_name icon="file-signature" %}
-            <div x-show="open || !sidebarOpen"
-                 :class="sidebarOpen && 'ml-3 border-l border-white/30'">
-              {% if request.org and request.org_access_level.has_view and request.user|is_pm_org_admin:request.org %}
-                {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
-                {% translate "My solicitations" as my_solicitations_name %}
-                {% include "components/sidenav-items.html" with name=my_solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
-              {% endif %}
-              {% url 'marketplace:list' as marketplace_url %}
-              {% translate "Marketplace" as marketplace_name %}
-              {% include "components/sidenav-items.html" with name=marketplace_name icon="store" target=marketplace_url namespace="marketplace" %}
-            </div>
+            {% url 'marketplace:list' as marketplace_url %}
+            {% translate "Marketplace" as marketplace_name %}
+            {% include "components/sidenav-items.html" with name=marketplace_name icon="store" target=marketplace_url namespace="marketplace" %}
           </div>
-        {% endwith %}
+        </div>
       {% endswitch %}
       {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}
         {% url 'organization_directory:list' as organization_directory_url %}
-        <div x-data="{ open:
-          {% if 'users' in request.resolver_match.namespaces or 'organization_directory' in request.resolver_match.namespaces %}
-            true
-          {% else %}
-            false
-          {% endif %}
-          }">
+        <div x-data="{ open: {% sidenav_group_open 'users' 'organization_directory' %} }">
           {% translate "Admin" as admin_name %}
           {% include "components/sidenav-group-header.html" with name=admin_name icon="user-shield" %}
           {# The collapsed sidebar has no group header, so its items always show there. #}
