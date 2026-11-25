@@ -26,8 +26,6 @@
   {% csrf_token %}
   {% crispy form %}
   <div class="flex items-center justify-end gap-3 pt-4">
-    {% block footer_hint %}
-    {% endblock footer_hint %}
     <button type="button"
             class="button button-md outline-style"
             @click="formOpen = false">{% translate "Cancel" %}</button>

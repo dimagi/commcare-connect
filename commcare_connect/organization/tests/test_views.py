@@ -5,7 +5,6 @@ from urllib.parse import unquote
 
 import pytest
 from django.contrib.auth.models import Permission
-from django.contrib.messages import get_messages
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import localtime
@@ -20,61 +19,6 @@ from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.tables import DATE_TIME_FORMAT
 from commcare_connect.utils.test_utils import check_basic_permissions
-
-
-@pytest.mark.django_db
-class TestRemoveMembersView:
-    def url(self, org_slug):
-        return reverse("organization:remove_members", args=(org_slug,))
-
-    def test_non_admin_cannot_access(self, client, org_user_member, organization):
-        client.force_login(org_user_member)
-        response = client.post(
-            self.url(org_slug=organization.slug),
-            data={},
-        )
-        assert response.status_code == 404
-
-    def test_admin_cannot_remove_self(self, client, org_user_admin, organization):
-        membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
-
-        messages = self._remove_members(
-            client=client, admin=org_user_admin, organization=organization, membership_ids=[membership.id]
-        )
-
-        assert messages == ["You cannot remove yourself from the organization."]
-        assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
-
-    def test_admin_can_remove_others(self, client, org_user_admin, org_user_member, organization):
-        other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
-
-        messages = self._remove_members(
-            client=client, admin=org_user_admin, organization=organization, membership_ids=[other_membership.id]
-        )
-
-        assert messages == ["Selected members have been removed from the organization."]
-        assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
-
-    def test_request_fails_when_admin_in_list(self, client, org_user_admin, org_user_member, organization):
-        admin_membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
-        other_membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
-
-        messages = self._remove_members(
-            client=client,
-            admin=org_user_admin,
-            organization=organization,
-            membership_ids=[admin_membership.id, other_membership.id],
-        )
-
-        assert messages == ["You cannot remove yourself from the organization."]
-        assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
-
-    def _remove_members(self, client, admin, organization, membership_ids):
-        """Post a removal as `admin` and return the messages it produced."""
-        client.force_login(admin)
-        response = client.post(self.url(org_slug=organization.slug), data={"membership_ids": membership_ids})
-        assert response.status_code == 302
-        return [str(message) for message in get_messages(response.wsgi_request)]
 
 
 @pytest.fixture

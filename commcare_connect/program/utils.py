@@ -69,6 +69,11 @@ def org_access_for_program(org, program) -> AccessLevel:
     return AccessLevel.NONE
 
 
+def programs_administered_by(org_ids):
+    """The programs these orgs administer: those they own or fund, the orgs `org_access_for_program` makes ADMIN."""
+    return Program.objects.filter(Q(organization__in=org_ids) | Q(funder__in=org_ids))
+
+
 def programs_accessible_to_org(org):
     if not org:
         return Program.objects.none()
@@ -79,11 +84,8 @@ def programs_accessible_to_org(org):
 def programs_accessible_to_orgs(orgs: Iterable[Organization]) -> QuerySet[Program]:
     """Programs that any of `orgs` runs, funds or watches. `org_access_for_program` says which of them."""
     org_ids = [org.id for org in orgs]
-    return Program.objects.filter(
-        Q(organization__in=org_ids)
-        | Q(funder__in=org_ids)
-        | Q(id__in=Program.objects.filter(watchers__in=org_ids).values("id"))
-    )
+    watched = Program.objects.filter(id__in=Program.objects.filter(watchers__in=org_ids).values("id"))
+    return programs_administered_by(org_ids) | watched
 
 
 def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:

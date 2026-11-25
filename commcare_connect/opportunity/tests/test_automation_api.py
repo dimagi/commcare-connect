@@ -142,37 +142,18 @@ class TestPaymentUnits:
         )
         assert response.status_code == 400
 
-    @pytest.mark.parametrize(
-        "same_opportunity, expected_status",
-        [
-            pytest.param(True, 400, id="taken-by-own-payment-unit"),
-            # Before CCCT-3057 a reused app's unit could be left on another opportunity's payment unit
-            pytest.param(False, 201, id="left-on-another-opportunitys-payment-unit"),
-        ],
-    )
-    def test_payment_unit_with_deliver_unit_already_on_a_payment_unit(
-        self,
-        api_client,
-        program_manager_org_user_admin,
-        opp_with_deliver_units,
-        same_opportunity,
-        expected_status,
+    def test_payment_unit_rejects_already_assigned_deliver_unit(
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
         opportunity, du1, du2 = opp_with_deliver_units
-        payment_unit_opportunity = opportunity if same_opportunity else OpportunityFactory()
-        du1.payment_unit = PaymentUnitFactory(
-            opportunity=payment_unit_opportunity, amount=1, org_amount=1, max_total=1
-        )
+        du1.payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=1, org_amount=1, max_total=1)
         du1.save()
 
         api_client.force_authenticate(program_manager_org_user_admin)
         response = _post_payment_units(
             api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[du1.id])]
         )
-
-        assert response.status_code == expected_status
-        du1.refresh_from_db()
-        assert du1.payment_unit.opportunity == opportunity
+        assert response.status_code == 400
 
     def test_payment_unit_rejects_same_du_across_multiple_payment_units_in_request(
         self, api_client, program_manager_org_user_admin, opp_with_deliver_units

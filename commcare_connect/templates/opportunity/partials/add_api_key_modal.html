@@ -1,0 +1,28 @@
+{% load crispy_forms_tags i18n %}
+{# Needs `showAddApiKeyModal` in an enclosing x-data. A saved key fires reload_api_keys, which reloads the key select. #}
+{# A form built with a fixed hq_server passes it on, so the re-rendered form stays pinned to that server. #}
+<div x-cloak
+     x-show="showAddApiKeyModal"
+     x-transition.opacity
+     class="modal-backdrop"
+     @keydown.escape.window="showAddApiKeyModal = false">
+  <div @click.away="showAddApiKeyModal = false"
+       x-transition
+       class="modal"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="add-api-key-modal-title">
+    <div class="header flex justify-between items-center mb-2">
+      <h2 id="add-api-key-modal-title" class="title">{% translate "Create API Key" %}</h2>
+      <button @click="showAddApiKeyModal = false"
+              class="button-icon"
+              aria-label="{% translate 'Close' %}">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}{% if api_key_form.fixed_hq_server %}?hq_server={{ api_key_form.fixed_hq_server.pk }}{% endif %}"
+          @reload_api_keys="showAddApiKeyModal = false">
+      {% crispy api_key_form %}
+    </form>
+  </div>
+</div>
