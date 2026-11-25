@@ -1,5 +1,10 @@
 {% extends "organization/directory/listing_base.html" %}
-{% load i18n %}
+{% load i18n static %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% static 'bundles/js/organization_profile-bundle.js' %}" defer></script>
+{% endblock javascript %}
 {% block title %}
   {% translate "Organizations" %}
 {% endblock title %}
@@ -22,6 +27,7 @@
   <div class="min-w-48">{{ filter.form.countries }}</div>
   <div class="min-w-48">{{ filter.form.primary_sectors }}</div>
   <div class="min-w-48">{{ filter.form.status }}</div>
+  {% include "organization/directory/toggle_filter.html" with field=filter.form.test %}
 {% endblock filters %}
 {% block result_count %}
   {% blocktranslate count counter=result_count %}{{ counter }} organization{% plural %}{{ counter }} organizations{% endblocktranslate %}

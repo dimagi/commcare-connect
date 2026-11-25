@@ -1,7 +1,6 @@
 from datetime import date
 
 import django_filters
-from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
 from django.utils.html import format_html
@@ -17,7 +16,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.program.utils import opportunities_accessible_to_org, programs_accessible_to_org
 from commcare_connect.users.models import User
 from commcare_connect.utils.datetime import DateRanges
-from commcare_connect.utils.forms import PresetDateRangeField
+from commcare_connect.utils.filters import CSRFExemptForm, PresetDateRangeFilter
 
 
 class FilterMixin:
@@ -111,18 +110,6 @@ class FilterMixin:
             "filter_usage_data": self.get_filter_usage_data(),
             "filters_submitted_param": self.filters_submitted_param,
         }
-
-
-class PresetDateRangeFilter(django_filters.RangeFilter):
-    field_class = PresetDateRangeField
-
-
-class CSRFExemptForm(forms.Form):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.disable_csrf = True
-        self.helper.form_tag = False
 
 
 class YesNoFilter(django_filters.BooleanFilter):

@@ -3,6 +3,8 @@ countries, delivery types and deadlines), private with an invited organization, 
 live that the marketplace doesn't show yet, one past its deadline that the hourly task hasn't closed yet, and one it
 has closed."""
 
+from django.urls import reverse
+
 from commcare_connect.simulation.steps import SolicitationSpec
 from commcare_connect.simulation.steps.solicitations import require_solicitations_switch
 from commcare_connect.solicitation.models import Solicitation
@@ -89,3 +91,4 @@ def build(sim, *, small):
             SolicitationSpec(title="Scheduled: CHW refresher training", deadline=open_deadline),
             go_live=go_live,
         )
+    sim.link("Solicitations Marketplace", reverse("marketplace:list"))

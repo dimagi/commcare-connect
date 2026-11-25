@@ -37,6 +37,10 @@ class SolicitationQuerySet(models.QuerySet):
         """Organizations can be invited from when a solicitation is scheduled or published until its deadline."""
         return self.open() | self.scheduled()
 
+    def public(self):
+        """Public and still open for applications: what the marketplace shows to everyone."""
+        return self.open().filter(public=True)
+
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()

@@ -30,24 +30,6 @@
       {% endif %}
     </h6>
     {% include "components/partial_form.html" %}
-    <div x-cloak
-         x-show="showAddApiKeyModal"
-         x-transition.opacity
-         class="modal-backdrop">
-      <div @click.away="showAddApiKeyModal = false" x-transition class="modal">
-        <div class="header flex justify-between items-center mb-2">
-          <h2 class="title">Create API Key</h2>
-          <button @click="showAddApiKeyModal = false"
-                  class="button-icon"
-                  aria-label="Close">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-        <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}"
-              @htmx:after-request="showAddApiKeyModal = !$event.detail.successful; $dispatch('reload_api_keys')">
-          {% crispy api_key_form %}
-        </form>
-      </div>
-    </div>
+    {% include "opportunity/partials/add_api_key_modal.html" %}
   </div>
 {% endblock content %}
