@@ -71,19 +71,28 @@ def is_a_uuid(value):
         return False
 
 
-def process_xform(xform: XForm, hq_server: HQServer):
-    """Process a form received from CommCare HQ."""
+def process_xform(xform: XForm, hq_server: HQServer) -> str | None:
+    """Process a form received from CommCare HQ.
+
+    Returns the type of app the form was processed for ("deliver" or "learn"), or None if no active
+    opportunity uses the app.
+    """
     user = get_user(xform)
+    app_type = None
 
     opportunity = get_opportunity(xform.domain, hq_server, deliver_app_id=xform.app_id)
     if opportunity:
         app = opportunity.deliver_app
         process_deliver_form(user, xform, app, opportunity)
+        app_type = "deliver"
 
     opportunity = get_opportunity(xform.domain, hq_server, learn_app_id=xform.app_id)
     if opportunity:
         app = opportunity.learn_app
         process_learn_form(user, xform, app, opportunity)
+        app_type = "learn"
+
+    return app_type
 
 
 def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -453,7 +462,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     6. Updates or creates the associated CompletedWork record
     7. Triggers incremental payment recalculation
     """
-    deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
+    deliver_unit = get_or_create_deliver_unit(opportunity, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
@@ -637,13 +646,9 @@ def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> b
     ).exists()
 
 
-def get_or_create_deliver_unit(app, unit_data):
-    unit, _ = DeliverUnit.objects.get_or_create(
-        app=app,
-        slug=unit_data["@id"],
-        defaults={
-            "name": unit_data["name"],
-        },
+def get_or_create_deliver_unit(opportunity, unit_data):
+    unit, _ = DeliverUnit.objects.get_or_create_for_opportunity(
+        opportunity, unit_data["@id"], defaults={"name": unit_data["name"]}
     )
     return unit
 

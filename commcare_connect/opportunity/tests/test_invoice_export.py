@@ -22,9 +22,11 @@ from commcare_connect.opportunity.utils.invoice_export import (
     build_invoice_pdf_zip,
     build_invoice_summary_dataset,
     get_exportable_invoices,
+    get_invoice_pdf_context,
     invoice_pdf_filename,
     render_invoice_pdf,
 )
+from commcare_connect.users.tests.factories import ContactFactory
 from commcare_connect.utils.celery import export_content_type, get_export_storage
 
 
@@ -49,6 +51,38 @@ class TestGetExportableInvoices:
         )
         PaymentInvoiceFactory(service_delivery=True, start_date=date(2026, 6, 1), end_date=date(2026, 6, 30))
         assert list(get_exportable_invoices(opportunity, date(2026, 6, 1))) == [in_month]
+
+
+@pytest.mark.django_db
+class TestInvoicePdfMainContact:
+    def test_is_the_organizations_main_contact(self, opportunity):
+        ContactFactory(organization=opportunity.organization)
+        main = ContactFactory(organization=opportunity.organization, is_main_poc=True)
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        assert get_invoice_pdf_context(invoice)["main_contact"] == main
+
+    @pytest.mark.parametrize(
+        "contact_options",
+        [
+            None,
+            {"is_main_poc": False},
+            {"is_main_poc": True, "is_archived": True},
+        ],
+        ids=["no contacts", "no main contact", "main contact archived"],
+    )
+    def test_is_none_without_a_current_main_contact(self, opportunity, contact_options):
+        if contact_options is not None:
+            ContactFactory(organization=opportunity.organization, **contact_options)
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        assert get_invoice_pdf_context(invoice)["main_contact"] is None
+
+    def test_another_organizations_main_contact_is_not_used(self, opportunity):
+        ContactFactory(is_main_poc=True)
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        assert get_invoice_pdf_context(invoice)["main_contact"] is None
 
 
 @pytest.mark.django_db

@@ -22,7 +22,7 @@ from commcare_connect.microplanning.coverage_progress import (
 from commcare_connect.microplanning.filters import CoverageProgressFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.opportunity.models import VisitValidationStatus
+from commcare_connect.opportunity.models import DeliverUnit, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     DeliverUnitFactory,
     OpportunityAccessFactory,
@@ -252,7 +252,9 @@ def _assigned_work_area(opportunity, status=WorkAreaStatus.NOT_VISITED):
 
 
 def _deliver_unit(opportunity, slug):
-    return DeliverUnitFactory(app=opportunity.deliver_app, slug=slug)
+    """The opportunity's deliver unit for ``slug``; an opportunity has at most one per slug."""
+    existing = DeliverUnit.objects.for_opportunity(opportunity).filter(slug=slug).first()
+    return existing or DeliverUnitFactory(app=opportunity.deliver_app, slug=slug)
 
 
 def test_in_scope_work_areas_drops_excluded_and_unassigned(opportunity):

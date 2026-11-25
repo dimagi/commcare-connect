@@ -12,7 +12,7 @@ def backfill_minutes(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('opportunity', '0154_remove_opportunity_managed'),
+        ('opportunity', '0158_deliverunit_opportunity_required'),
     ]
 
     operations = [

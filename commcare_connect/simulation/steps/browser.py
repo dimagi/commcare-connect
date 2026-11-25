@@ -15,6 +15,9 @@ ERROR_PATTERNS = (
     # crispy-tailwind renders each field error as its own paragraph.
     re.compile(r'<p id="error_\d+_id_[^"]*"[^>]*>(.*?)</p>', re.S),
     re.compile(r'<p[^>]*class="[^"]*\berror\b[^"]*"[^>]*>(.*?)</p>', re.S),
+    # Pages that refuse a whole submit rather than a field, such as a solicitation's publish page. Some info
+    # banners use the role too; their text only adds noise to a refused step's error.
+    re.compile(r'<div[^>]*role="alert"[^>]*>(.*?)</div>', re.S),
 )
 
 

@@ -15,10 +15,10 @@
 {% endblock javascript %}
 {% block content %}
   <div class="container">
-    <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">{% translate "Toggles & Switches" %}</h2>
+    <h2 class="title mb-6">{% translate "Toggles & Switches" %}</h2>
     <!-- Switches Section -->
     <section class="mb-8">
-      <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Switches" %}</h3>
+      <h3 class="title-sm mb-3">{% translate "Switches" %}</h3>
       {% if switches %}
         <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {% for switch in switches %}
@@ -29,26 +29,23 @@
               </div>
               <form method="post" action="{% url 'flags:toggle_switch' switch.name %}">
                 {% csrf_token %}
-                <button type="submit"
-                        class="button button-md {% if switch.active %}primary-dark{% else %}outline-style{% endif %} !inline-flex items-center gap-2 whitespace-nowrap">
-                  <i class="fa-solid {% if switch.active %}fa-toggle-on{% else %}fa-toggle-off{% endif %}"></i>
-                  {% if switch.active %}
-                    {% translate "On" %}
-                  {% else %}
-                    {% translate "Off" %}
-                  {% endif %}
-                </button>
+                {# The view flips the switch on any POST, so the checkbox only needs to submit the form. #}
+                <input type="checkbox"
+                       class="simple-toggle"
+                       aria-label="{{ switch.name }}"
+                       {% if switch.active %}checked{% endif %}
+                       @change="$el.form.requestSubmit()">
               </form>
             </div>
           {% endfor %}
         </div>
       {% else %}
-        <p class="text-gray-500">{% translate "No switches found." %}</p>
+        <p class="hint">{% translate "No switches found." %}</p>
       {% endif %}
     </section>
     <!-- Feature Flags Section -->
     <section>
-      <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Toggles" %}</h3>
+      <h3 class="title-sm mb-3">{% translate "Toggles" %}</h3>
       {% if flag_forms %}
         <div class="flex flex-col gap-4">
           {% for flag, form in flag_forms %}
@@ -62,7 +59,7 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="text-gray-500">{% translate "No feature flags found." %}</p>
+        <p class="hint">{% translate "No feature flags found." %}</p>
       {% endif %}
     </section>
   </div>
