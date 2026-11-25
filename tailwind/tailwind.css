@@ -153,8 +153,9 @@
 }
 
 /* Facts in a hero-facts dl are tiles: each dt is a tile's top half and its dd the bottom half. */
-.hero-facts {
-  @apply empty:hidden;
+/* :empty never matches a template-rendered dl (it holds whitespace), so hide it when it has no facts. */
+.hero-facts:not(:has(dt)) {
+  @apply hidden;
 }
 
 .hero-facts dt {
