@@ -3,7 +3,7 @@ from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
-from django.contrib.auth.models import AnonymousUser, Permission
+from django.contrib.auth.models import AnonymousUser
 from django.template.loader import render_to_string
 from django.urls import reverse
 
@@ -13,19 +13,12 @@ from commcare_connect.organization.forms import ContactForm, ContactPocChangeFor
 from commcare_connect.organization.models import Contact, Organization, OrganizationStatus, PrimarySector
 from commcare_connect.organization.tables import ContactDirectoryTable, OrganizationDirectoryTable
 from commcare_connect.organization.tasks import export_contacts
-from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory, UserFactory
+from commcare_connect.users.tests.factories import ContactFactory, OrganizationFactory
 from commcare_connect.utils.celery import get_export_storage
 
 
 def _filtered_organizations(params):
     return set(OrganizationFilterSet(params, queryset=Organization.objects.all()).qs)
-
-
-@pytest.fixture
-def user_with_directory_access(db):
-    user = UserFactory()
-    user.user_permissions.add(Permission.objects.get(codename="llo_directory_management_access"))
-    return user
 
 
 @pytest.fixture

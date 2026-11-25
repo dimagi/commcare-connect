@@ -22,7 +22,7 @@ class SolicitationFactory(DjangoModelFactory):
     currency = LazyFunction(_get_default_currency)
     application_deadline = LazyFunction(lambda: now() + timedelta(days=30))
     contact_email = Faker("email")
-    organization = SubFactory(OrganizationFactory)
+    organization = SubFactory(OrganizationFactory, program_manager=True)
 
     class Params:
         # Past its deadline; with status=ACTIVE, not yet closed by update_solicitation_statuses.

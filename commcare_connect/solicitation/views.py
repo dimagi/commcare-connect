@@ -5,7 +5,7 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -16,14 +16,16 @@ from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.organization.decorators import org_pm_required
-from commcare_connect.solicitation.filters import MarketplaceFilterSet
+from commcare_connect.organization.decorators import org_pm_or_llo_directory_required
+from commcare_connect.organization.views import LLODirectoryFormMixin, LLODirectoryListView
+from commcare_connect.solicitation.filters import MarketplaceFilterSet, SolicitationDirectoryFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
     SolicitationForm,
     SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
+    SolicitationOrganizationForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
@@ -33,7 +35,11 @@ from commcare_connect.solicitation.models import (
     SolicitationInvitation,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
+from commcare_connect.solicitation.tables import (
+    SolicitationDirectoryTable,
+    SolicitationInvitationTable,
+    SolicitationTable,
+)
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
 
@@ -47,7 +53,7 @@ STEP_LABELS = {
 }
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     waffle_switch = SOLICITATIONS
     table_class = SolicitationTable
@@ -70,7 +76,34 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
         )
 
 
-@method_decorator(org_pm_required, name="dispatch")
+class SolicitationDirectoryListView(WaffleSwitchMixin, LLODirectoryListView):
+    """Every program manager organization's solicitations, as an LLO Directory tab."""
+
+    waffle_switch = SOLICITATIONS
+    table_class = SolicitationDirectoryTable
+    filterset_class = SolicitationDirectoryFilterSet
+    template_name = "organization/directory/solicitation_list.html"
+    tab_title = _("Solicitations")
+    tab_url_name = "organization_directory:solicitations"
+
+    def get_queryset(self):
+        return Solicitation.objects.select_related("organization", "program").order_by("-date_created")
+
+
+class SolicitationDirectoryCreateView(WaffleSwitchMixin, LLODirectoryFormMixin, FormView):
+    """Asks which organization posts a new solicitation, then sends staff to that organization's solicitation form."""
+
+    waffle_switch = SOLICITATIONS
+    form_class = SolicitationOrganizationForm
+    template_name = "organization/directory/solicitation_form.html"
+    list_url_name = "organization_directory:solicitations"
+
+    def form_valid(self, form):
+        url = reverse("solicitation:create", args=[form.cleaned_data["organization"].slug])
+        return HttpResponse(headers={"HX-Redirect": url})
+
+
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class SolicitationStepMixin(WaffleSwitchMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
@@ -202,7 +235,7 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(org_pm_or_llo_directory_required, name="dispatch")
 class InvitationsMixin(WaffleSwitchMixin):
     waffle_switch = SOLICITATIONS
 

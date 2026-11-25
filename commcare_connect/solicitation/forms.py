@@ -311,6 +311,24 @@ def publish_errors(solicitation):
     return errors
 
 
+class SolicitationOrganizationForm(forms.Form):
+    """Picks the program manager organization a new solicitation is posted by."""
+
+    organization = forms.ModelChoiceField(
+        label=_("Organization"),
+        queryset=Organization.objects.filter(program_manager=True).order_by("name"),
+        empty_label=_("Select an organization"),
+        widget=SEARCHABLE_SELECT,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Organization.__str__ is its slug; staff pick organizations by name.
+        self.fields["organization"].label_from_instance = attrgetter("name")
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+
+
 class SolicitationInvitationForm(forms.Form):
     organizations = forms.ModelMultipleChoiceField(
         label=_("Organizations"),
