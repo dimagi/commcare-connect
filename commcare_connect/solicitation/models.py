@@ -44,6 +44,10 @@ class SolicitationQuerySet(models.QuerySet):
         return self.filter(Q(public=True) | Q(Exists(invited)) | Q(Exists(posted)))
 
 
+# An open solicitation with fewer days than this left before its deadline is closing soon.
+CLOSES_SOON_DAYS = 14
+
+
 class Solicitation(BaseModel):
     """The posting itself — an RFP or EOI shown on the marketplace."""
 
@@ -101,6 +105,16 @@ class Solicitation(BaseModel):
     @property
     def is_open(self):
         return self.effective_status == self.Status.ACTIVE
+
+    @property
+    def closes_soon(self):
+        """Open, with fewer than CLOSES_SOON_DAYS whole days left."""
+        return self.is_open and self.days_until_deadline < CLOSES_SOON_DAYS
+
+    @property
+    def days_until_deadline(self):
+        """Whole days left before the deadline; 0 on its last day."""
+        return (self.application_deadline - now()).days
 
     @property
     def is_editable(self):
