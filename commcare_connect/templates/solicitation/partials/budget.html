@@ -1,5 +1,4 @@
 {% load i18n humanize %}
-{# The budget range as <dt>/<dd> rows, left out when the solicitation sets neither bound. #}
 {% if solicitation.budget_min is not None or solicitation.budget_max is not None %}
   <dt class="text-gray-500">{% translate "Budget" %}</dt>
   <dd>
