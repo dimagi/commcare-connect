@@ -68,6 +68,12 @@ class TestSolicitationDirectoryFilterSet:
             (program_manager.pk, "Umoja Health Trust")
         ]
 
+    def test_only_program_manager_organizations_solicitations_are_listed(self):
+        program_manager = SolicitationFactory()
+        SolicitationFactory(organization__program_manager=False)
+
+        assert _filtered_solicitations({}) == {program_manager}
+
     def test_test_organizations_solicitations_are_listed_only_when_asked_for(self):
         real = SolicitationFactory()
         test = SolicitationFactory(organization__is_test=True)

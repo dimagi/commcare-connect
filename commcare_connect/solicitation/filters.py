@@ -40,6 +40,10 @@ class SolicitationDirectoryFilterSet(DirectoryFilterSet):
         # Organization.__str__ is its slug; staff pick organizations by name.
         self.form.fields["organization"].label_from_instance = attrgetter("name")
 
+    def filter_queryset(self, queryset):
+        # Only program manager organizations' solicitations, the ones the organization filter can pick.
+        return super().filter_queryset(queryset.filter(organization__program_manager=True))
+
     def filter_by_search_term(self, queryset, name, value):
         return queryset.filter(
             Q(title__icontains=value) | Q(organization__name__icontains=value) | Q(program__name__icontains=value)
