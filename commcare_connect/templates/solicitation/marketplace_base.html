@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{# The marketplace pages, which visitors can open without logging in. #}
+{% comment %}
+  Logged-out visitors have no sidebar links, so the sidebar is hidden rather than shown as an empty bar.
+{% endcomment %}
+{% block has_sidebar %}
+  {{ request.user.is_authenticated|yesno:"true,false" }}
+{% endblock has_sidebar %}
+{% block sidenav %}
+  {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
+{% endblock sidenav %}
