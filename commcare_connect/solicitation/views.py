@@ -301,7 +301,8 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
     paginate_by = 12  # fills whole rows of the 1, 2 and 3 column grid
 
     def get_queryset(self):
-        return _as_cards(Solicitation.objects.public())
+        # Soonest deadline first.
+        return Solicitation.objects.public().select_related(*CARD_RELATED).order_by("application_deadline", "pk")
 
     def get_context_data(self, **kwargs):
         return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
@@ -352,8 +353,3 @@ class MarketplaceAttachmentView(WaffleSwitchMixin, View):
             solicitation__solicitation_id=solicitation_id,
         )
         return stored_file_response(attachment.file, filename=attachment.filename)
-
-
-def _as_cards(solicitations):
-    """Soonest deadline first, with what each card shows."""
-    return solicitations.select_related(*CARD_RELATED).order_by("application_deadline", "pk")
