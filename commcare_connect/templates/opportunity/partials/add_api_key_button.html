@@ -1,0 +1,8 @@
+{% load i18n %}
+{# Opens the add-key modal in opportunity/partials/add_api_key_modal.html. #}
+<button class="button-icon primary-dark"
+        type="button"
+        aria-label="{% translate 'Add API key' %}"
+        @click="showAddApiKeyModal = true">
+  <i class="fa-solid fa-plus"></i>
+</button>
