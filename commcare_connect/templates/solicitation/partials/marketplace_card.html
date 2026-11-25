@@ -34,7 +34,7 @@
     {% endif %}
     <dt class="text-gray-500">{% translate "Deadline" %}</dt>
     <dd>
-      <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i" }} UTC</time>
+      <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i T" }}</time>
     </dd>
   </dl>
 </article>

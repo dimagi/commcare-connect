@@ -21,7 +21,6 @@
       <p class="hint">{% translate "Requests for proposals and expressions of interest open to applications." %}</p>
     </div>
     <form method="get" class="card_bg flex flex-col gap-3">
-      {% for error in filter.form.non_field_errors %}<p class="text-sm text-red-600">{{ error }}</p>{% endfor %}
       <div class="flex flex-wrap items-start gap-3">
         {% for field in filter.form %}
           <div class="min-w-48">

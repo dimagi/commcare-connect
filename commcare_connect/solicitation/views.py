@@ -308,6 +308,4 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
         """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
         rather than the query string: a custom range with no dates, say, narrows nothing."""
         form = self.filterset.form
-        if not form.is_bound:  # no query string at all
-            return False
-        return not form.is_valid() or any(form.cleaned_data.values())
+        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
