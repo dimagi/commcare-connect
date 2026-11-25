@@ -1,6 +1,5 @@
 import datetime
 import logging
-from functools import partial
 from uuid import UUID
 
 import pghistory
@@ -40,6 +39,8 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
+    OverLimitReasonChoices,
+    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -69,19 +70,28 @@ def is_a_uuid(value):
         return False
 
 
-def process_xform(xform: XForm, hq_server: HQServer):
-    """Process a form received from CommCare HQ."""
+def process_xform(xform: XForm, hq_server: HQServer) -> str | None:
+    """Process a form received from CommCare HQ.
+
+    Returns the type of app the form was processed for ("deliver" or "learn"), or None if no active
+    opportunity uses the app.
+    """
     user = get_user(xform)
+    app_type = None
 
     opportunity = get_opportunity(xform.domain, hq_server, deliver_app_id=xform.app_id)
     if opportunity:
         app = opportunity.deliver_app
         process_deliver_form(user, xform, app, opportunity)
+        app_type = "deliver"
 
     opportunity = get_opportunity(xform.domain, hq_server, learn_app_id=xform.app_id)
     if opportunity:
         app = opportunity.learn_app
         process_learn_form(user, xform, app, opportunity)
+        app_type = "learn"
+
+    return app_type
 
 
 def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -157,9 +167,6 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
         except OpportunityAccess.DoesNotExist:
             raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
-        save_access = False
-
-        updated_tasks = False
 
         for task_data in blocks:
             task_slug = task_data.get("@id")
@@ -181,31 +188,13 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             except AssignedTask.DoesNotExist:
                 continue
 
-            assigned_task.xform_id = xform.id
-            assigned_task.completed_at = xform.metadata.timeEnd
-            assigned_task.duration = xform.metadata.duration
-            assigned_task.app_build_id = xform.build_id
-            assigned_task.app_build_version = xform.metadata.app_build_version
-            assigned_task.status = AssignedTaskStatus.COMPLETED
-
-            assigned_task.save(
-                update_fields=[
-                    "xform_id",
-                    "completed_at",
-                    "duration",
-                    "app_build_id",
-                    "app_build_version",
-                    "status",
-                    "date_modified",
-                ]
+            assigned_task.mark_completed(
+                completed_at=xform.metadata.timeEnd,
+                xform_id=xform.id,
+                duration=xform.metadata.duration,
+                app_build_id=xform.build_id,
+                app_build_version=xform.metadata.app_build_version,
             )
-            updated_tasks = True
-            if not access.last_active or access.last_active < assigned_task.completed_at:
-                access.last_active = assigned_task.completed_at
-                save_access = True
-
-        if updated_tasks and save_access:
-            access.save(update_fields=["last_active"])
 
 
 def update_completed_learn_date(access, save_access=False):
@@ -259,7 +248,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         if not created:
             raise ProcessingError("Learn Assessment is already completed")
 
-        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
+        notify_user_for_scored_assessment.delay_on_commit(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -346,17 +335,17 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
         if not photo_attachments:
             raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
-        transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
+        download_inaccessibility_request_attachments.delay_on_commit(xform.id, photo_attachments)
 
         work_area.status = new_status
         with pghistory.context(username=user.username, user_email=user.email):
             work_area.save(update_fields=["status"])
 
 
-def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+def clean_form_submission(user_visit: UserVisit, xform: XForm) -> list[list[str]]:
     """Validate a form submission against the opportunity's verification flags.
 
-    Checks GPS presence, location proximity, catchment areas, submission time window,
+    Checks GPS presence, location proximity, submission time window,
     duplicate entities, attachments, form duration, and custom JSON validation rules.
     Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
     side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
@@ -385,19 +374,6 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
             if dist.m <= opportunity_flags.location:
                 flags.append(["location", f"Visit location is {dist.m}m from another visit"])
                 break
-    if opportunity_flags.catchment_areas:
-        areas = access.catchmentarea_set.filter(active=True)
-        if areas:
-            within_catchment = False
-            if xform.metadata.location is not None:
-                cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
-                for area in areas:
-                    dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
-                    if dist.meters < area.radius:
-                        within_catchment = True
-                        break
-            if not within_catchment:
-                flags.append(["catchment", "Visit outside worker catchment areas"])
     if (
         opportunity_flags.form_submission_start
         and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()
@@ -424,19 +400,41 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
         ):
             flags.append(["duration", "The form was completed too quickly."])
 
+    flags.extend(_get_form_json_rule_flags(user_visit))
+    return flags
+
+
+def _get_form_json_rule_flags(user_visit: UserVisit) -> list[list[str]]:
+    """Check the visit's form JSON against the deliver unit's custom validation rules."""
     form_json_rules = FormJsonValidationRules.objects.filter(
         opportunity=user_visit.opportunity, deliver_unit=user_visit.deliver_unit
     )
+    flags = []
     for form_json_rule in form_json_rules:
-        json_path = parse(f"$.{form_json_rule.question_path}")
-        matches = [
-            match.value
-            for match in json_path.find(user_visit.form_json)
-            if match.value == form_json_rule.question_value
-        ]
-        if not matches:
-            flags.append(["form_value_not_found", f"Form does not satisfy {form_json_rule.name} validation rule."])
+        flag = _check_form_json_rule(form_json_rule, user_visit.form_json)
+        if flag is not None:
+            flags.append(flag)
     return flags
+
+
+def _check_form_json_rule(form_json_rule: FormJsonValidationRules, form_json: dict) -> list[str] | None:
+    """Return a [flag_code, reason] pair if the form JSON fails the rule, otherwise None."""
+    try:
+        json_path = form_json_rule.get_json_path()
+    except JSONPathError:
+        logger.exception(
+            "Invalid question_path %r on form JSON validation rule %s (opportunity %s)",
+            form_json_rule.question_path,
+            form_json_rule.pk,
+            form_json_rule.opportunity_id,
+        )
+        return [
+            "form_json_rule_invalid",
+            f"Validation rule {form_json_rule.name} has an invalid question path and could not be checked.",
+        ]
+    if any(match.value == form_json_rule.question_value for match in json_path.find(form_json)):
+        return None
+    return ["form_value_not_found", f"Form does not satisfy {form_json_rule.name} validation rule."]
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
@@ -452,7 +450,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     6. Updates or creates the associated CompletedWork record
     7. Triggers incremental payment recalculation
     """
-    deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
+    deliver_unit = get_or_create_deliver_unit(opportunity, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
@@ -464,7 +462,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    claim = OpportunityClaim.objects.get(opportunity_access=access)
+    try:
+        claim = OpportunityClaim.objects.get(opportunity_access=access)
+    except OpportunityClaim.DoesNotExist:
+        raise ProcessingError(f"User has not claimed opportunity {opportunity.name}")
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
@@ -474,9 +475,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         # daily/total counts before either commits and both pass the limit check,
         # letting visits slip past the daily limit. The lock also serializes the
         # duplicate-entity check below.
-        claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
-            opportunity_claim=claim, payment_unit=payment_unit
-        )
+        try:
+            claim_limit = OpportunityClaimLimit.objects.select_for_update().get(
+                opportunity_claim=claim, payment_unit=payment_unit
+            )
+        except OpportunityClaimLimit.DoesNotExist:
+            raise ProcessingError(
+                f"User has no claim limit for payment unit {payment_unit.name} in opportunity {opportunity.name}"
+            )
         counts = (
             UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
             .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
@@ -502,6 +508,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         )
         completed_work_needs_save = False
         today = datetime.date.today()
+        over_limit_reasons = []
         paymentunit_startdate = payment_unit.start_date if payment_unit else None
         if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
             completed_work = None
@@ -514,19 +521,18 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 defaults={"entity_name": entity_name},
             )
             user_visit.completed_work = completed_work
-            if (
-                counts["daily"] >= payment_unit.max_daily
-                or counts["total"] >= claim_limit.max_visits
-                or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
-            ):
+            is_over_limit, over_limit_reasons = check_visit_over_limit(today, claim, claim_limit, payment_unit, counts)
+            if is_over_limit:
                 user_visit.status = VisitValidationStatus.over_limit
-                if not completed_work.status == CompletedWorkStatus.over_limit:
+                # Work already approved keeps its status: the over-limit visit is not paid anyway, and
+                # flipping the work would move its approval date, which invoicing bills and prices by.
+                if completed_work.status not in (CompletedWorkStatus.over_limit, CompletedWorkStatus.approved):
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        flags = clean_form_submission(access, user_visit, xform)
+        flags = clean_form_submission(user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
@@ -568,6 +574,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             except WorkArea.DoesNotExist:
                 raise ProcessingError("Work area not found")
 
+        # Suspension and blocking tasks above can move the visit off over_limit, so the
+        # reasons are only recorded once the status has settled.
+        if user_visit.status == VisitValidationStatus.over_limit:
+            user_visit.over_limit_reasons = over_limit_reasons
+
         user_visit.save()
 
         if work_area:
@@ -585,7 +596,32 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     completed_work_id = completed_work.id if completed_work is not None else None
     update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
-    transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+    download_user_visit_attachments.delay_on_commit(user_visit.id)
+
+
+def check_visit_over_limit(
+    today: datetime.date,
+    claim: OpportunityClaim,
+    claim_limit: OpportunityClaimLimit,
+    payment_unit: PaymentUnit,
+    counts: dict,
+) -> tuple[bool, list[OverLimitReasonChoices]]:
+    """Return whether this visit is over limit and every limit that barred it.
+
+    A visit can breach more than one limit at once, so all of them are collected rather
+    than just the first. They are listed widest limit first. `counts` holds the worker's
+    existing visit counts for this deliver unit, as aggregated in process_deliver_unit().
+    """
+    reasons = []
+    if today > claim.end_date:
+        reasons.append(OverLimitReasonChoices.claim_ended)
+    if claim_limit.end_date and today > claim_limit.end_date:
+        reasons.append(OverLimitReasonChoices.claim_limit_ended)
+    if counts["total"] >= claim_limit.max_visits:
+        reasons.append(OverLimitReasonChoices.max_visits)
+    if payment_unit.max_daily is not None and counts["daily"] >= payment_unit.max_daily:
+        reasons.append(OverLimitReasonChoices.max_daily)
+    return bool(reasons), reasons
 
 
 def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> bool:
@@ -598,13 +634,9 @@ def _has_blocking_pending_task(access: OpportunityAccess, app: CommCareApp) -> b
     ).exists()
 
 
-def get_or_create_deliver_unit(app, unit_data):
-    unit, _ = DeliverUnit.objects.get_or_create(
-        app=app,
-        slug=unit_data["@id"],
-        defaults={
-            "name": unit_data["name"],
-        },
+def get_or_create_deliver_unit(opportunity, unit_data):
+    unit, _ = DeliverUnit.objects.get_or_create_for_opportunity(
+        opportunity, unit_data["@id"], defaults={"name": unit_data["name"]}
     )
     return unit
 

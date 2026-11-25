@@ -11,13 +11,13 @@ from rest_framework.views import APIView
 
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.tasks import sync_learn_modules_and_deliver_units
-from commcare_connect.organization.decorators import IsProgramManagerAdmin, user_is_org_admin
+from commcare_connect.organization.decorators import IsProgramManagerOrgAdmin, user_is_org_admin
 from commcare_connect.program.api.serializers import (
-    ManagedOpportunityCreateSerializer,
-    ManagedOpportunityResponseSerializer,
     ProgramApplicationCreateSerializer,
     ProgramApplicationResponseSerializer,
     ProgramCreateSerializer,
+    ProgramOpportunityCreateSerializer,
+    ProgramOpportunityResponseSerializer,
     ProgramResponseSerializer,
 )
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProgramCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsProgramManagerAdmin]
+    permission_classes = [IsAuthenticated, IsProgramManagerOrgAdmin]
 
     def post(self, request):
         serializer = ProgramCreateSerializer(data=request.data, context={"request": request})
@@ -86,10 +86,10 @@ class ProgramApplicationAcceptView(ProgramAPIView):
         return Response(ProgramApplicationResponseSerializer(application).data)
 
 
-class ManagedOpportunityCreateView(ProgramAPIView):
+class ProgramOpportunityCreateView(ProgramAPIView):
     def post(self, request, program_id):
         program = self.get_program()
-        serializer = ManagedOpportunityCreateSerializer(
+        serializer = ProgramOpportunityCreateSerializer(
             data=request.data, context={"request": request, "program": program}
         )
         serializer.is_valid(raise_exception=True)
@@ -106,13 +106,13 @@ class ManagedOpportunityCreateView(ProgramAPIView):
             httpx.TimeoutException,
             httpx.ConnectError,
         ):
-            logger.exception("Failed to fetch app metadata from HQ while creating managed opportunity")
+            logger.exception("Failed to fetch app metadata from HQ while creating program opportunity")
             return Response(
                 {"non_field_errors": [_("Failed to fetch app metadata from CommCare HQ.")]},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
         return Response(
-            ManagedOpportunityResponseSerializer(opportunity).data,
+            ProgramOpportunityResponseSerializer(opportunity).data,
             status=status.HTTP_201_CREATED,
         )

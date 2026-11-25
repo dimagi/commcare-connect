@@ -1,0 +1,254 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inbox - {{ owner }}</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        color: #1f2937;
+        background: #f3f4f6;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .topbar {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 0 24px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 196px;
+        font-size: 20px;
+        font-weight: 600;
+        color: #374151;
+      }
+      .brand svg {
+        width: 28px;
+        height: 28px;
+      }
+      .search {
+        flex: 1;
+        max-width: 640px;
+        padding: 10px 20px;
+        border-radius: 999px;
+        background: #e5e7eb;
+        color: #6b7280;
+      }
+      .me {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-align: right;
+      }
+      .me-email {
+        font-size: 12px;
+        color: #6b7280;
+      }
+      .avatar {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #2563eb;
+        color: #fff;
+        font-weight: 600;
+      }
+      .layout {
+        display: flex;
+        height: calc(100vh - 64px);
+      }
+      .sidebar {
+        width: 244px;
+        padding: 4px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .compose {
+        align-self: flex-start;
+        margin: 0 0 14px 4px;
+        padding: 14px 24px;
+        border-radius: 16px;
+        background: #dbeafe;
+        font-weight: 600;
+      }
+      .folder {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 16px;
+        border-radius: 999px;
+        color: #374151;
+      }
+      .folder.active {
+        background: #dbeafe;
+        color: #1e3a8a;
+        font-weight: 600;
+      }
+      .pane {
+        flex: 1;
+        margin: 0 16px 16px 0;
+        background: #fff;
+        border-radius: 16px;
+        overflow: auto;
+      }
+      .list-head {
+        padding: 16px 24px;
+        border-bottom: 1px solid #e5e7eb;
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 24px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #f8fafc;
+      }
+      .row.unread {
+        background: #fff;
+      }
+      .row-text {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .row-snippet,
+      .row time {
+        color: #6b7280;
+      }
+      .row time {
+        flex-shrink: 0;
+        font-size: 12px;
+      }
+      .unread .row-subject,
+      .unread time {
+        font-weight: 700;
+        color: #111827;
+      }
+      article {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 20px 32px 0;
+      }
+      .back {
+        font-size: 13px;
+        color: #6b7280;
+      }
+      h1 {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 12px 0 20px;
+        font-size: 22px;
+        font-weight: 500;
+      }
+      .chip {
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: #e5e7eb;
+        color: #4b5563;
+        font-size: 12px;
+        font-weight: 400;
+      }
+      h1 time {
+        margin-left: auto;
+        font-size: 13px;
+        color: #6b7280;
+      }
+      .email-body {
+        flex: 1;
+        width: 100%;
+        border: 0;
+      }
+      pre {
+        white-space: pre-wrap;
+        font: inherit;
+      }
+      .empty {
+        padding: 24px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m3 7 9 6 9-6" />
+        </svg>
+        Mail
+      </div>
+      <div class="search">Search mail</div>
+      <div class="me">
+        <div>
+          <div>{{ owner_name }}</div>
+          <div class="me-email">{{ owner }}</div>
+        </div>
+        <span class="avatar">{{ owner_name|first|upper }}</span>
+      </div>
+    </header>
+    <div class="layout">
+      <nav class="sidebar">
+        <span class="compose">Compose</span>
+        <a class="folder active"
+           href="{% url 'demo_inbox' %}?to={{ owner|urlencode }}">Inbox <span>{{ inbox|length }}</span></a>
+        <span class="folder">Starred</span>
+        <span class="folder">Sent</span>
+        <span class="folder">Drafts</span>
+      </nav>
+      <main class="pane">
+        {% if opened %}
+          <article data-opened-email="{{ opened.id }}">
+            <a class="back" href="{% url 'demo_inbox' %}?to={{ owner|urlencode }}">&larr; Back to Inbox</a>
+            <h1>
+              {{ opened.subject }} <span class="chip">Inbox</span>
+              <time>{{ opened.sent_at|naturaltime }}</time>
+            </h1>
+            {# the email as sent, in a document of its own: the inbox's CSS can't reach it, nor its CSS the inbox #}
+            {% if opened.html %}
+              <iframe class="email-body" title="Email" srcdoc="{{ opened.html }}"></iframe>
+            {% else %}
+              <pre>{{ opened.text }}</pre>
+            {% endif %}
+          </article>
+        {% else %}
+          <div class="list-head">Inbox</div>
+          {% for email in inbox %}
+            <a class="row{% if forloop.first %} unread{% endif %}"
+               data-email="{{ email.id }}"
+               href="{% url 'demo_email' email.id %}?to={{ owner|urlencode }}">
+              <span class="row-text"><span class="row-subject">{{ email.subject }}</span>
+              <span class="row-snippet">- {{ email.text|truncatechars:90 }}</span></span>
+              <time>{{ email.sent_at|naturaltime }}</time>
+            </a>
+          {% empty %}
+            <p class="empty">No emails yet.</p>
+          {% endfor %}
+        {% endif %}
+      </main>
+    </div>
+  </body>
+</html>

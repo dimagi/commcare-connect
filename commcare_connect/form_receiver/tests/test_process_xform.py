@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from commcare_connect.form_receiver.processor import (
     ASSESSMENT_JSONPATH,
     _get_matching_blocks,
+    check_visit_over_limit,
     process_assessments,
     process_deliver_form,
     process_learn_form,
@@ -20,7 +21,16 @@ from commcare_connect.form_receiver.tests.xforms import (
     TaskJsonFactory,
     get_form_model,
 )
-from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, OpportunityAccess, TaskType
+from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    OpportunityAccess,
+    OpportunityClaim,
+    OpportunityClaimLimit,
+    OverLimitReasonChoices,
+    PaymentUnit,
+    TaskType,
+)
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityAccessFactory
 
 LEARN_PROCESSOR_PATCHES = [
@@ -44,38 +54,33 @@ def test_process_learn_form_no_matching_blocks():
     assert process_assessments.call_count == 0
 
 
-def test_process_learn_module():
-    learn_module = LearnModuleJsonFactory().json
-    xform = get_form_model(form_block=learn_module)
+@pytest.mark.parametrize(
+    "stub_factory, expected_learn_module_calls, expected_assessment_calls",
+    [
+        pytest.param(LearnModuleJsonFactory, 1, 0, id="learn_module"),
+        pytest.param(AssessmentStubFactory, 0, 1, id="assessment"),
+    ],
+)
+def test_process_learn_form_dispatches_block(stub_factory, expected_learn_module_calls, expected_assessment_calls):
+    xform = get_form_model(form_block=stub_factory().json)
     with patch_multiple(*LEARN_PROCESSOR_PATCHES) as [process_learn_module, process_assessment]:
         process_learn_form(None, xform, None, None)
-    assert process_learn_module.call_count == 1
-    assert process_assessment.call_count == 0
+    assert process_learn_module.call_count == expected_learn_module_calls
+    assert process_assessment.call_count == expected_assessment_calls
 
 
-def test_process_assessment():
-    assessment = AssessmentStubFactory().json
-    xform = get_form_model(form_block=assessment)
-    with patch_multiple(*LEARN_PROCESSOR_PATCHES) as [process_learn_module, process_assessment]:
-        process_learn_form(None, xform, None, None)
-    assert process_learn_module.call_count == 0
-    assert process_assessment.call_count == 1
-
-
-def test_process_deliver_form():
-    deliver_block = DeliverUnitStubFactory().json
-    xform = get_form_model(form_block=deliver_block)
+@pytest.mark.parametrize(
+    "stub_factory, expected_deliver_unit_calls",
+    [
+        pytest.param(DeliverUnitStubFactory, 1, id="deliver_unit"),
+        pytest.param(None, 0, id="no_matches"),
+    ],
+)
+def test_process_deliver_form(stub_factory, expected_deliver_unit_calls):
+    xform = get_form_model(form_block=stub_factory().json if stub_factory else None)
     with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
-    assert process_deliver_unit.call_count == 1
-    assert process_task_module.call_count == 0
-
-
-def test_process_deliver_form_no_matches():
-    xform = get_form_model()
-    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
-        process_deliver_form(None, xform, None, None)
-    assert process_deliver_unit.call_count == 0
+    assert process_deliver_unit.call_count == expected_deliver_unit_calls
     assert process_task_module.call_count == 0
 
 
@@ -257,3 +262,60 @@ def patch_multiple(*args):
     with ExitStack() as stack:
         patches = [stack.enter_context(mock.patch(arg)) for arg in args]
         yield patches
+
+
+TODAY = datetime.date(2026, 6, 15)
+FUTURE = TODAY + datetime.timedelta(days=10)
+PAST = TODAY - datetime.timedelta(days=1)
+
+
+@pytest.mark.parametrize(
+    "claim_end_date, claim_limit_end_date, max_daily, max_visits, expected_reasons",
+    [
+        (FUTURE, FUTURE, 5, 10, []),
+        (TODAY, TODAY, 5, 10, []),
+        (FUTURE, None, 5, 10, []),
+        (PAST, FUTURE, 5, 10, [OverLimitReasonChoices.claim_ended]),
+        (FUTURE, PAST, 5, 10, [OverLimitReasonChoices.claim_limit_ended]),
+        (FUTURE, FUTURE, 5, 2, [OverLimitReasonChoices.max_visits]),
+        (FUTURE, FUTURE, 1, 10, [OverLimitReasonChoices.max_daily]),
+        # Every limit that applies is recorded, widest first
+        (
+            FUTURE,
+            FUTURE,
+            1,
+            2,
+            [OverLimitReasonChoices.max_visits, OverLimitReasonChoices.max_daily],
+        ),
+        (
+            PAST,
+            PAST,
+            5,
+            10,
+            [OverLimitReasonChoices.claim_ended, OverLimitReasonChoices.claim_limit_ended],
+        ),
+        (
+            PAST,
+            PAST,
+            1,
+            2,
+            [
+                OverLimitReasonChoices.claim_ended,
+                OverLimitReasonChoices.claim_limit_ended,
+                OverLimitReasonChoices.max_visits,
+                OverLimitReasonChoices.max_daily,
+            ],
+        ),
+    ],
+)
+def test_check_visit_over_limit(claim_end_date, claim_limit_end_date, max_daily, max_visits, expected_reasons):
+    counts = {"daily": 1, "total": 2}
+    is_over_limit, reasons = check_visit_over_limit(
+        TODAY,
+        OpportunityClaim(end_date=claim_end_date),
+        OpportunityClaimLimit(end_date=claim_limit_end_date, max_visits=max_visits),
+        PaymentUnit(max_daily=max_daily),
+        counts,
+    )
+    assert is_over_limit == bool(expected_reasons)
+    assert reasons == expected_reasons

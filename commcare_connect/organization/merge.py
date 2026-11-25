@@ -1,0 +1,404 @@
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from functools import cached_property
+
+from django.apps import apps
+from django.db import transaction
+from django.db.models import F, Q
+
+from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.organization.models import Organization, OrganizationInvite
+from commcare_connect.program.models import ProgramApplication
+from commcare_connect.program.utils import clear_cached_opp
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
+
+logger = logging.getLogger(__name__)
+
+
+class MergeNotAllowed(Exception):
+    """The merge was refused before anything was changed."""
+
+
+@dataclass(frozen=True)
+class OrganizationReassignment:
+    app_label: str
+    model_name: str
+    field_name: str
+
+    @cached_property
+    def model(self):
+        return apps.get_model(self.app_label, self.model_name)
+
+    @property
+    def label(self) -> str:
+        return f"{self.model._meta.label}.{self.field_name}"
+
+    def reassign(self, source: Organization, target: Organization) -> int:
+        manager = self.model._default_manager
+        return manager.filter(**{self.field_name: source}).update(**{self.field_name: target})
+
+
+# Repointing these before the delete is what clears the two PROTECT relations:
+SIMPLE_REASSIGNMENTS: Sequence[OrganizationReassignment] = (
+    OrganizationReassignment("opportunity", "CommCareApp", "organization"),
+    OrganizationReassignment("opportunity", "Opportunity", "organization"),
+    OrganizationReassignment("opportunity", "Opportunity", "supervising_organization"),
+    OrganizationReassignment("opportunity", "Payment", "organization"),
+    OrganizationReassignment("opportunity", "LabsRecord", "organization"),
+    OrganizationReassignment("organization", "Contact", "organization"),
+    OrganizationReassignment("program", "Program", "organization"),
+    OrganizationReassignment("program", "Program", "funder"),
+    OrganizationReassignment("solicitation", "Solicitation", "organization"),
+    # Safe as a plain update only because _reject_conflicting_solicitation_applications refuses a merge
+    # where both organizations applied to one solicitation.
+    OrganizationReassignment("solicitation", "SolicitationApplication", "organization"),
+)
+
+# The relations the merge acts on. test_merge.py asserts these plus SKIPPED_RELATIONS cover every
+# relation to Organization, so adding a new foreign key to Organization without handling it here
+# fails CI.
+HANDLED_RELATIONS = frozenset(
+    {
+        "flags.Flag.organizations",
+        "opportunity.CommCareApp.organization",
+        "opportunity.LabsRecord.organization",
+        "opportunity.Opportunity.organization",
+        "opportunity.Opportunity.supervising_organization",
+        "opportunity.Payment.organization",
+        "organization.Contact.organization",
+        "organization.OrganizationInvite.organization",
+        "organization.UserOrganizationMembership.organization",
+        "program.Program.funder",
+        "program.Program.organization",
+        "program.Program.watchers",
+        "program.ProgramApplication.organization",
+        "program.ProgramWatcher.organization",
+        "solicitation.SolicitationApplication.organization",
+        "solicitation.Solicitation.organization",
+        "solicitation.SolicitationInvitation.organization",
+    }
+)
+
+# Audit rows record what was true when they were written, so a merge must not rewrite them: "this
+# organization became the funder" stays a fact about the merged-away organization. The pghistory
+# foreign keys are declared db_constraint=False for exactly this reason, and the audit admin renders
+# a dash once the organization is gone, so these keep pointing at the source after it is deleted.
+SKIPPED_RELATIONS = frozenset(
+    {
+        "opportunity.OpportunitySupervisingOrganizationEvent.supervising_organization",
+        "organization.ContactEvent.organization",
+        "organization.OrganizationCountryEvent.organization",
+        "organization.OrganizationEvent.pgh_obj",
+        "organization.OrganizationPrimarySectorEvent.organization",
+        "program.ProgramFunderEvent.funder",
+        "program.ProgramWatcherEvent.organization",
+        # The source's own countries and sectors describe the source, so they are deleted with it
+        # and the target keeps its own.
+        "organization.OrganizationCountry.organization",
+        "organization.OrganizationPrimarySector.organization",
+    }
+)
+
+
+@dataclass(frozen=True)
+class MergeSummary:
+    source_slug: str
+    target_slug: str
+    reassigned: dict[str, int] = field(default_factory=dict)
+    watchers_moved: int = 0
+    program_applications_moved: int = 0
+    program_applications_deduped: int = 0
+    self_program_applications_removed: int = 0
+    memberships_moved: int = 0
+    memberships_discarded: int = 0
+    invites_moved: int = 0
+    invites_discarded: int = 0
+    solicitation_invitations_moved: int = 0
+    solicitation_invitations_deduped: int = 0
+    flags_cleared: int = 0
+
+
+def merge_organizations(source: Organization, target: Organization) -> MergeSummary:
+    """Merge ``source`` into ``target``, then delete ``source``.
+
+    Raises ``MergeNotAllowed`` before any change is made; any other exception rolls the whole merge back.
+    """
+    _reject_invalid_merge(source, target)
+    stale_opportunities = _opportunities_linked_to_source(source)
+
+    with transaction.atomic():
+        _keep_target_main_contact(source, target)
+        reassigned = _reassign_simple_relations(source, target)
+        moved_watchers_count = _move_program_watchers(source, target)
+        program_applications_moved, program_applications_deduped = _merge_program_applications(source, target)
+        # Ordering below matters. Self program applications: after Program.organization is repointed (which is what
+        # makes a program target-owned) and after the program application merge (which would otherwise move a source
+        # program application in and recreate the row). Invites: after memberships, so the "already a member" check
+        # sees the moved rows.
+        # Flags: before the delete, because m2m_changed is what flushes waffle's cache.
+        self_program_applications_removed = _remove_self_program_applications(target)
+        members_moved, members_dropped = _merge_memberships(source, target)
+        invites_moved, invites_dropped = _move_pending_invites(source, target)
+        solicitation_invitations_moved, solicitation_invitations_deduped = _merge_solicitation_invitations(
+            source, target
+        )
+        flags_cleared = _clear_flag_memberships(source)
+
+        transaction.on_commit(lambda: _clear_opportunity_caches(stale_opportunities))
+
+        summary = MergeSummary(
+            source_slug=source.slug,
+            target_slug=target.slug,
+            reassigned=reassigned,
+            watchers_moved=moved_watchers_count,
+            program_applications_moved=program_applications_moved,
+            program_applications_deduped=program_applications_deduped,
+            self_program_applications_removed=self_program_applications_removed,
+            memberships_moved=members_moved,
+            memberships_discarded=members_dropped,
+            invites_moved=invites_moved,
+            invites_discarded=invites_dropped,
+            solicitation_invitations_moved=solicitation_invitations_moved,
+            solicitation_invitations_deduped=solicitation_invitations_deduped,
+            flags_cleared=flags_cleared,
+        )
+        source.delete()
+
+    logger.info("Merged organization %s into %s: %s", summary.source_slug, summary.target_slug, summary)
+    return summary
+
+
+def _keep_target_main_contact(source: Organization, target: Organization) -> None:
+    """Unmark the source's main contact when the target has one, as an organization has at most one."""
+    if target.contacts.filter(is_main_poc=True).exists():
+        source.contacts.filter(is_main_poc=True).update(is_main_poc=False)
+
+
+def _reject_invalid_merge(source: Organization, target: Organization) -> None:
+    if source.pk is None or target.pk is None:
+        raise MergeNotAllowed("Both organizations must be saved before they can be merged.")
+    if source.pk == target.pk:
+        raise MergeNotAllowed("An organization cannot be merged into itself.")
+    _reject_shared_commcare_apps(source, target)
+    _reject_unmatched_program_manager_status(source, target)
+    _reject_funded_programs_a_non_funder_would_inherit(source, target)
+    _reject_conflicting_program_applications(source, target)
+    _reject_conflicting_solicitation_applications(source, target)
+
+
+def _reject_shared_commcare_apps(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would leave the target with two rows for one HQ app."""
+    app_key = ("cc_app_id", "cc_domain", "hq_server_id")
+    shared = set(source.apps.values_list(*app_key)) & set(target.apps.values_list(*app_key))
+    if shared:
+        conflicts = sorted({f"{cc_domain}/{cc_app_id}" for cc_app_id, cc_domain, _ in shared})
+        raise MergeNotAllowed(
+            f"Both organizations are connected to the same CommCare app(s): {', '.join(conflicts)}. "
+            "Merging would leave the surviving organization with duplicates that break "
+            "opportunity creation. Remove the redundant app from one organization first."
+        )
+
+
+def _reject_unmatched_program_manager_status(source: Organization, target: Organization) -> None:
+    """
+    Refuse a merge that drops the source's program manager role.
+    """
+    if source.program_manager and not target.program_manager:
+        raise MergeNotAllowed(
+            f"{source.slug} is marked as a program manager but {target.slug} is not, and a merge does not carry "
+            f"the status over. Mark the surviving organization as a program manager first, or unmark {source.slug} "
+            "to confirm the role is being retired with it."
+        )
+
+
+def _reject_funded_programs_a_non_funder_would_inherit(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would make an organization fund programs without being designated a funder.
+
+    ``Program.funder`` is repointed like any other relation, but ``Organization.funder`` is a profile field the
+    target keeps as its own. Ticking "Funder" on the survivor first is a deliberate decision, not something the
+    merge should make on the operator's behalf.
+    """
+    if target.funder:
+        return
+    funded_programs = sorted(source.funded_programs.values_list("name", flat=True))
+    if funded_programs:
+        raise MergeNotAllowed(
+            f"{source.slug} funds the program(s): {', '.join(funded_programs)}, but {target.slug} is not marked "
+            "as a funder. A merge does not carry funder status over. Mark the surviving organization as a funder "
+            "first if it should take these programs on."
+        )
+
+
+def _reject_conflicting_program_applications(source: Organization, target: Organization) -> None:
+    """
+    Refuse a merge where both organizations applied to one program and the applications disagree.
+    """
+    target_statuses = dict(target.programapplication_set.values_list("program_id", "status"))
+    conflicts = []
+    for program_id, program_name, source_status in source.programapplication_set.values_list(
+        "program_id", "program__name", "status"
+    ):
+        target_status = target_statuses.get(program_id)
+        if target_status is not None and target_status != source_status:
+            conflicts.append(f"{program_name} ({source.slug}: {source_status}, {target.slug}: {target_status})")
+
+    if conflicts:
+        raise MergeNotAllowed(
+            f"Both organizations have applied to the same program(s) with differing statuses: "
+            f"{', '.join(sorted(conflicts))}. Only one application per program can survive a merge, and the "
+            "statuses do not mean the same thing. Resolve the application that should not survive first."
+        )
+
+
+def _reject_conflicting_solicitation_applications(source: Organization, target: Organization) -> None:
+    """Refuse a merge that would leave the target with two applications to one solicitation, or applying to its own.
+
+    Unlike program applications, two solicitation applications carry separate answers and reviews, so neither is
+    redundant and the merge cannot pick one.
+    """
+    organizations = (source, target)
+    duplicates = Solicitation.objects.filter(applications__organization=source).filter(
+        applications__organization=target
+    )
+    self_applications = SolicitationApplication.objects.filter(
+        organization__in=organizations, solicitation__organization__in=organizations
+    ).exclude(solicitation__organization=F("organization"))
+
+    conflicts = set(duplicates.values_list("title", flat=True))
+    conflicts |= set(self_applications.values_list("solicitation__title", flat=True))
+    if conflicts:
+        raise MergeNotAllowed(
+            f"Merging would leave {target.slug} with two applications to, or an application to its own, "
+            f"solicitation(s): {', '.join(sorted(conflicts))}. Withdraw or remove the application that should not "
+            "survive first."
+        )
+
+
+def _opportunities_linked_to_source(source: Organization) -> list[Opportunity]:
+    """Opportunities whose ``get_cached_opp`` entry holds a reference to the source.
+
+    That cache stores the opportunity with its program and the program's organization attached, so a merge
+    invalidates it.
+    """
+    return list(
+        Opportunity.objects.filter(
+            Q(organization=source)
+            | Q(supervising_organization=source)
+            | Q(program__organization=source)
+            | Q(program__funder=source)
+        ).only("id", "opportunity_id")
+    )
+
+
+def _reassign_simple_relations(source: Organization, target: Organization) -> dict[str, int]:
+    reassigned = {}
+    for relation in SIMPLE_REASSIGNMENTS:
+        count = relation.reassign(source, target)
+        reassigned[relation.label] = count
+        logger.info("Reassigned %s %s rows from %s to %s", count, relation.label, source.slug, target.slug)
+    return reassigned
+
+
+def _move_program_watchers(source: Organization, target: Organization) -> int:
+    """Make the target watch everything the source watched, then drop the source.
+
+    ``add`` is idempotent, so a program both organizations watched needs no explicit deduplication.
+    """
+    watched_programs = list(source.watched_programs.all())
+    target.watched_programs.add(*watched_programs)
+    source.watched_programs.clear()
+    return len(watched_programs)
+
+
+def _merge_program_applications(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's program applications, dropping the ones the target already holds.
+
+    A program both organizations applied to is only reached here when the two statuses match — a disagreement is
+    refused by ``_reject_conflicting_program_applications`` before the merge starts — so the source's row is
+    redundant and the target's is kept as-is.
+    """
+    target_program_ids = set(target.programapplication_set.values_list("program_id", flat=True))
+    source_program_applications = source.programapplication_set.all()
+
+    deduped, _ = source_program_applications.filter(program_id__in=target_program_ids).delete()
+    # Whatever survived the delete above is target-safe: (program, organization) is unique.
+    moved = source_program_applications.update(organization=target)
+    return moved, deduped
+
+
+def _remove_self_program_applications(target: Organization) -> int:
+    """Drop program applications an organization holds to a program it now owns.
+
+    Repointing ``Program.organization`` can leave the target holding a program application to its own program, a row
+    ``invite_organization`` refuses to create in the first place.
+    """
+    deleted, _ = ProgramApplication.objects.filter(organization=target, program__organization=target).delete()
+    return deleted
+
+
+def _merge_memberships(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's memberships, dropping the ones for users the target already has.
+
+    A user in both organizations keeps the target's role, even where the source gave them a stronger one.
+    """
+    target_user_ids = set(target.memberships.values_list("user_id", flat=True))
+    source_memberships = source.memberships.all()
+
+    discarded, _ = source_memberships.filter(user_id__in=target_user_ids).delete()
+    # Whatever survived the delete above is target-safe: (user, organization) is unique.
+    moved = source_memberships.update(organization=target)
+    return moved, discarded
+
+
+def _move_pending_invites(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the live invites the target has no equivalent for"""
+    taken_emails = {email.lower() for email in target.invites.values_list("email", flat=True)}
+    taken_emails |= {email.lower() for email in target.memberships.values_list("user__email", flat=True) if email}
+
+    to_be_moved = []
+    discarded = 0
+    for invite in source.invites.all():
+        is_live = invite.status == OrganizationInvite.Status.INVITED and not invite.is_expired
+        if not is_live or invite.email.lower() in taken_emails:
+            discarded += 1
+            continue
+
+        to_be_moved.append(invite.pk)
+        taken_emails.add(invite.email.lower())
+
+    OrganizationInvite.objects.filter(pk__in=to_be_moved).update(organization=target)
+    return len(to_be_moved), discarded
+
+
+def _merge_solicitation_invitations(source: Organization, target: Organization) -> tuple[int, int]:
+    """Move the source's solicitation invitations, dropping the ones the target already holds."""
+    target_solicitation_ids = set(target.solicitation_invitations.values_list("solicitation_id", flat=True))
+    source_invitations = source.solicitation_invitations.all()
+
+    deduped, _ = source_invitations.filter(solicitation_id__in=target_solicitation_ids).delete()
+    # Whatever survived the delete above is target-safe: (solicitation, organization) is unique.
+    moved = source_invitations.update(organization=target)
+    return moved, deduped
+
+
+def _clear_flag_memberships(source: Organization) -> int:
+    """Remove the source from its feature flags before it is deleted so the flag's cache is cleared."""
+    flags = list(source.flag_set.all())
+    for flag in flags:
+        flag.organizations.remove(source)
+    return len(flags)
+
+
+def _clear_opportunity_caches(opportunities: Sequence[Opportunity]) -> None:
+    for opportunity in opportunities:
+        clear_cached_opp(opportunity)
+
+
+def relation_counts(organization: Organization) -> dict[str, int]:
+    counts = {}
+    for label in HANDLED_RELATIONS:
+        app_label, model_name, field_name = label.split(".")
+        model = apps.get_model(app_label, model_name)
+        counts[label] = model._default_manager.filter(**{field_name: organization}).count()
+    return counts

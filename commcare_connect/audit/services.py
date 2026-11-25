@@ -20,12 +20,15 @@ def stream_audit_report_csv(report, selected_workers=None):
     columns = column_specs(report.entries.all()[:1])
     writer = csv.writer(EchoWriter())
 
-    yield writer.writerow([gettext("Connect Worker"), *_column_headers(columns)])
+    yield writer.writerow(
+        [gettext("Connect Worker"), gettext("Username"), gettext("Phone Number"), *_column_headers(columns)]
+    )
 
     entries = entries_for_export(report, selected_workers)
     for entry in entries.iterator(chunk_size=STREAM_CHUNK_SIZE):
+        user = entry.opportunity_access.user
         cells = [_export_cell_value(entry.results, name) for name, _label, _tooltip in columns]
-        yield writer.writerow([entry.opportunity_access.user.name, *cells])
+        yield writer.writerow([user.name, user.username or "", user.phone_number or "", *cells])
 
 
 def _column_headers(columns):
@@ -54,7 +57,10 @@ def _export_cell_value(results, calc_name):
     result = results.get(calc_name, {})
     if not result.get("has_sufficient_data"):
         return gettext("N/A")
-    return result.get("value")
+    value = result.get("value")
+    if isinstance(value, bool):
+        return gettext("Yes") if value else gettext("No")
+    return value
 
 
 def column_specs(entries):
@@ -97,13 +103,7 @@ def generate_audit_report_for_opportunity(
     opportunity: Opportunity,
     period_start: datetime.date,
     period_end: datetime.date,
-) -> AuditReport:
-    report = AuditReport.objects.create(
-        opportunity=opportunity,
-        period_start=period_start,
-        period_end=period_end,
-    )
-
+) -> AuditReport | None:
     active_accesses = (
         OpportunityAccess.objects.filter(
             opportunity=opportunity,
@@ -112,6 +112,15 @@ def generate_audit_report_for_opportunity(
         )
         .select_related("user")
         .order_by("user__name")
+    )
+
+    if not active_accesses.exists():
+        return None
+
+    report = AuditReport.objects.create(
+        opportunity=opportunity,
+        period_start=period_start,
+        period_end=period_end,
     )
 
     calcs = calculations.get_registered_calculations()

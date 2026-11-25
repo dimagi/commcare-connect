@@ -1,50 +1,62 @@
-# CommCare Connect
+# Connect
 
-CommCare Connect
+Connect is a Django + PostGIS web application: organizations create paid opportunities, community health workers
+learn and deliver services through CommCare apps, and Connect tracks their visits, verifies them and records
+payments. It integrates with CommCare HQ and ConnectID.
 
-[![Built with Cookiecutter Django](https://img.shields.io/badge/built%20with-Cookiecutter%20Django-ff69b4.svg?logo=cookiecutter)](https://github.com/cookiecutter/cookiecutter-django/)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dimagi/commcare-connect)
+
+The [developer docs site](https://dimagi.github.io/commcare-connect/) publishes this README together with the
+app and deployment docs.
+
+<!-- --8<-- [start:local-setup] -->
 
 ## Local setup
 
 This assumes you will use the docker compose file in this repo to run services. If that is not the case you may
 need to edit some settings.
 
-    # install uv to manage python versions and dependencies
-    # https://docs.astral.sh/uv/getting-started/installation/
-    $ curl -LsSf https://astral.sh/uv/install.sh | sh
+### Python environment
 
-    # create a venv and install requirements
-    $ uv sync
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) to manage Python versions and
+dependencies:
 
-    # This will also create a virtual environment in .venv if
-    # one does not already exist. To activate the environment:
-    source .venv/bin/activate
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-    # For convenience, you can create an alias to activate
-    # virtual environments in ".venv" and "venv" directories.
-    # To do that, add the following to your .bashrc or .zshrc file (optional):
-    alias venv='if [[ -d .venv ]] ; then source .venv/bin/activate ; elif [[ -d venv ]] ; then source venv/bin/activate ; fi'
+Create a virtual environment in `.venv` and install the requirements:
 
-    # Then you can activate virtual environments with
-    venv
+```bash
+uv sync
+```
 
-    # install git hooks
-    $ prek install
-    $ prek run -a
+Activate it (or prefix commands with `uv run`):
 
-    # create env file and edit the settings as needed (or export settings directly)
-    $ cp .env_template .env
+```bash
+source .venv/bin/activate
+```
 
-    # command for installing new python dependencies
-    $ uv add <pkg>
+Install the git hooks and run them once:
 
-### GeoDjango / PostGIS Setup
+```bash
+prek install
+```
 
-Connect uses GeoDjango and PostGIS.
-To learn more about the required dependencies, please refer to the official Django documentation:
-https://docs.djangoproject.com/en/6.0/ref/contrib/gis/install/geolibs/#geolibs-list
+```bash
+prek run -a
+```
+
+Create your env file and edit the settings as needed (or export settings directly):
+
+```bash
+cp .env_template .env
+```
+
+### GeoDjango / PostGIS
+
+Connect uses GeoDjango and PostGIS. To learn more about the required dependencies, see the
+[Django documentation](https://docs.djangoproject.com/en/5.2/ref/contrib/gis/install/geolibs/#geolibs-list).
 
 **For macOS (Intel / Apple Silicon)** – using Homebrew:
 
@@ -52,26 +64,25 @@ https://docs.djangoproject.com/en/6.0/ref/contrib/gis/install/geolibs/#geolibs-l
 brew install gdal geos proj
 ```
 
-Django may struggle to find the GDAL and GEOS libraries even after they are installed. Follow these steps to set your paths:
-
-1. Get your local library paths
+Django may struggle to find the GDAL and GEOS libraries even after they are installed. Get your local library
+paths:
 
 ```bash
-# Get GDAL path
 ls $(brew --prefix gdal)/lib/libgdal.dylib
+```
 
-# Get GEOS path
+```bash
 ls $(brew --prefix geos)/lib/libgeos_c.dylib
 ```
 
-2. Set it in your `.env` file
+Then set them in your `.env` file:
 
 ```
 GDAL_LIBRARY_PATH=...
 GEOS_LIBRARY_PATH=...
 ```
 
-Install WeasyPrint on macOS (https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#macos)
+Install [WeasyPrint](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#macos):
 
 ```bash
 brew install weasyprint
@@ -83,163 +94,304 @@ brew install weasyprint
 sudo apt-get install -y binutils libproj-dev gdal-bin
 ```
 
-    # start docker services
-    $ inv up
+**Enabling the PostGIS extension**
 
-    # install JS dependencies
-    $ npm ci
+No migration creates the `postgis` extension. The `inv up` setup works because the `postgis/postgis` image
+enables it for you when it initialises the database.
 
-    # build JS (optionally watch files for changes and rebuild)
-    $ inv build-js [-w]
+If you are using your own PostgreSQL instead, create the extension in the target database before migrating, or
+the first spatial migration will fail:
 
-    # run Django
-    $ ./manage.py migrate
-    $ ./manage.py runserver
+```bash
+psql -d commcare_connect -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
 
-## Basic Commands
+### Running the app
 
-Some useful command are available via the `tasks.py` file:
+Start the docker services (PostgreSQL/PostGIS and Redis):
 
-    $ inv -l
+```bash
+inv up
+```
+
+Install the JS dependencies and build them (add `-w` to rebuild on changes):
+
+```bash
+npm ci
+```
+
+```bash
+inv build-js
+```
+
+Migrate the database and start Django:
+
+```bash
+./manage.py migrate
+```
+
+```bash
+./manage.py runserver
+```
+
+### Working in git worktrees
+
+To work on several branches at once, give each one its own git worktree. The repository has
+hooks for [worktrunk](https://worktrunk.dev/) (`wt`) in `.config/wt.toml`.
+
+Set up the main checkout first (above): worktrees copy its `.env`, and the docker compose
+services must be running.
+
+#### Create a worktree
+
+By default, a worktree gets its own empty database and its own Redis database:
+
+```bash
+wt switch --create my-branch
+```
+
+`wt new my-branch` does the same; it is a shorter alias defined in `.config/wt.toml`.
+
+The database has no data in it; create a user with `./manage.py createsuperuser`.
+
+To use the main checkout's database and Redis database instead, for example to work with data
+you already have, pass `--share=1`:
+
+```bash
+wt new my-branch --share=1
+```
+
+Setup doesn't run `migrate` on a shared database. If the branch adds migrations, running them
+changes the main checkout's schema too, so give that branch its own database instead.
+
+To start Claude Code in the new worktree as soon as it is set up, add `--execute claude`:
+
+```bash
+wt switch --create --execute claude my-branch
+```
+
+#### Remove a worktree
+
+```bash
+wt remove my-branch
+```
+
+This drops the databases created for the branch. A worktree created with `--share=1` has none,
+so the main checkout's database is left alone.
+
+#### What setup does
+
+When a worktree is created, `scripts/setup-worktree.sh`:
+
+- copies `.env` from the main checkout, and runs `uv sync` and `npm ci`
+- creates an empty PostgreSQL database for the branch, `connect_wt_<branch>_<hash>`, and runs `migrate`
+- picks a Redis database (1-14) that no other worktree's `.env` uses, and points `REDIS_URL` and
+  `CELERY_BROKER_URL` at it, so the branch's Celery worker never runs another branch's tasks
+- comments out `SECONDARY_DATABASE_URL`, which would otherwise point at the main checkout's replica
+
+With `--share=1`, it skips the database and Redis steps and copies `DATABASE_URL`, `REDIS_URL`
+and `CELERY_BROKER_URL` from the main checkout's `.env` instead. Either way, the JS and CSS then
+build in the background.
+
+<!-- --8<-- [end:local-setup] -->
+
+<!-- --8<-- [start:local-development] -->
+
+## Local development
+
+### Useful commands
+
+`tasks.py` defines [invoke](https://www.pyinvoke.org/) tasks for common jobs. List them with:
+
+```bash
+inv -l
+```
+
+To add a Python dependency, use `uv add <pkg>`; see
+[Dependency management](https://github.com/dimagi/commcare-connect/blob/main/docs/dependency-management.md)
+for the details.
+
+### Setting up your users
+
+You don't need the CommCare HQ social app to create local users. The "Log in with CommCare HQ" button stays
+hidden until a `commcarehq` social app exists (see
+[Setting up auth with CommCare HQ](#setting-up-auth-with-commcare-hq)).
+
+To create a **superuser**, run the command below. `--email` is not accepted, because the custom `User` model sets
+`REQUIRED_FIELDS = []`; set the address afterwards in the admin if you need one.
+
+```bash
+./manage.py createsuperuser
+```
+
+To create a **normal user account**, go to Sign Up and fill out the form. Local settings use
+`ACCOUNT_EMAIL_VERIFICATION = "optional"`, so you are logged straight in; the confirmation email is still printed to
+the console if you want to verify the address.
+
+To promote an existing user to superuser:
+
+```bash
+./manage.py promote_user_to_superuser <email>
+```
+
+For convenience, you can keep your normal user logged in on Chrome and your superuser logged in on Firefox (or
+similar), so that you can see how the site behaves for both kinds of users.
+
+### Sample data
+
+To build local data that hangs together as if the app had been used, run a scenario. It drives the app's real
+forms, functions and APIs (with CommCare HQ, ConnectID and Twilio stood in for), so validation, visit flags,
+payment accrual and invoicing all run:
+
+```bash
+./manage.py run_scenario payments --admin-email you@example.com
+```
+
+`--admin-email` must belong to an existing local user, who becomes admin of every organization the scenario
+creates. The command doesn't create one, since that means picking a password; if you have no user yet, create one
+with `createsuperuser` (above). Rerunning a scenario first deletes the organizations it built. The command prints
+the pages worth opening. The scenarios and options are described in `commcare_connect/simulation/README.md`.
+
+#### Volume-only data
+
+`generate_sample_data` writes rows directly with factories, so it does not go through the app's rules and its
+records don't hang together. Use it only when you need volume, for example to look at report performance
+(`generate_sample_data <num_visits> <org_slug>`):
+
+```bash
+./manage.py generate_sample_data 50 demo-org
+```
+
+The organization is created if the slug does not already exist. Each run first deletes the existing
+opportunities, visits, payments, programs and attachments belonging to the two organizations it is about to use,
+including the attachment files under `MEDIA_ROOT`. Optional flags:
+
+- `--invited_org_slug` — reuse a specific organization as the invited org. Without it, a new invited org with a
+  random slug is created on every run, and the previous one is left behind.
+- `--pm_opportunities` — how many opportunities the invited org delivers under the primary org's programs (default 3)
+- `--image_percent` — percentage of visits that get a photo (default 0, none)
+- `--audio_percent` — percentage of visits that get one to three audio recordings, each with a stand-in
+  transcript and translation (default 0, none)
+- `--media_dir` — a directory to search (recursively) for image / audio files to use as the attachments for
+  generated visits if requested. Otherwise placeholders are used.
+
+Adding yourself to the generated organizations is a separate step, either through
+`/admin/organization/userorganizationmembership/` or the organization's own member admin pages. Note there are
+two: the primary org from `<org_slug>` and the invited org, which delivers those opportunities — join only the
+first and those stay hidden. Worker tabs list only workers whose `OpportunityAccess` is accepted, which the
+generated ones are.
+
+#### Microplanning, without CommCare HQ
+
+To seed an opportunity with work areas, groups, workers and visits for the Progress Map:
+
+```bash
+./manage.py generate_microplanning_data --fake-hq
+```
+
+It prints the Progress Map URL and creates the superuser `mpadmin` with password `mpadmin`. `--help` lists the
+other options.
+
+Assigning, unassigning, excluding and editing an assigned work area all update cases on CommCare HQ. `--fake-hq`
+sends those calls to a stand-in for HQ on `localhost:8001` and gives each worker an HQ user there. Run the
+stand-in in its own terminal:
+
+```bash
+./manage.py run_fake_hq
+```
+
+It answers every case update and prints the request with its body, so you can see what Connect sends. Start it
+with `--fail` to answer case updates with an error instead. To see the push notification that assignment sends to
+ConnectID too, start the Celery worker with `CONNECTID_URL=http://localhost:8001/connectid`.
 
 ### Setting up auth with CommCare HQ
 
 **Expose your local service to the internet**
 
-- Create an account on ngrok and Install ngrok
-  - https://dashboard.ngrok.com/get-started/setup/
+- Create an account on ngrok and [install ngrok](https://dashboard.ngrok.com/get-started/setup/)
 - Create a custom domain on ngrok using this [link](https://dashboard.ngrok.com/domains/new)
 - Run `ngrok http --url=[my-unique-subdomain].ngrok-free.app 8000`
-- Update your `.env` file with the host:
-
-      DJANGO_ALLOWED_HOSTS=[my-unique-subdomain].ngrok-free.app
+- Set `DJANGO_ALLOWED_HOSTS=[my-unique-subdomain].ngrok-free.app` in your `.env` file
 
 **Create an OAuth2 application on CommCare HQ**
 
 - Navigate to https://staging.commcarehq.org/oauth/applications/
-- Create a new application with the following settings:
-  - Client Type: Confidential
-  - Authorization Grant Type: Authorization Code
-  - Redirect URIs: https://[my-unique-subdomain].ngrok-free.app/accounts/commcarehq/login/callback/
-  - Pkce required: False
+- Create a new application with these settings:
+
+| Setting                  | Value                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| Client Type              | Confidential                                                                       |
+| Authorization Grant Type | Authorization Code                                                                 |
+| Redirect URIs            | `https://[my-unique-subdomain].ngrok-free.app/accounts/commcarehq/login/callback/` |
+| Pkce required            | False                                                                              |
+
 - Copy the Client ID and Client Secret
 - Create a new SocialApp locally at http://localhost:8000/admin/socialaccount/socialapp/
 
 **Test the OAuth2 flow**
 
-- Set `COMMCARE_HQ_URL=https://staging.commcarehq.org` in your `.env` file and restart the server.
+- Confirm `COMMCARE_HQ_URL` points at `https://staging.commcarehq.org`. That is the default, so you only need to
+  set it in `.env` if you have overridden it.
 - Navigate to http://[my-unique-subdomain].ngrok-free.app/accounts/login/
 - Click the "Log in with CommCare HQ" button
 - You should be redirected to CommCare HQ to log in
 - After logging in, you should be redirected back to the app and logged in
 
-### Setting Up Your Users
-
-- To create a **normal user account**, just go to Sign Up and fill out the form. Once you submit it, you'll see a "Verify Your E-mail Address" page. Go to your console to see a simulated email verification message. Copy the link into your browser. Now the user's email should be verified and ready to go.
-
-- To create a **superuser account**, use this command:
-
-      $ python manage.py createsuperuser
-
-- To promote a user to superuser, use this command:
-
-      $ python manage.py promote_user_to_superuser <email>
-
-For convenience, you can keep your normal user logged in on Chrome and your superuser logged in on Firefox (or similar), so that you can see how the site behaves for both kinds of users.
-
-### Test coverage
-
-To run the tests, check your test coverage, and generate an HTML coverage report:
-
-    $ coverage run -m pytest
-    $ coverage html
-    $ open htmlcov/index.html
-
-#### Running tests with pytest
-
-    $ pytest
-
-### Live reloading and Sass CSS compilation
-
-    $ inv build-js -w
-
 ### Celery
 
-This app comes with Celery.
-
-To run a celery worker:
+Local settings run Celery tasks eagerly, inside the request (`CELERY_TASK_ALWAYS_EAGER` defaults to `True` in
+`config/settings/local.py`), so you don't need a worker. That blocks the request and hides progress UIs, though.
+To run tasks the way production does, set `CELERY_TASK_ALWAYS_EAGER=False` in `.env` and start a worker:
 
 ```bash
 celery -A config.celery_app worker -l info
 ```
 
-Please note: For Celery's import magic to work, it is important _where_ the celery commands are run. If you are in the same folder with _manage.py_, you should be right.
+For Celery's import magic to work, run the commands from the folder that holds `manage.py`.
 
-To run [periodic tasks](https://docs.celeryq.dev/en/stable/userguide/periodic-tasks.html), you'll need to start the celery beat scheduler service. You can start it as a standalone process:
+To run [periodic tasks](https://docs.celeryq.dev/en/stable/userguide/periodic-tasks.html), you'll need to start
+the celery beat scheduler service. You can start it as a standalone process:
 
 ```bash
 celery -A config.celery_app beat
 ```
 
-or you can embed the beat service inside a worker with the `-B` option (not recommended for production use):
+or embed the beat service inside a worker with the `-B` option (not recommended for production use):
 
 ```bash
 celery -A config.celery_app worker -B -l info
 ```
 
+### Tests
+
+Run the test suite:
+
+```bash
+pytest
+```
+
+To check your test coverage and generate an HTML coverage report:
+
+```bash
+coverage run -m pytest
+```
+
+```bash
+coverage html
+```
+
+Then open `htmlcov/index.html`.
+
+### Live reloading and Sass CSS compilation
+
+```bash
+inv build-js -w
+```
+
+<!-- --8<-- [end:local-development] -->
+
 ## Deployment
 
-The following details how to deploy this application.
-
-The application is running on AWS. Deploying new version of the app can be done via the "Deploy" workflow
-on Github Actions.
-
-Should the deploy fail you can view the logs via the [AWS console][aws_console].
-
-[aws_console]: https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/using-features.logging.html?icmpid=docs_elasticbeanstalk_console
-
-For details on how this actions is configured see:
-
-- https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/
-- https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
-
-### Deploying to the staging environment
-
-The project has a staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/),
-which is connected to the staging environment of CommCare HQ at
-[https://staging.commcarehq.org/](https://staging.commcarehq.org/).
-
-- Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
-- Run `.deploy/rebuildstaging` to build the `autostaging` branch
-- After this, you can deploy to the staging environment by manually running the `deploy`
-  [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
-
-### Remote Access to machines
-
-Machines can be accessed via SSH using AWS SSM. In order for that to work, you will need to add the following lines to your ssh config (typically located at `~/.ssh/config`)
-
-```
-Host i-*
-     ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1 --profile commcare-connect"
-```
-
-This remote access is required for the ansible commands in the `tasks.py` file.
-
-### Setting up logical replication
-
-- Create another postgres database (in a seperate cluster)
-- Add `SECONDARY_DATABASE_URL` to the `.env` file
-- Enable replication on the default database (requires restart)
-  ```
-        - "wal_level=logical"
-        - "max_replication_slots=5"
-        - "max_wal_senders=5"
-  ```
-- Create table schemas in the secondary database
-  ```
-  ./manage.py migrate_multi
-  ```
-- Initialize replication
-  ```
-  ./manage.py setup_logical_replication
-  ```
+The application runs as Docker containers on EC2, deployed with [Kamal](https://kamal-deploy.org/), and
+provisioned with Ansible. See [deploy/README.md](deploy/README.md) for deploying to staging and production,
+server access, logs, Django settings and logical replication.

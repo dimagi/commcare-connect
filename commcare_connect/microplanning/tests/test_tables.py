@@ -14,7 +14,7 @@ def _column_accessors(table):
 
 
 def test_ward_table_columns_match_report_row_keys():
-    target = {"w1": {"target_population": 1, "building_count": 1, "num_work_areas": 1, "expected_visit_total": 1}}
+    target = {"w1": {"building_count": 1, "num_work_areas": 1, "expected_visit_total": 1}}
     rows = build_ward_rows(target, {}, {}, {}, {})
     table = CoverageWardTable(rows)
 
@@ -24,7 +24,7 @@ def test_ward_table_columns_match_report_row_keys():
 
 def test_wag_table_columns_match_report_row_keys():
     display = {1: {"work_area_group": "G1", "ward": "w1"}}
-    target = {1: {"target_population": 1, "building_count": 1, "num_work_areas": 1, "expected_visit_total": 1}}
+    target = {1: {"building_count": 1, "num_work_areas": 1, "expected_visit_total": 1}}
     rows = build_wag_rows(display, target, {}, {}, {}, {})
     table = CoverageWAGTable(rows)
 

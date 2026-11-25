@@ -1,3 +1,4 @@
+from allauth.account import app_settings as account_settings
 from allauth.account.forms import SignupForm
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
 from crispy_forms.helper import FormHelper
@@ -8,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.forms import EmailField
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.organization.forms import validate_year_of_establishment
 from commcare_connect.organization.models import Organization
 
 User = get_user_model()
@@ -41,6 +43,12 @@ class UserSignupForm(SignupForm):
     Check UserSocialSignupForm for accounts created from social.
     """
 
+    @property
+    def honeypot_field(self):
+        """The bot trap allauth adds under ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD, for the template to render."""
+        name = account_settings.SIGNUP_FORM_HONEYPOT_FIELD
+        return self[name] if name else None
+
 
 class UserSocialSignupForm(SocialSignupForm):
     """
@@ -50,10 +58,35 @@ class UserSocialSignupForm(SocialSignupForm):
     """
 
 
-class OrganizationCreationForm(forms.ModelForm):
+class AdminOrganizationForm(forms.ModelForm):
     class Meta:
         model = Organization
-        fields = ["name", "program_manager", "llo_entity"]
+        fields = [
+            "name",
+            "short_name",
+            "program_manager",
+            "funder",
+            "verified",
+            "has_used_connect",
+            "is_test",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+            "status",
+            "latest_msa_link",
+            "latest_work_order_link",
+        ]
+
+    def clean_year_of_establishment(self):
+        return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
 
 
 class ManualUserOTPForm(forms.Form):

@@ -1,0 +1,1 @@
+--8<-- "commcare_connect/opportunity/PAYMENTS.md"

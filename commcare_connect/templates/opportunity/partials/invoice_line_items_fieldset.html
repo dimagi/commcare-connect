@@ -1,0 +1,41 @@
+{% load i18n %}
+{% if form.line_items_table %}
+  {% if form.line_items_table.rows %}
+    {% include "opportunity/partials/invoice_line_items.html" with table=form.line_items_table %}
+  {% else %}
+    {# An empty table alone reads as a missing page. Say which of the two reasons it is. #}
+    <div role="status"
+         class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-info text-message-info-text border-message-info-border">
+      <i class="fa-solid fa-circle-info"></i>
+      <span>
+        {% if form.line_items_released %}
+          {% translate "Since this invoice was cancelled or rejected, the deliveries it billed have been released and are no longer listed here." %}
+        {% else %}
+          {% translate "No deliveries were billable for this period, so this invoice has no line items." %}
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
+{% else %}
+  <div x-show="lineItemsError"
+       x-cloak
+       role="alert"
+       class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>{% translate "Could not load the deliveries for this period, so the amount is unavailable." %}</span>
+    </div>
+    <button type="button"
+            class="button button-md outline-style ml-4"
+            @click="fetchInvoiceLineItems()">{% translate "Retry" %}</button>
+  </div>
+  <div id="invoice-line-items-wrapper"
+       class="space-y-1 text-sm text-gray-500 mb-4"></div>
+  <div x-show="lineItemsLoading"
+       x-cloak
+       role="status"
+       class="flex items-center justify-center gap-2 py-6 text-gray-500">
+    <i class="fa-solid fa-spinner fa-spin"></i>
+    <span>{% translate "Loading deliveries for this period…" %}</span>
+  </div>
+{% endif %}

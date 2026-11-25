@@ -1,7 +1,11 @@
+import datetime
 import importlib
 
 import pytest
 from django.apps import apps as django_apps
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.messages.middleware import MessageMiddleware
+from django.contrib.sessions.middleware import SessionMiddleware
 from rest_framework.test import APIClient, APIRequestFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -16,11 +20,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import Program
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
     MobileUserFactory,
+    OrganizationFactory,
     OrgWithUsersFactory,
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
@@ -139,8 +145,15 @@ def program_manager_org(db) -> Organization:
     return ProgramManagerOrgWithUsersFactory()
 
 
+@pytest.fixture(params=["ended", "no_end_date"])
+def unusable_end_date(request):
+    if request.param == "ended":
+        return datetime.date.today() - datetime.timedelta(days=1)
+    return None
+
+
 @pytest.fixture
-def managed_opportunity(organization, program_manager_org):
+def pm_opportunity(organization, program_manager_org):
     program = ProgramFactory(organization=program_manager_org)
     return OpportunityFactory(program=program, organization=organization)
 
@@ -155,6 +168,45 @@ def program_manager_org_user_admin(program_manager_org) -> User:
     return program_manager_org.memberships.filter(role="admin").first().user
 
 
+@pytest.fixture
+def program(program_manager_org) -> Program:
+    return ProgramFactory(organization=program_manager_org)
+
+
+@pytest.fixture
+def funder_org(db) -> Organization:
+    return OrganizationFactory(funder=True)
+
+
+@pytest.fixture
+def watcher_org(db) -> Organization:
+    return OrganizationFactory()
+
+
+@pytest.fixture
+def supervisor_org(db) -> Organization:
+    return OrganizationFactory()
+
+
+@pytest.fixture
+def opp_orgs(pm_opportunity, supervisor_org, funder_org, watcher_org):
+    """Every org with a distinct relationship to `pm_opportunity`."""
+    program = pm_opportunity.program
+    program.funder = funder_org
+    program.save()
+    program.watchers.add(watcher_org)
+    pm_opportunity.supervising_organization = supervisor_org
+    pm_opportunity.save()
+    return {
+        "delivery": pm_opportunity.organization,
+        "supervisor": supervisor_org,
+        "program_org": program.organization,
+        "funder": funder_org,
+        "watcher": watcher_org,
+        "unrelated": OrganizationFactory(),
+    }
+
+
 @pytest.fixture(autouse=True)
 def ensure_currency_country_data(db):
     # These models get flushed in between tests; so make sure they exist
@@ -165,3 +217,25 @@ def ensure_currency_country_data(db):
         "commcare_connect.opportunity.migrations.0092_currency_country_opportunity_currency_fk"
     )
     migration_module.load_currency_and_country_data(django_apps, schema_editor=None)
+
+
+@pytest.fixture
+def anonymous_request(rf):
+    """Builds a RequestFactory request with the user, session and messages that templates and allauth expect."""
+
+    def make(method="get", path="/", data=None, **extra):
+        request = getattr(rf, method)(path, data or {}, **extra)
+        request.user = AnonymousUser()
+        SessionMiddleware(lambda r: None).process_request(request)
+        MessageMiddleware(lambda r: None).process_request(request)
+        return request
+
+    return make
+
+
+@pytest.fixture
+def hq_grants_app_access(monkeypatch):
+    """HQ lets every key fetch every app, for tests of opportunity forms that aren't about the key check."""
+    monkeypatch.setattr(
+        "commcare_connect.opportunity.forms.app_access_errors", lambda api_key, apps: [None for _app in apps]
+    )

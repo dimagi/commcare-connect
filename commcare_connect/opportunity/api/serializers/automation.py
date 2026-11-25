@@ -1,7 +1,9 @@
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from waffle import switch_is_active
 
+from commcare_connect.flags.switch_names import OPTIONAL_DAILY_LIMIT
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     Opportunity,
@@ -17,11 +19,17 @@ class PaymentUnitItemSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=0)
     org_amount = serializers.IntegerField(min_value=0, required=False)
     max_total = serializers.IntegerField(min_value=1)
-    max_daily = serializers.IntegerField(min_value=1)
+    # Required, but null opts the payment unit out of a daily limit when OPTIONAL_DAILY_LIMIT is on
+    max_daily = serializers.IntegerField(min_value=1, allow_null=True)
     required_deliver_units = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     optional_deliver_units = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
     start_date = serializers.DateField(required=False, allow_null=True, default=None)
     end_date = serializers.DateField(required=False, allow_null=True, default=None)
+
+    def validate_max_daily(self, value):
+        if value is None and not switch_is_active(OPTIONAL_DAILY_LIMIT):
+            raise serializers.ValidationError(_("This field may not be null."))
+        return value
 
     def validate(self, data):
         opportunity = self.context["opportunity"]
@@ -45,13 +53,10 @@ class PaymentUnitItemSerializer(serializers.Serializer):
                 }
             )
 
-        deliver_app = opportunity.deliver_app
         all_du_ids = set(required + optional)
         if all_du_ids:
             valid_ids = set(
-                DeliverUnit.objects.filter(app=deliver_app, id__in=all_du_ids, payment_unit__isnull=True).values_list(
-                    "id", flat=True
-                )
+                DeliverUnit.objects.assignable(opportunity).filter(id__in=all_du_ids).values_list("id", flat=True)
             )
             invalid = all_du_ids - valid_ids
             if invalid:
@@ -119,17 +124,19 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
         return created
 
     def _assign_deliver_units(self, deliver_unit_ids, payment_unit, optional):
-        """Assign unassigned deliver units to the given payment unit in a single query.
+        """Assign the opportunity's assignable deliver units to the given payment unit in a single query.
 
         Raises ValidationError if any of the requested deliver units are already
-        assigned to another payment unit (re-checked here under transaction to
-        protect against races between validate() and create()).
+        assigned to another of the opportunity's payment units (re-checked here under
+        transaction to protect against races between validate() and create()).
         """
         unique_ids = set(deliver_unit_ids)
         if not unique_ids:
             return
-        updated = DeliverUnit.objects.filter(id__in=unique_ids, payment_unit__isnull=True).update(
-            payment_unit=payment_unit, optional=optional
+        updated = (
+            DeliverUnit.objects.assignable(payment_unit.opportunity)
+            .filter(id__in=unique_ids)
+            .update(payment_unit=payment_unit, optional=optional)
         )
         if updated != len(unique_ids):
             raise serializers.ValidationError(
@@ -176,6 +183,8 @@ class UserInviteSerializer(serializers.Serializer):
 
     def validate(self, data):
         opportunity = self.context["opportunity"]
+        if not opportunity.is_setup_complete:
+            raise serializers.ValidationError(_("Please finish setting up the opportunity before inviting users."))
         if not opportunity.active:
             raise serializers.ValidationError(_("Opportunity must be active to invite users."))
         if opportunity.has_ended:

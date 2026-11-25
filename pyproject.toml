@@ -4,42 +4,41 @@ version = "0.0.1"
 requires-python = "==3.11.*"
 dependencies = [
     "argon2-cffi>=21.3.0",
-    "celery>=5.3.4",
+    "celery>=5.7.0",
     "crispy-tailwind>=1.0.3",
-    "django>=4.2.30,<5.0",
-    "django-allauth>=0.54.0",
-    "django-autocomplete-light>=3.11.0",
+    "django>=5.2.19,<5.3",
+    "django-allauth>=65.22.1",
     "django-celery-beat>=2.5.0",
     "django-cors-headers>=4.2.0",
-    "django-crispy-forms>=2.0",
-    "django-environ>=0.10.0",
-    "django-filter>=24.3",
-    "django-htmx>=1.19.0",
-    "django-model-utils>=4.3.1",
-    "django-oauth-toolkit>=2.3.0",
+    "django-crispy-forms>=2.7",
+    "django-environ>=0.14.0",
+    "django-filter>=26.2",
+    "django-health-check>=4.8.0",
+    "django-htmx>=1.29.0",
+    "django-oauth-toolkit>=3.4.1",
     "django-pghistory>=3.9.1",
-    "django-redis>=5.3.0",
-    "django-tables2>=2.6.0",
+    "django-redis>=7.0.0",
+    "django-tables2>=3.0.1",
     "django-vectortiles>=1.0.2",
     "django-waffle>=5.0.0",
-    "django-weasyprint>=2.4.0",
-    "djangorestframework>=3.14.0",
-    "drf-spectacular>=0.26.4",
-    "flatten-dict>=0.4.2",
-    "geopy>=2.4.1",
-    "gevent>=24.11.1",
-    "hiredis>=2.2.3",
+    "django-weasyprint>=2.6.0",
+    "djangorestframework>=3.18.3",
+    "drf-spectacular>=0.30.0",
+    "flatten-dict>=0.6.0",
+    "geopy>=2.5.0",
+    "gevent>=26.9.0",
+    "hiredis>=3.5.0",
     "httpx[http2]>=0.24.1",
-    "jsonpath-ng>=1.5.3",
+    "jsonpath-ng>=1.16.0",
     "pillow>=10.0.0",
     "pyproj>=3.7.2",
-    "python-slugify>=8.0.1",
+    "python-slugify>=9.2.0",
     "quickcache>=0.5.4",
-    "redis>=4.6.0",
-    "sentry-sdk>=1.29.2",
-    "shapely>=2.1.2",
-    "tablib[xlsx]>=3.5.0",
-    "twilio>=8.8.0",
+    "redis>=8.0.0",
+    "sentry-sdk>=2.75.0",
+    "shapely>=2.2.0",
+    "tablib[xlsx]>=3.10.0",
+    "twilio>=9.13.0",
     "whitenoise>=6.5.0",
 ]
 
@@ -51,12 +50,20 @@ python_files = [
     "tests.py",
     "test_*.py",
 ]
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}"]
+# Only unactionable noise belongs here. Naive-datetime RuntimeWarnings and
+# RemovedInDjango60Warnings are left visible on purpose - they are real work.
+filterwarnings = [
+    # WhiteNoise, once per request, because collectstatic has not run locally.
+    "ignore:No directory at:UserWarning",
+    # allauth importing its own deprecated module.
+    "ignore:allauth.exceptions is deprecated:UserWarning",
+]
 
 # ==== Coverage ====
 [tool.coverage.run]
 include = ["commcare_connect/**"]
 omit = ["*/migrations/*", "*/tests/*"]
-plugins = ["django_coverage_plugin"]
 
 
 # ==== ruff ====
@@ -67,41 +74,16 @@ extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "UP", "RUF100"]
+
+[tool.ruff.lint.per-file-ignores]
+# Marketing page titles and meta descriptions: prose that has to stay on one
+# line to be readable and greppable against the rendered <head>.
+"commcare_connect/prelogin/route_meta.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["commcare_connect", "config"]
 
-
-# ==== PyLint ====
-[tool.pylint.MASTER]
-load-plugins = [
-    "pylint_django",
-    "pylint_celery",
-]
-django-settings-module = "config.settings.local"
-
-[tool.pylint.FORMAT]
-max-line-length = 119
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-    "missing-docstring",
-    "invalid-name",
-]
-
-[tool.pylint.DESIGN]
-max-parents = 13
-
-[tool.pylint.TYPECHECK]
-generated-members = [
-    "REQUEST",
-    "acl_users",
-    "aq_parent",
-    "[a-zA-Z]+_set{1,2}",
-    "save",
-    "delete",
-]
 
 [tool.uv.sources]
 xml2json = { git = "https://github.com/dimagi/xml2json", rev = "041b1ef" }
@@ -109,35 +91,39 @@ git-build-branch = { git = "https://github.com/dimagi/git-build-branch" }
 
 [dependency-groups]
 dev = [
-    "coverage>=7.2.7",
+    "coverage>=7.17.3",
     "django-debug-toolbar>=4.1.0",
-    "djlint>=1.36.4",
+    "djlint>=1.53.0",
     "factory-boy>=3.3.0",
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
-    "prek>=0.4.3",
-    "psycopg2-binary>=2.9.6",
-    "pylint-celery>=0.3",
-    "pylint-django>=2.5.3",
-    "pytest>=7.4.0",
-    "pytest-django>=4.5.2",
+    "jscpd>=5.4.2",
+    "prek>=0.5.11",
+    "psycopg2-binary>=2.9.13",
+    "pytest>=9.2.0",
+    "pytest-django>=4.14.0",
     "pytest-httpx>=0.24.0",
-    "ruff>=0.15.17",
-    "watchfiles>=0.19.0",
-    "werkzeug[watchdog]>=2.3.7",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.17.5",
+    "time-machine>=3.6.0",
     "xml2json",
+]
+docs = [
+    "zensical>=0.1.1",
 ]
 production = [
     "django-allow-cidr>=0.7.1",
     "django-anymail[amazon-ses]>=10.1",
-    "django-storages[boto3]>=1.13.2",
-    "gunicorn[gevent]>=21.2.0",
-    "psycopg2>=2.9.6",
+    "django-storages[boto3]>=1.14.6",
+    "gunicorn[gevent]>=27.0.1",
+    "psycopg2>=2.9.13",
 ]
 
 # ==== djlint ====
 [tool.djlint]
 profile = "django"
 indent = 2
+# waffle_tags block tags, so templates gated by them indent correctly
+custom_blocks = "switch,flag"
 ignore = "H006,H016,H020,H021,H023,H030,H031,T002,T003"

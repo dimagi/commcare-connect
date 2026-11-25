@@ -1,10 +1,21 @@
-from collections import OrderedDict
+import json
 
+from django.contrib.gis.geos import GEOSException, GEOSGeometry
+from django.db import IntegrityError, transaction
+from django.utils.timezone import localdate
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases_by_work_areas
+from commcare_connect.data_export.const import ATTACHMENT_FIELDS, OPPORTUNITY_ACCESS_CHECK_MAX_IDS
+from commcare_connect.microplanning.helpers import (
+    assign_work_areas_and_sync_to_hq,
+    unassign_work_areas_for_opportunity,
+)
+from commcare_connect.microplanning.models import SRID, ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.tasks import parse_lon_lat_centroid, send_work_area_assignment_notification
 from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
@@ -18,18 +29,56 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     LabsRecord,
     Opportunity,
+    OpportunityAccess,
     OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
     TaskType,
+    TaskTypeModeChoices,
     UserVisit,
 )
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
+from commcare_connect.utils.ocs_api import user_has_connected_ocs
+
+
+class LonLatPointField(serializers.Field):
+    default_error_messages = {"invalid": "Centroid must be in 'lon lat' format."}
+
+    def to_internal_value(self, data):
+        try:
+            return parse_lon_lat_centroid(data)
+        except (GEOSException, ValueError, TypeError, AttributeError):
+            self.fail("invalid")
+
+    def to_representation(self, value):
+        return f"{value.x} {value.y}"
+
+
+class WKTPolygonField(serializers.Field):
+    default_error_messages = {
+        "invalid": "Invalid WKT.",
+        "wrong_type": "Expected a WKT Polygon.",
+    }
+
+    def to_internal_value(self, data):
+        try:
+            geom = GEOSGeometry(data, srid=SRID)
+        except (GEOSException, ValueError, TypeError):
+            self.fail("invalid")
+
+        if geom.geom_type != "Polygon":
+            self.fail("wrong_type")
+
+        return geom
+
+    def to_representation(self, value):
+        return value.wkt
 
 
 class OpportunityDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    supervising_organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
 
@@ -40,8 +89,10 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "name",
             "date_created",
             "organization",
+            "supervising_organization",
             "end_date",
             "is_active",
+            "is_test",
             "program",
             "visit_count",
         ]
@@ -53,20 +104,30 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
         return getattr(obj, "visit_count", 0)
 
 
+class OpportunityAccessCheckSerializer(serializers.Serializer):
+    opportunity_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        min_length=1,
+        max_length=OPPORTUNITY_ACCESS_CHECK_MAX_IDS,
+    )
+
+
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "slug", "name"]
+        fields = ["id", "slug", "name", "funder"]
 
 
 class ProgramDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    funder = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    watchers = serializers.SlugRelatedField(read_only=True, slug_field="slug", many=True)
     delivery_type = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     currency = serializers.CharField(source="currency_id", read_only=True)
 
     class Meta:
         model = Program
-        fields = ["id", "name", "delivery_type", "currency", "organization"]
+        fields = ["id", "name", "delivery_type", "currency", "organization", "funder", "watchers"]
 
 
 class OpportunityUserDataSerializer(serializers.Serializer):
@@ -128,17 +189,51 @@ class UserVisitDataSerializer(serializers.ModelSerializer):
         return obj.username
 
 
-class UserVisitDataWithImagesSerializer(UserVisitDataSerializer):
+class UserVisitDataWithAttachmentsSerializer(UserVisitDataSerializer):
+    """Visit rows plus the attachment lists the caller asked for.
+
+    ``include`` names which of ``ATTACHMENT_FIELDS`` to keep; the rest are dropped, so a
+    caller only pays for — and a CSV header only carries — the attachments requested.
+    Both fields read a prefetched list when the view supplied one (see
+    ``UserVisitDataView``), falling back to a per-row query otherwise.
+    """
+
     images = serializers.SerializerMethodField()
+    audio = serializers.SerializerMethodField()
 
     class Meta(UserVisitDataSerializer.Meta):
-        fields = UserVisitDataSerializer.Meta.fields + ["images"]
+        fields = UserVisitDataSerializer.Meta.fields + list(ATTACHMENT_FIELDS)
+
+    def __init__(self, *args, include=ATTACHMENT_FIELDS, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in ATTACHMENT_FIELDS:
+            if field not in include:
+                self.fields.pop(field)
 
     def get_images(self, obj):
         blobs = getattr(obj, "_prefetched_images", None)
         if blobs is None:
             blobs = obj.images
         return [{"blob_id": b.blob_id, "name": b.name, "parent_id": b.parent_id} for b in blobs]
+
+    def get_audio(self, obj):
+        # Only AudioAttachment rows, which is where audio has landed since migration 0136.
+        # Audio received before that is still a BlobMeta row with an audio/* content type and
+        # carries no transcript or translation; it is deliberately not listed here, though the
+        # attachment endpoint will still serve it by blob_id.
+        attachments = getattr(obj, "_prefetched_audio", None)
+        if attachments is None:
+            attachments = obj.audio
+        return [
+            {
+                "blob_id": a.blob_id,
+                "name": a.name,
+                "content_type": a.content_type,
+                "transcript": a.transcript,
+                "translation": a.translation,
+            }
+            for a in attachments
+        ]
 
 
 class CompletedWorkDataSerializer(serializers.ModelSerializer):
@@ -269,6 +364,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     deliver_app = CommCareAppSerializer()
     payment_units = PaymentUnitSerializer(source="paymentunit_set", many=True)
     verification_flags = OpportunityVerificationFlagsSerializer(source="opportunityverificationflags", read_only=True)
+    budget_per_user = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -295,18 +391,8 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "verification_flags",
         ]
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        for key, value in data.items():
-            if isinstance(value, OrderedDict):
-                data[key] = dict(value)
-            elif isinstance(value, list):
-                cleaned_value = []
-                for item in value:
-                    if isinstance(item, OrderedDict):
-                        cleaned_value.append(dict(item))
-                data[key] = cleaned_value
-        return data
+    def get_budget_per_user(self, obj) -> int:
+        return obj.budget_per_user(include_org_pay=False)
 
 
 class TaskTypeDataSerializer(serializers.ModelSerializer):
@@ -323,6 +409,7 @@ class TaskTypeDataSerializer(serializers.ModelSerializer):
             "is_active",
             "archived",
             "duration",
+            "mode",
         ]
 
 
@@ -346,16 +433,67 @@ class AssignedTaskDataSerializer(serializers.ModelSerializer):
         ]
 
 
+class AssignedTaskCreateSerializer(serializers.Serializer):
+    """Assigns a task to a worker. Applies the same rules as ``CreateTaskForm``."""
+
+    task_type_id = serializers.UUIDField(source="task_type")
+    username = serializers.CharField(source="opportunity_access")
+    due_date = serializers.DateField()
+
+    def validate_task_type_id(self, value):
+        opportunity = self.context["view"].opportunity
+        try:
+            return TaskType.objects.get(task_type_id=value, app=opportunity.deliver_app, is_active=True)
+        except TaskType.DoesNotExist:
+            raise serializers.ValidationError(_("No active task type with this ID exists for this opportunity."))
+
+    def validate_username(self, value):
+        opportunity = self.context["view"].opportunity
+        try:
+            return OpportunityAccess.objects.select_related("user").get(
+                opportunity=opportunity, user__username=value, accepted=True, suspended=False
+            )
+        except OpportunityAccess.DoesNotExist:
+            raise serializers.ValidationError(_("No active worker with this username exists on this opportunity."))
+
+    def validate_due_date(self, value):
+        if value < localdate():
+            raise serializers.ValidationError(_("The due date cannot be in the past."))
+        return value
+
+    def validate(self, attrs):
+        task_type = attrs["task_type"]
+        user = self.context["request"].user
+        if task_type.mode == TaskTypeModeChoices.OCS and not user_has_connected_ocs(user):
+            raise serializers.ValidationError(
+                {"task_type_id": _("Connect your Open Chat Studio account in Connect to assign OCS tasks.")}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        return AssignedTask.assign(**validated_data, assigned_by=self.context["request"].user)
+
+
 class WorkAreaGroupDataSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkAreaGroup
         fields = ["id", "name", "ward", "opportunity"]
 
 
-class WorkAreaDataSerializer(serializers.ModelSerializer):
-    work_area_group_name = serializers.SerializerMethodField()
+class GeoCentroidBoundarySerializer(serializers.ModelSerializer):
     centroid = serializers.SerializerMethodField()
     boundary = serializers.SerializerMethodField()
+
+    def get_centroid(self, obj) -> dict:
+        return json.loads(obj.centroid.geojson)
+
+    def get_boundary(self, obj) -> dict:
+        return json.loads(obj.boundary.geojson)
+
+
+class WorkAreaDataSerializer(GeoCentroidBoundarySerializer):
+    work_area_group_name = serializers.SerializerMethodField()
+    username = serializers.CharField(source="opportunity_access.user.username", read_only=True, default=None)
 
     class Meta:
         model = WorkArea
@@ -370,6 +508,7 @@ class WorkAreaDataSerializer(serializers.ModelSerializer):
             "case_properties",
             "work_area_group",
             "work_area_group_name",
+            "username",
             "centroid",
             "boundary",
         ]
@@ -379,17 +518,41 @@ class WorkAreaDataSerializer(serializers.ModelSerializer):
             return None
         return obj.work_area_group.name
 
-    def get_centroid(self, obj) -> dict:
-        return {"type": "Point", "coordinates": [obj.centroid.x, obj.centroid.y]}
 
-    def get_boundary(self, obj) -> dict:
-        return {"type": "Polygon", "coordinates": obj.boundary.coords}
+class ImplementationAreaDataSerializer(GeoCentroidBoundarySerializer):
+    class Meta:
+        model = ImplementationArea
+        fields = ["id", "name", "centroid", "boundary"]
 
 
 class LLOEntityDataSerializer(serializers.ModelSerializer):
+    """Exports the organization profile that used to be modelled as a separate LLO entity."""
+
+    countries = serializers.SlugRelatedField(many=True, read_only=True, slug_field="code")
+    primary_sectors = serializers.SlugRelatedField(many=True, read_only=True, slug_field="slug")
+    members = serializers.SlugRelatedField(many=True, read_only=True, slug_field="email")
+
     class Meta:
-        model = LLOEntity
-        fields = ["id", "name", "short_name"]
+        model = Organization
+        fields = [
+            "id",
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+            "verified",
+            "members",
+        ]
 
 
 class AuditReportDataSerializer(serializers.ModelSerializer):
@@ -431,3 +594,167 @@ class AuditReportEntryDataSerializer(serializers.ModelSerializer):
             "date_created",
             "date_modified",
         ]
+
+
+class WorkAreaGroupWriteSerializer(serializers.ModelSerializer):
+    # Derived from member WorkAreas' boundaries via update_centroid() — never client-writable,
+    # exposed here read-only so the response reflects the current computed value.
+    centroid = LonLatPointField(read_only=True)
+
+    class Meta:
+        model = WorkAreaGroup
+        fields = ["name", "ward", "centroid"]
+
+    def validate_name(self, value):
+        opportunity = self.context["view"].opportunity
+        qs = WorkAreaGroup.objects.filter(opportunity=opportunity, name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(_("A work area group with this name already exists."))
+        return value
+
+    def create(self, validated_data):
+        try:
+            return WorkAreaGroup.objects.create(opportunity=self.context["view"].opportunity, **validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({"name": _("A work area group with this name already exists.")})
+
+
+class WorkAreaBulkUpdateListSerializer(serializers.ListSerializer):
+    def create(self, validated_data):
+        opportunity = self.context["view"].opportunity
+
+        instances = []
+        touched_fields = set()
+        needs_visit_status_update = []
+        needs_hq_resync = []
+        to_assign = []
+        original_access_status = {}
+        to_unassign = []
+        recompute_group_ids = set()
+
+        for item in validated_data:
+            item = item.copy()
+            instance = item.pop("id")
+            has_access_key = "opportunity_access" in item
+            access = item.pop("opportunity_access", None)
+            old_group_id = instance.work_area_group_id
+
+            for field, value in item.items():
+                setattr(instance, field, value)
+                touched_fields.add(field)
+
+            if "expected_visit_count" in item:
+                needs_visit_status_update.append(instance)
+
+            if "boundary" in item and instance.work_area_group_id is not None:
+                # Group centroid is derived from member WorkAreas' boundaries, so an edit here
+                # needs a recompute even without a group change.
+                recompute_group_ids.add(instance.work_area_group_id)
+
+            if instance.work_area_group_id != old_group_id:
+                recompute_group_ids.update({instance.work_area_group_id, old_group_id})
+
+            if access is not None:
+                # assign_work_areas_and_sync_to_hq expects opportunity_access/status already set.
+                original_access_status[instance.id] = (instance.opportunity_access_id, instance.status)
+                instance.opportunity_access = access
+                if instance.status == WorkAreaStatus.UNASSIGNED:
+                    instance.status = WorkAreaStatus.NOT_VISITED
+                to_assign.append(instance)
+            elif has_access_key:
+                # Explicit `opportunity_access: null` — unassign rather than silently ignore.
+                to_unassign.append(instance)
+            elif item and instance.opportunity_access_id:
+                needs_hq_resync.append(instance)
+
+            instances.append(instance)
+
+        if touched_fields:
+            # Must run before the group-centroid recompute below: update_centroid() re-reads
+            # member WorkAreas' boundaries from the DB, so it needs this write already committed.
+            WorkArea.objects.bulk_update(instances, fields=list(touched_fields))
+
+        for instance in needs_visit_status_update:
+            instance.update_status()
+
+        recompute_group_ids.discard(None)
+        if recompute_group_ids:
+            groups = list(WorkAreaGroup.objects.filter(pk__in=recompute_group_ids))
+            for group in groups:
+                group.update_centroid(commit=False)
+            WorkAreaGroup.objects.bulk_update(groups, ["centroid"])
+
+        if needs_hq_resync:
+            bulk_create_or_update_cases_by_work_areas(needs_hq_resync, opportunity)
+
+        if to_assign:
+            result = assign_work_areas_and_sync_to_hq(opportunity, to_assign, self.context["request"].user)
+            # Side-channeled on the serializer instance: ListSerializer.save() only returns
+            # instances, so this is how the view recovers failed_ids/skipped counts.
+            self.assign_result = result
+            failed_ids = set(result["failed_ids"])
+            notified_access_ids = set()
+            for wa in to_assign:
+                if wa.id in failed_ids:
+                    orig_access_id, orig_status = original_access_status[wa.id]
+                    wa.opportunity_access_id = orig_access_id
+                    wa.status = orig_status
+                else:
+                    notified_access_ids.add(wa.opportunity_access_id)
+            for access_id in notified_access_ids:
+                transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
+
+        if to_unassign:
+            result = unassign_work_areas_for_opportunity(
+                opportunity, [wa.id for wa in to_unassign], self.context["request"].user
+            )
+            # See assign_result above: same side-channel, for the unassign path.
+            self.unassign_result = result
+            unassigned_ids = set(result["unassigned_ids"])
+            for wa in to_unassign:
+                if wa.id in unassigned_ids:
+                    wa.opportunity_access = None
+                    wa.status = WorkAreaStatus.UNASSIGNED
+
+        return instances
+
+
+class WorkAreaBulkUpdateSerializer(serializers.ModelSerializer):
+    id = serializers.PrimaryKeyRelatedField(queryset=WorkArea.objects.none())
+    centroid = LonLatPointField(required=False)
+    boundary = WKTPolygonField(required=False)
+    work_area_group = serializers.PrimaryKeyRelatedField(
+        queryset=WorkAreaGroup.objects.none(),
+        required=False,
+        allow_null=True,
+    )
+    opportunity_access = serializers.PrimaryKeyRelatedField(
+        queryset=OpportunityAccess.objects.none(),
+        required=False,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = WorkArea
+        list_serializer_class = WorkAreaBulkUpdateListSerializer
+        fields = [
+            "id",
+            "work_area_group",
+            "opportunity_access",
+            "expected_visit_count",
+            "target_population",
+            "centroid",
+            "boundary",
+            "case_properties",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        opportunity = self.context["view"].opportunity
+
+        self.fields["id"].queryset = WorkArea.objects.filter(opportunity=opportunity).select_related("work_area_group")
+        self.fields["work_area_group"].queryset = WorkAreaGroup.objects.filter(opportunity=opportunity)
+        self.fields["opportunity_access"].queryset = OpportunityAccess.objects.filter(opportunity=opportunity)

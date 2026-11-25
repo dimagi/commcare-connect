@@ -1,0 +1,1 @@
+--8<-- "commcare_connect/form_receiver/README.md"

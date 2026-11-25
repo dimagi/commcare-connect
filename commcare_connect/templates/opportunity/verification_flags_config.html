@@ -7,13 +7,7 @@
 {% block content %}
   {% include 'components/breadcrumbs.html' with path=path %}
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
-    <h2 class="title">
-      {% if opportunity.automatic_visit_verification %}
-        {% translate "Verification Rules Configuration" %}
-      {% else %}
-        {% translate "Verification Flags Configuration" %}
-      {% endif %}
-    </h2>
+    <h2 class="title">{% translate "Verification Rules Configuration" %}</h2>
     <form method="post" class="flex flex-col gap-4 space-y-6">
       {% csrf_token %}
       <div class="space-y-2">
@@ -22,13 +16,7 @@
         </div>
       </div>
       <div class="space-y-2">
-        <h3 class="title-sm">
-          {% if opportunity.automatic_visit_verification %}
-            {% translate "Deliver Unit Rules" %}
-          {% else %}
-            {% translate "Deliver Unit Flags" %}
-          {% endif %}
-        </h3>
+        <h3 class="title-sm">{% translate "Deliver Unit Rules" %}</h3>
         <div class="card_bg">{% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}</div>
       </div>
       <div x-data="form_json_formset" class="space-y-4">

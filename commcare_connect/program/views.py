@@ -1,18 +1,26 @@
 from datetime import timedelta
 
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_POST
-from django.views.generic import ListView, UpdateView
+from django.views.decorators.http import require_GET, require_POST
+from django.views.generic import CreateView, ListView, UpdateView
 
-from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
+from commcare_connect.opportunity.forms import (
+    HQApiKeyCreateForm,
+    OpportunityInitForm,
+    OpportunityInitUpdateForm,
+    fixed_server_api_key_choices,
+    reloaded_api_key_selection,
+)
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -21,11 +29,15 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
+from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
+from commcare_connect.opportunity.views import OpportunityObjectMixin
 from commcare_connect.organization.decorators import (
-    org_admin_required,
-    org_program_manager_required,
-    org_viewer_required,
+    can_act_as_program_manager_user,
+    is_user_pm_org_admin,
+    org_admin_access_required,
+    org_pm_required,
+    org_view_access_required,
+    program_admin_access_required,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ProgramForm
@@ -35,18 +47,9 @@ from commcare_connect.program.tasks import (
     send_program_invite_applied_email,
     send_program_invite_email,
 )
+from commcare_connect.utils.db import get_object_by_uuid_or_int
 
-from .utils import is_program_manager
-
-
-class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        org_membership = getattr(self.request, "org_membership", None)
-        is_admin = getattr(org_membership, "is_admin", False)
-        org = getattr(self.request, "org", None)
-        program_manager = getattr(org, "program_manager", False)
-        return (org_membership is not None and is_admin and program_manager) or self.request.user.is_superuser
-
+from .utils import AccessLevel, program_access_level_from_request, programs_accessible_to_org
 
 ALLOWED_ORDERINGS = {
     "name": "name",
@@ -58,7 +61,7 @@ ALLOWED_ORDERINGS = {
 }
 
 
-class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
+class ProgramCreateOrUpdate(UpdateView):
     model = Program
     form_class = ProgramForm
     template_name = "program/program_form.html"
@@ -113,7 +116,18 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
         return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
 
 
-class ManagedOpportunityList(ProgramManagerMixin, ListView):
+@method_decorator(org_pm_required, name="dispatch")
+class ProgramCreate(ProgramCreateOrUpdate):
+    """There is no program yet to have a relationship with, so it is the org that decides."""
+
+
+@method_decorator(program_admin_access_required, name="dispatch")
+class ProgramUpdate(ProgramCreateOrUpdate):
+    """Editing an existing program requires admin access on that program."""
+
+
+@method_decorator(program_admin_access_required, name="dispatch")
+class ProgramOpportunityList(ListView):
     model = Opportunity
     paginate_by = 10
     default_ordering = "name"
@@ -135,44 +149,82 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
         return context
 
 
-class ManagedOpportunityViewMixin:
+class ProgramOpportunityInitMixin:
+    """Shared by the create and edit pages of the opportunity setup wizard's first step."""
+
+    model = Opportunity
+    template_name = "opportunity/opportunity_init.html"
+    context_object_name = "opportunity"
+    opportunity_created = False
     program = None
 
     def dispatch(self, request, *args, **kwargs):
+        # Resolve the program before the access check: the check filters on the program id, which raises a
+        # ValidationError when it is not a valid UUID.
         try:
             self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
-        except Program.DoesNotExist:
+        except (Program.DoesNotExist, ValidationError):
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
+        return self._dispatch_as_program_admin(request, *args, **kwargs)
+
+    @method_decorator(program_admin_access_required)
+    def _dispatch_as_program_admin(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 
-    def form_valid(self, form):
-        is_create = self.object is None
-        response = super().form_valid(form)
-        if is_create:
-            send_opportunity_created_email(self.object.id)
-        return response
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["program"] = self.program
-        return context
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
         kwargs["program"] = self.program
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["opportunity_created"] = self.opportunity_created
+        context["program"] = self.program
+        return context
 
-class ManagedOpportunityInit(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInit):
+
+class ProgramOpportunityInit(ProgramOpportunityInitMixin, CreateView):
     form_class = OpportunityInitForm
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        create_learn_modules_and_deliver_units(self.object.id)
+        send_opportunity_created_email(self.object.id)
+        return response
 
-class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInitUpdate):
+
+class ProgramOpportunityInitUpdate(ProgramOpportunityInitMixin, OpportunityObjectMixin, UpdateView):
     form_class = OpportunityInitUpdateForm
+    opportunity_created = True
+
+    def get_opportunity_queryset(self):
+        return Opportunity.objects.filter(program=self.program)
 
 
-@org_program_manager_required
+@program_admin_access_required
+@require_GET
+def opportunity_api_key_options(request, org_slug, pk, opp_id):
+    """The options for the API key select on the opportunity Edit page, reloaded after the user adds a key. Program
+    admins only, like that select."""
+    opportunity = get_object_by_uuid_or_int(
+        Opportunity.objects.filter(program=request.program).select_related("api_key__user"),
+        opp_id,
+        uuid_field="opportunity_id",
+    )
+    choices = fixed_server_api_key_choices(opportunity, request.user)
+    # htmx sends the select's own value with the reload, which is the admin's unsaved pick.
+    selected = reloaded_api_key_selection(choices, request.GET.get("api_key"), opportunity)
+    return render(request, "opportunity/partials/api_key_options.html", {"choices": choices, "selected": selected})
+
+
+@program_admin_access_required
 @require_POST
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
@@ -193,19 +245,22 @@ def invite_organization(request, org_slug, pk):
     )
 
     if created:
-        messages.success(request, _("Workspace invited successfully!"))
+        messages.success(request, _("Organization invited successfully!"))
     else:
-        messages.info(request, _("The invitation for this workspace has been updated."))
+        messages.info(request, _("The invitation for this organization has been updated."))
 
     send_program_invite_email(obj.id)
 
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
 
-@org_program_manager_required
+@login_required
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
+    if program_access_level_from_request(request, application.program) < AccessLevel.ADMIN:
+        raise Http404()
+
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     status_mapping = {
@@ -225,11 +280,15 @@ def manage_application(request, org_slug, application_id, action):
 
 
 @require_POST
-@org_admin_required
+@org_admin_access_required
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
     application = get_object_or_404(
         ProgramApplication, program_application_id=application_id, status=ProgramApplicationStatus.INVITED
     )
+    # The invitee answers its own invitation, so the org in scope must be the invited one --
+    # the program's own orgs hold admin access over it and must not answer on its behalf.
+    if application.organization_id != request.org.id:
+        raise Http404()
 
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
@@ -257,10 +316,10 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
-@org_viewer_required
+@org_view_access_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
-    if is_program_manager(request):
+    if can_act_as_program_manager_user(request.user, org):
         return program_manager_home(request, org)
     return network_manager_home(request, org)
 
@@ -281,7 +340,7 @@ def program_manager_home(request, org):
     )
 
     programs_qs = (
-        Program.objects.filter(organization=org)
+        programs_accessible_to_org(org)
         .order_by("-start_date")
         .annotate(
             invited=Count("programapplication"),
@@ -299,13 +358,18 @@ def program_manager_home(request, org):
                 filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
-        .prefetch_related(program_applications_prefetch)
+        .prefetch_related(program_applications_prefetch, "watchers")
     )
 
     programs = list(programs_qs)
+    program_ids_with_standard_access = []
     for program in programs:
         applications = getattr(program, "applications_with_budget", [])
         program.allocated_budget = sum(application.current_budget for application in applications)
+        access = program_access_level_from_request(request, program)
+        program.user_has_admin_access = access >= AccessLevel.ADMIN
+        if access >= AccessLevel.STANDARD:
+            program_ids_with_standard_access.append(program.id)
 
     pending_review_data = (
         UserVisit.objects.filter(
@@ -324,7 +388,8 @@ def program_manager_home(request, org):
 
     pending_payments_data = (
         PaymentInvoice.objects.filter(
-            opportunity__program__in=programs_qs,
+            # the invoice list needs standard access, so a watcher must not be sent there
+            opportunity__program_id__in=program_ids_with_standard_access,
             payment__isnull=True,
         )
         .values(
@@ -354,7 +419,7 @@ def program_manager_home(request, org):
         "programs": programs,
         "organizations": organizations,
         "recent_activities": recent_activities,
-        "is_program_manager": True,
+        "is_program_manager": is_user_pm_org_admin(request.user, org),
     }
     return render(request, "program/pm_home.html", context)
 
@@ -372,7 +437,7 @@ def network_manager_home(request, org):
             Prefetch(
                 "opportunity_set",
                 queryset=Opportunity.objects.filter(organization=org),
-                to_attr="managed_opportunities_for_org",
+                to_attr="opportunities_for_org",
             )
         )
     )

@@ -12,8 +12,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
 )
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
-    CompletedWork,
     Opportunity,
     OpportunityAccess,
     UserVisit,
@@ -21,8 +19,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    CatchmentAreaTable,
-    CompletedWorkTable,
     DeliverStatusTable,
     UserStatusTable,
     UserVisitReviewTable,
@@ -79,7 +75,9 @@ class UserVisitExporter:
         )
         if status and "all" not in status:
             user_visits = user_visits.filter(status__in=status)
-        user_visits = user_visits.order_by("visit_date")
+        user_visits = user_visits.select_related("user", "deliver_unit", "completed_work__payment_unit").order_by(
+            "visit_date"
+        )
         self._get_table_metadata()
 
         dataset = Dataset(title="Export User Visits", headers=self.headers)
@@ -125,10 +123,13 @@ def export_user_visit_review_data(
 
 
 def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
+    # Accrued is informational only: the payment import reads columns by header and ignores it.
+    accrued_header = f"Accrued ({opportunity.currency_code})" if opportunity.currency_code else "Accrued"
     headers = [
         "Username",
         "Phone Number",
         "Name",
+        accrued_header,
         "Payment Amount",
         "Payment Date (YYYY-MM-DD)",
         "Payment Method",
@@ -147,6 +148,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
             access.user.username,
             access.user.phone_number,
             access.user.name,
+            access.payment_accrued,
             "",
             "",
             "",
@@ -166,26 +168,6 @@ def export_deliver_status_table(opportunity: Opportunity) -> Dataset:
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
     table = DeliverStatusTable(access_objects, exclude=("details", "date_popup"))
     return get_dataset(table, export_title="Deliver Status export")
-
-
-def export_work_status_table(opportunity: Opportunity) -> Dataset:
-    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False)
-    completed_works = []
-    for completed_work in CompletedWork.objects.filter(opportunity_access__in=access_objects):
-        completed = completed_work.completed
-        if opportunity.auto_approve_payments and completed and completed_work.flags:
-            completed_works.append(completed_work)
-            continue
-        if completed:
-            completed_works.append(completed_work)
-    table = CompletedWorkTable(completed_works, exclude=("date_popup"))
-    return get_dataset(table, export_title="Payment Verification export")
-
-
-def export_catchment_area_table(opportunity):
-    catchment_areas = CatchmentArea.objects.filter(opportunity=opportunity)
-    table = CatchmentAreaTable(catchment_areas)
-    return get_dataset(table, export_title="Catchment Area Export")
 
 
 def get_dataset(table, export_title):

@@ -3,7 +3,6 @@ import random
 import re
 from datetime import timedelta
 from decimal import Decimal
-from itertools import chain
 from unittest import mock
 
 import pytest
@@ -14,19 +13,16 @@ from tablib import Dataset
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     Payment,
-    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
-    CatchmentAreaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
@@ -43,9 +39,8 @@ from commcare_connect.opportunity.visit_import import (
     ImportException,
     ReviewVisitRowData,
     VisitData,
-    _bulk_update_catchments,
-    _bulk_update_completed_work_status,
     _bulk_update_visit_review_status,
+    _exchange_rates_by_payment_date,
     bulk_update_payments,
     bulk_update_visit_status,
     get_data_by_visit_id,
@@ -91,33 +86,14 @@ class TestBulkUpdateVisitStatus:
             user=mobile_user,
             opportunity_access=access,
         )
+        initial_status_modified_date = visit.status_modified_date
         dataset = Dataset(headers=["visit id", "status", "rejected reason"])
         dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, ""]])
         import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
         assert import_status.locked_visits == {visit.xform_id}
         visit.refresh_from_db()
         assert visit.status == VisitValidationStatus.approved.value
-
-
-@pytest.mark.django_db
-def test_bulk_update_completed_work_status(opportunity: Opportunity, mobile_user: User):
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
-    payment_unit = PaymentUnit.objects.get(opportunity=opportunity)
-    DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
-
-    completed_works = CompletedWorkFactory.create_batch(5, opportunity_access=access, payment_unit=payment_unit)
-    dataset = Dataset(headers=["instance id", "payment approval", "rejected reason"])
-    dataset.extend([[work.id, CompletedWorkStatus.approved.value, ""] for work in completed_works])
-
-    before_update = now()
-    _bulk_update_completed_work_status(opportunity=opportunity, dataset=dataset)
-    after_update = now()
-
-    updated_work = CompletedWork.objects.filter(opportunity_access=access)
-    for work in updated_work:
-        assert work.status == CompletedWorkStatus.approved.value
-        assert work.status_modified_date is not None
-        assert before_update <= work.status_modified_date <= after_update
+        assert visit.status_modified_date == initial_status_modified_date
 
 
 @pytest.mark.django_db
@@ -132,11 +108,13 @@ def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, reason]])
+    before_update = now()
     import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     assert not import_status.missing_visits
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
     assert visit.reason == reason
+    assert visit.status_modified_date >= before_update
 
 
 @pytest.mark.django_db
@@ -318,43 +296,51 @@ def test_get_status_by_visit_id(headers, rows, expected):
 
 
 @pytest.mark.django_db
-def test_bulk_update_payments(opportunity: Opportunity):
+# The export adds an Accrued column for information only; the import must ignore it whatever it holds.
+@pytest.mark.parametrize(
+    ("at_end", "accrued_value"),
+    [(False, "1000"), (True, "999999"), (True, "not a number"), (False, "")],
+    ids=["as exported", "moved to the end and edited", "non-numeric", "blank"],
+)
+def test_bulk_update_payments(opportunity: Opportunity, at_end, accrued_value):
     mobile_user_seen = MobileUserFactory.create_batch(5)
-    mobile_user_missing = MobileUserFactory.create_batch(5)
     access_objects = []
     for mobile_user in mobile_user_seen:
-        access_objects.append(OpportunityAccessFactory(opportunity=opportunity, user=mobile_user))
+        access_objects.append(
+            OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, payment_accrued=1000)
+        )
 
-    dataset = Dataset(
-        headers=[
-            "Username",
-            "Phone Number",
-            "Name",
-            "Payment Amount",
-            "Payment Date (YYYY-MM-DD)",
-            "Payment Method",
-            "Payment Operator",
-        ]
-    )
+    headers = [
+        "Username",
+        "Phone Number",
+        "Name",
+        "Payment Amount",
+        "Payment Date (YYYY-MM-DD)",
+        "Payment Method",
+        "Payment Operator",
+    ]
+    # The export writes Accrued between Name and Payment Amount.
+    accrued_index = len(headers) if at_end else 3
+    headers.insert(accrued_index, "Accrued (USD)")
+    dataset = Dataset(headers=headers)
 
     payment_date = "2025-01-15"
-    for index, mobile_user in enumerate(chain(mobile_user_seen, mobile_user_missing)):
-        dataset.append(
-            (
-                mobile_user.username,
-                mobile_user.phone_number,
-                mobile_user.name,
-                50,  # Payment Amount
-                payment_date if index != 4 else None,
-                f"method-{index}",
-                f"operator-{index}",
-            )
-        )
+    for index, mobile_user in enumerate(mobile_user_seen):
+        row = [
+            mobile_user.username,
+            mobile_user.phone_number,
+            mobile_user.name,
+            50,  # Payment Amount
+            payment_date if index != 4 else None,
+            f"method-{index}",
+            f"operator-{index}",
+        ]
+        row.insert(accrued_index, accrued_value)
+        dataset.append(row)
 
     payment_import_status = bulk_update_payments(opportunity.pk, dataset.headers, list(dataset))
 
     assert payment_import_status.seen_users == {user.username for user in mobile_user_seen}
-    assert payment_import_status.missing_users == {user.username for user in mobile_user_missing}
 
     assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 5
 
@@ -367,6 +353,41 @@ def test_bulk_update_payments(opportunity: Opportunity):
             assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
         assert payment.payment_method == f"method-{index}"
         assert payment.payment_operator == f"operator-{index}"
+        access.refresh_from_db()
+        assert access.payment_accrued == 1000
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("headers", "rows", "expected_message"),
+    [
+        # tablib reads the first row of a headerless file as its header row, so a file of nothing
+        # but data arrives with headers that happen to be someone's payment details.
+        (
+            ["testuser123", "50", "2025-01-15", "method", "operator"],
+            [["testuser456", "60", "2025-01-16", "method", "operator"]],
+            "The uploaded file did not contain any headers",
+        ),
+        ([], [], "The uploaded file did not contain any headers"),
+        (
+            ["Not", "A", "Payment", "File"],
+            [["a", "b", "c", "d"]],
+            "The uploaded file did not contain any headers",
+        ),
+        # Some payment columns are there, so this really is a payment file, just an incomplete one.
+        (
+            ["Username", "Payment Amount"],
+            [["testuser123", "50"]],
+            "Missing required column(s): 'payment date (yyyy-mm-dd)', 'payment method', 'payment operator'",
+        ),
+    ],
+)
+def test_bulk_update_payments_rejects_unusable_headers(opportunity: Opportunity, headers, rows, expected_message):
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, headers, rows)
+
+    assert excinfo.value.message == expected_message
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
 
 
 @pytest.mark.django_db
@@ -417,105 +438,119 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     with pytest.raises(ImportException) as excinfo:
         bulk_update_payments(opportunity.pk, dataset_headers, duplicate_dataset_rows)
 
-    assert "1 rows have errors" in str(excinfo.value.message)
+    assert "1 row has errors" in str(excinfo.value.message)
 
-    error_details = excinfo.value.rows
-    expected_error_substring = "A payment for this user with the same amount and date already exists."
-    assert expected_error_substring in error_details
+    # The duplicate is the first data row, which is line 2 of the file once the header is counted.
+    assert excinfo.value.errors == {"A payment for this user with the same amount and date already exists": [2]}
     assert Payment.objects.count() == 1
 
 
-@pytest.fixture
-def dataset():
-    return Dataset(headers=["latitude", "longitude", "area name", "radius", "active", "username", "site code"])
+PAYMENT_IMPORT_HEADERS = [
+    "Username",
+    "Payment Amount",
+    "Payment Date (YYYY-MM-DD)",
+    "Payment Method",
+    "Payment Operator",
+]
 
 
-@pytest.fixture
-def new_catchments():
-    return [
-        ["40.7128", "-74.0060", "New York", "5000", "yes", "", "new york"],
-        ["20.7128", "-84.0060", "London", "4500", "No", "", "london"],
+@pytest.mark.django_db
+def test_bulk_update_payments_groups_errors_by_reason(opportunity: Opportunity):
+    """Unreadable rows and unpayable usernames are reported together, and nothing is written."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    suspended_user = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=suspended_user, suspended=True)
+    unknown_user = MobileUserFactory.create()
+
+    rows = [
+        (payable.username, "abc", "2025-01-15", "method", "operator"),  # row 2
+        (None, 50, "2025-01-15", "method", "operator"),  # row 3
+        (payable.username, 50, "15-01-2025", "method", "operator"),  # row 4
+        ("   ", 50, "2025-01-15", "method", "operator"),  # row 5
+        (unknown_user.username, 50, "2025-01-15", "method", "operator"),  # row 6
+        (suspended_user.username, 50, "2025-01-15", "method", "operator"),  # row 7
+        (payable.username, 50, "2025-01-15", "method", "operator"),  # row 8, valid
+        (unknown_user.username, "abc", "2025-01-15", "method", "operator"),  # row 9, two problems
     ]
 
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
 
-@pytest.fixture
-def old_catchments(opportunity):
-    mobile_users = MobileUserFactory.create_batch(2)
-    catchments = set()
-    for user in mobile_users:
-        access = OpportunityAccessFactory.create(opportunity=opportunity, user=user)
-        catchments.add(
-            CatchmentAreaFactory.create(
-                opportunity=opportunity, opportunity_access=access, latitude=28, longitude=45, radius=100, active=True
-            )
-        )
-    return catchments
-
-
-@pytest.mark.django_db
-def test_bulk_update_catchments_missing_headers(opportunity):
-    required_headers = ["latitude", "longitude", "area name", "radius", "active", "site code"]
-    sample_data = ["40.7128", "-74.0060", "New York", "100", "yes", "new york"]  # Sample data for a complete row
-
-    for missing_header in required_headers:
-        incomplete_headers = [header for header in required_headers if header != missing_header]
-        dataset = Dataset(headers=incomplete_headers)
-
-        # Add a row with data, excluding the value for the missing header
-        row_data = [value for header, value in zip(required_headers, sample_data) if header != missing_header]
-        dataset.append(row_data)
-
-        with pytest.raises(ImportException) as excinfo:
-            _bulk_update_catchments(opportunity, dataset)
-
-        expected_message = f"Missing required column(s): '{missing_header}'"
-        assert str(excinfo.value) == expected_message, f"Expected: {expected_message}, but got {str(excinfo.value)}"
+    assert excinfo.value.message == "7 rows have errors"
+    assert excinfo.value.errors == {
+        "Payment amount must be a number": [2, 9],
+        "Username is required": [3, 5],
+        "Payment date must be in YYYY-MM-DD format": [4],
+        # Row 9 is reported here too, rather than only once its amount is fixed.
+        "Username was not found in this opportunity": [6, 9],
+        "Worker is suspended": [7],
+    }
+    # Not even the one valid row is written.
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
 
 
 @pytest.mark.django_db
-def test_bulk_update_catchments(opportunity, dataset, new_catchments, old_catchments):
-    latitude_change = Decimal("10.5")
-    longitude_change = Decimal("10.5")
-    radius_change = 10
-    name_change = "updated"
+@pytest.mark.parametrize(
+    ("amount", "expected_reason"),
+    [
+        (-50, "Payment amount cannot be negative"),
+        ("-50", "Payment amount cannot be negative"),
+        ("-0.01", "Payment amount cannot be negative"),
+    ],
+)
+def test_bulk_update_payments_rejects_negative_amounts(opportunity: Opportunity, amount, expected_reason):
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [(payable.username, amount, "2025-01-15", "method", "operator")]
 
-    for catchment in old_catchments:
-        dataset.append(
-            [
-                str(catchment.latitude + latitude_change),
-                str(catchment.longitude + longitude_change),
-                f"{name_change} {catchment.name}",
-                str(catchment.radius + radius_change),
-                "yes",
-                catchment.opportunity_access.user.username,
-                catchment.site_code,
-            ]
-        )
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
 
-    dataset.extend(new_catchments)
+    assert excinfo.value.errors == {expected_reason: [2]}
+    assert not Payment.objects.filter(opportunity_access__opportunity=opportunity).exists()
 
-    import_status = _bulk_update_catchments(opportunity, dataset)
 
-    assert import_status.seen_catchments == {str(catchment.id) for catchment in old_catchments}, (
-        "Mismatch in updated catchments"
-    )
-    assert import_status.new_catchments == len(new_catchments), "Incorrect number of new catchments"
+@pytest.mark.django_db
+def test_exchange_rates_are_looked_up_once_per_distinct_date(opportunity: Opportunity):
+    """Dated rows share a lookup per date; undated rows are keyed by None to today's rate."""
+    jan = datetime.date(2025, 1, 15)
+    feb = datetime.date(2025, 2, 20)
+    payments_by_user = {
+        "alice": [(2, {"payment_date": jan}), (3, {"payment_date": feb})],
+        "bob": [(4, {"payment_date": jan}), (5, {"payment_date": None})],
+    }
 
-    for catchment in old_catchments:
-        updated_catchment = CatchmentArea.objects.get(site_code=catchment.site_code)
-        assert updated_catchment.name == f"{name_change} {catchment.name}", (
-            f"Name not updated correctly for catchment {catchment.id}"
-        )
-        assert updated_catchment.radius == catchment.radius + radius_change, (
-            f"Radius not updated correctly for catchment {catchment.id}"
-        )
-        assert updated_catchment.latitude == catchment.latitude + latitude_change, (
-            f"Latitude not updated correctly for catchment {catchment.id}"
-        )
-        assert updated_catchment.longitude == catchment.longitude + longitude_change, (
-            f"Longitude not updated correctly for catchment {catchment.id}"
-        )
-        assert updated_catchment.active, f"Active status not updated correctly for catchment {catchment.id}"
+    with mock.patch(
+        "commcare_connect.opportunity.visit_import.get_exchange_rate", return_value=Decimal("2")
+    ) as get_rate:
+        rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, Decimal("3"))
+
+    assert rates == {jan: Decimal("2"), feb: Decimal("2"), None: Decimal("3")}
+    # Four rows, two distinct dates: the undated row reuses the rate passed in.
+    assert sorted(call.args[1] for call in get_rate.call_args_list) == [jan, feb]
+
+
+@pytest.mark.django_db
+def test_bulk_update_payments_writes_nothing_when_a_rate_is_missing(opportunity: Opportunity):
+    """The reason rates are resolved up front: a missing one must not abort a part-written import."""
+    payable = MobileUserFactory.create()
+    OpportunityAccessFactory(opportunity=opportunity, user=payable)
+    rows = [
+        (payable.username, 50, "2025-01-15", "method", "operator"),
+        (payable.username, 60, "2025-02-20", "method", "operator"),
+    ]
+
+    def rate_for(currency_code, date=None):
+        if date == datetime.date(2025, 2, 20):
+            raise ImportException("Rate not found for opportunity currency")
+        return Decimal("2")
+
+    with mock.patch("commcare_connect.opportunity.visit_import.get_exchange_rate", side_effect=rate_for):
+        with pytest.raises(ImportException):
+            bulk_update_payments(opportunity.pk, PAYMENT_IMPORT_HEADERS, rows)
+
+    assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 0
 
 
 def prepare_opportunity_payment_test_data(opportunity):
@@ -555,27 +590,14 @@ def prepare_opportunity_payment_test_data(opportunity):
 
 
 @pytest.mark.django_db
-def test_update_work_payment_date_partially(opportunity):
-    user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
-
-    payment_dates = [
-        timezone.now() - timedelta(5),
-        timezone.now() - timedelta(3),
-        timezone.now() - timedelta(1),
-    ]
-    for date in payment_dates:
-        PaymentFactory(opportunity_access=access, amount=100, date_paid=date)
-
-    update_work_payment_date(access)
-
-    assert (
-        get_assignable_completed_work_count(access)
-        == CompletedWork.objects.filter(opportunity_access=access, payment_date__isnull=False).count()
-    )
-
-
-@pytest.mark.django_db
-def test_update_work_payment_date_fully(opportunity):
+@pytest.mark.parametrize(
+    "amounts",
+    [
+        pytest.param([100, 100, 100], id="partially"),
+        pytest.param([100, 150, 200], id="fully"),
+    ],
+)
+def test_update_work_payment_date(opportunity, amounts):
     user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
 
     payment_dates = [
@@ -583,15 +605,15 @@ def test_update_work_payment_date_fully(opportunity):
         timezone.now() - timedelta(days=3),
         timezone.now() - timedelta(days=1),
     ]
-    amounts = [100, 150, 200]
     for date, amount in zip(payment_dates, amounts):
         PaymentFactory(opportunity_access=access, amount=amount, date_paid=date)
 
     update_work_payment_date(access)
 
-    assert CompletedWork.objects.filter(
-        opportunity_access=access, payment_date__isnull=False
-    ).count() == get_assignable_completed_work_count(access)
+    assert (
+        get_assignable_completed_work_count(access)
+        == CompletedWork.objects.filter(opportunity_access=access, payment_date__isnull=False).count()
+    )
 
 
 @pytest.mark.django_db
@@ -673,10 +695,8 @@ def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
     return total_assigned_count
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.rejected])
 def test_network_manager_flagged_visit_review_status(mobile_user: User, opportunity: Opportunity, visit_status):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -703,9 +723,7 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
             assert visit.justification == "justification"
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_nm_flagged_visit_review_status_without_justification(mobile_user: User, opportunity: Opportunity):
-    assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
         5,
@@ -730,7 +748,6 @@ def test_nm_flagged_visit_review_status_without_justification(mobile_user: User,
     assert _ids(msg) == _ids(error_msg)
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "review_status, cw_status",
     [
@@ -816,6 +833,7 @@ class TestBulkReviewVisitImport:
         dataset = self._prepare_dataset(agree_visits, "agree")
         dataset.extend(self._prepare_dataset(disagree_visits, "disagree"))
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
 
         assert status.seen_visits == expected_agreed_visits | expected_disagreed_visits
@@ -830,6 +848,10 @@ class TestBulkReviewVisitImport:
                 xform_id__in=expected_disagreed_visits, review_status=VisitReviewStatus.disagree
             ).count()
             == num_disagree
+        )
+        affected_visits = UserVisit.objects.filter(xform_id__in=expected_agreed_visits | expected_disagreed_visits)
+        assert affected_visits.filter(review_status_modified_date__gte=before_update).count() == len(
+            expected_agreed_visits | expected_disagreed_visits
         )
 
     @mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payment_accrued")
@@ -911,19 +933,19 @@ class TestBulkReviewVisitImport:
             5,
             opportunity=self.opp,
             review_created_on=self.now_time - timedelta(days=3),
-            status=initial_status,
+            review_status=initial_status,
         )
+        initial_modified_dates = {v.xform_id: v.review_status_modified_date for v in visits}
 
         dataset = self._prepare_dataset(visits, new_status)
 
         with transaction.atomic():
             status = _bulk_update_visit_review_status(self.opp, dataset)
 
-        assert status.seen_visits == {visit.xform_id for visit in visits}
-        assert (
-            UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits], review_status=initial_status).count()
-            == 5
-        )
+        assert status.seen_visits == set()
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits]):
+            assert visit.review_status == initial_status
+            assert visit.review_status_modified_date == initial_modified_dates[visit.xform_id]
 
     def test_handles_duplicate_entries(self):
         """Ensures that duplicate entries do not cause unintended behavior."""
@@ -940,6 +962,7 @@ class TestBulkReviewVisitImport:
             dataset.append([visit.xform_id, "agree"])
             dataset.append([visit.xform_id, "agree"])
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
 
         assert status.seen_visits == {visit.xform_id for visit in visits}
@@ -949,6 +972,8 @@ class TestBulkReviewVisitImport:
             ).count()
             == 3
         )
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits]):
+            assert visit.review_status_modified_date >= before_update
 
     @pytest.mark.parametrize(
         "headers, row, expected_exception, expected_message",
@@ -1002,12 +1027,18 @@ class TestBulkReviewVisitImport:
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.agree,
         )
+        locked_modified_dates = {v.xform_id: v.review_status_modified_date for v in locked_visits}
         dataset = self._prepare_dataset(agree_visits, VisitReviewStatus.agree.value)
         dataset.extend(self._prepare_dataset(locked_visits, VisitReviewStatus.disagree.value))
 
+        before_update = now()
         status = _bulk_update_visit_review_status(self.opp, dataset)
         assert status.seen_visits == {visit.xform_id for visit in agree_visits}
         assert status.locked_visits == {visit.xform_id for visit in locked_visits}
         assert UserVisit.objects.filter(review_status=VisitReviewStatus.agree).count() == len(agree_visits) + len(
             locked_visits
         )
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in agree_visits]):
+            assert visit.review_status_modified_date >= before_update
+        for visit in UserVisit.objects.filter(xform_id__in=[v.xform_id for v in locked_visits]):
+            assert visit.review_status_modified_date == locked_modified_dates[visit.xform_id]

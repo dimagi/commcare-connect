@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
+from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import OpportunityAccessCreationForm
 from commcare_connect.opportunity.models import (
@@ -17,8 +19,10 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityApiKeyEvent,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunitySupervisingOrganizationEvent,
     Payment,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,
@@ -28,6 +32,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
 )
 from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
+from commcare_connect.utils.admin import UNKNOWN, AuditEventAdmin, audited_object
 
 # Register your models here.
 
@@ -41,6 +46,7 @@ admin.site.register(PaymentInvoiceStatusEvent)
 
 @admin.register(Opportunity)
 class OpportunityAdmin(admin.ModelAdmin):
+    search_fields = ["name", "organization__name", "program__name"]
     actions = ["refresh_learn_and_deliver_modules"]
 
     @admin.action(description="Refresh Learn and Deliver Modules")
@@ -108,8 +114,12 @@ class CompletedModuleAdmin(admin.ModelAdmin):
 
 @admin.register(UserVisit)
 class UserVisitAdmin(admin.ModelAdmin):
-    list_display = ["deliver_unit", "user", "opportunity", "status"]
+    list_display = ["deliver_unit", "user", "opportunity", "status", "get_over_limit_reasons"]
     search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
+
+    @admin.display(description="Over Limit Reasons")
+    def get_over_limit_reasons(self, obj):
+        return ", ".join(obj.get_over_limit_reasons_display())
 
 
 @admin.register(Assessment)
@@ -212,3 +222,50 @@ class TaskTypeAdmin(admin.ModelAdmin):
 class AssignedTaskAdmin(admin.ModelAdmin):
     list_display = ["task_type", "opportunity_access", "status", "completed_at"]
     search_fields = ["task_type__name", "opportunity_access__user__username"]
+
+
+@admin.register(OpportunitySupervisingOrganizationEvent)
+class OpportunitySupervisingOrganizationEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "opportunity", "supervising_organization", "pgh_label", "changed_by")
+    list_filter = (
+        "pgh_label",
+        ("supervising_organization", admin.RelatedOnlyFieldListFilter),
+        ("pgh_obj__program", admin.RelatedOnlyFieldListFilter),
+    )
+    search_fields = ("pgh_obj__name", "supervising_organization__name")
+    fields = (
+        "pgh_created_at",
+        "opportunity",
+        "supervising_organization",
+        "pgh_label",
+        "changed_by",
+        "changed_by_email",
+    )
+    readonly_fields = fields
+
+    opportunity = audited_object("pgh_obj", _("Opportunity"))
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("pgh_obj", "supervising_organization")
+
+
+@admin.register(OpportunityApiKeyEvent)
+class OpportunityApiKeyEventAdmin(AuditEventAdmin):
+    list_display = ("pgh_created_at", "opportunity", "key", "key_owner", "pgh_label", "changed_by")
+    list_filter = ("pgh_label", ("pgh_obj__program", admin.RelatedOnlyFieldListFilter))
+    search_fields = ("pgh_obj__name", "api_key__user__email")
+    fields = ("pgh_created_at", "opportunity", "key", "key_owner", "pgh_label", "changed_by", "changed_by_email")
+    readonly_fields = fields
+
+    opportunity = audited_object("pgh_obj", _("Opportunity"))
+    key = audited_object("api_key", _("API key"))
+
+    @admin.display(description=_("Key owner"))
+    def key_owner(self, obj):
+        try:
+            return obj.api_key.user.email if obj.api_key else UNKNOWN
+        except ObjectDoesNotExist:
+            return UNKNOWN
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("pgh_obj", "api_key__user")

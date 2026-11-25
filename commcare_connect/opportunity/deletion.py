@@ -38,15 +38,17 @@ class ModelDeletion:
 
 # Listed in the order of dependencies
 OPPORTUNITY_DELETIONS: Sequence[ModelDeletion] = (
+    ModelDeletion("opportunity", "CompletedWorkInvoice", "invoice__opportunity"),
+    ModelDeletion("opportunity", "CompletedWorkInvoice", "completed_work__opportunity_access__opportunity"),
     ModelDeletion("opportunity", "CompletedModule", "opportunity"),
     ModelDeletion("opportunity", "Assessment", "opportunity"),
     ModelDeletion("opportunity", "Payment", "opportunity_access__opportunity"),
     ModelDeletion("opportunity", "Payment", "payment_unit__opportunity"),
     ModelDeletion("opportunity", "Payment", "invoice__opportunity"),
-    ModelDeletion("opportunity", "CatchmentArea", "opportunity"),
-    ModelDeletion("opportunity", "CatchmentArea", "opportunity_access__opportunity"),
     ModelDeletion("opportunity", "OpportunityAccess", "opportunity"),
-    ModelDeletion("opportunity", "DeliverUnit", "payment_unit__opportunity"),
+    # Visits with no access survive the step above, and would PROTECT their deliver units
+    ModelDeletion("opportunity", "UserVisit", "opportunity"),
+    ModelDeletion("opportunity", "DeliverUnit", "opportunity"),
     ModelDeletion("opportunity", "PaymentUnit", "opportunity"),
     ModelDeletion("opportunity", "PaymentInvoice", "opportunity"),
     ModelDeletion("opportunity", "OpportunityVerificationFlags", "opportunity"),

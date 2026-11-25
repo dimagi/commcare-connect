@@ -4,6 +4,7 @@
 {% block content %}
   <div class="p-4">
     {% include 'components/breadcrumbs.html' with path=path %}
+    {% include 'microplanning/missing_deliver_units_banner.html' %}
     {# Page header: title + the opportunity-wide Ward Saturation Goal #}
     <header class="metric-container text-white mb-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

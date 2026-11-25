@@ -2,123 +2,499 @@ from allauth.account.forms import SetPasswordForm
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Prefetch
-from django.utils.html import format_html
+from django.core.validators import EmailValidator, URLValidator
+from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
+from commcare_connect.opportunity.tables import value_with_icon_tooltip
 from commcare_connect.organization.models import (
-    LLOEntity,
+    ORGANIZATION_STATUS_DEFINITIONS,
+    Contact,
     Organization,
     OrganizationInvite,
+    OrganizationStatus,
+    PrimarySector,
+    TeamSizeRange,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.forms import ManagedOptionForm
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
-LLO_ENTITY_SHORT_NAME_HELP_TEXT = gettext_lazy(
-    "A brief abbreviation for the entity. This will be used to reference the organization in the Connect application."
-)
+EARLIEST_ESTABLISHMENT_YEAR = 1800
 
 
-class OrganizationChangeForm(forms.ModelForm):
-    llo_entity = forms.ChoiceField(
-        choices=[(None, gettext("No LLO Entity linked."))], label=gettext("LLO Entity"), required=False, disabled=True
-    )
+class OrganizationProfileForm(forms.ModelForm):
+    """Collects an organization's profile as the create wizard's steps.
+
+    Subclasses reuse the fields and validation and supply their own layout via `_layout`.
+    """
 
     class Meta:
         model = Organization
-        fields = ("name", "program_manager")
-        labels = {
-            "name": gettext_lazy("Workspace Name"),
-            "program_manager": gettext_lazy("Enable Program Manager"),
+        fields = (
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+        )
+        widgets = {
+            "year_of_establishment": forms.Select(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select year")}
+            ),
+            "countries": forms.SelectMultiple(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select countries")}
+            ),
+            "primary_sectors": forms.SelectMultiple(
+                attrs={"data-tomselect": "1", "placeholder": gettext_lazy("Select primary sectors")}
+            ),
+            "regions": forms.Textarea(attrs={"rows": 3}),
+            "office_address": forms.Textarea(attrs={"rows": 3}),
+            "contact_emails": forms.Textarea(attrs={"rows": 3}),
+            "eoi_links": forms.Textarea(attrs={"rows": 3}),
+            "notes": forms.Textarea(attrs={"rows": 4}),
         }
+        labels = {
+            "name": gettext_lazy("Organization Name"),
+            "short_name": gettext_lazy("Short Name"),
+            "has_used_connect": gettext_lazy("Has Used Connect Before?"),
+            "year_of_establishment": gettext_lazy("Year of Establishment"),
+            "team_size": gettext_lazy("Team Size"),
+            "flws_managed": gettext_lazy("Number of FLW's Managed"),
+            "primary_sectors": gettext_lazy("Primary Sectors"),
+            "office_address": gettext_lazy("Office Address"),
+            "contact_emails": gettext_lazy("Contact Emails"),
+            "eoi_links": gettext_lazy("EOI Links"),
+        }
+        help_texts = {
+            "name": gettext_lazy(
+                "This would be used to create the Organization URL, "
+                "and you will not be able to change the URL in future."
+            ),
+            # The separators named here are set in static/js/organization_profile.js.
+            "contact_emails": gettext_lazy("Press comma, space or Enter after each email address."),
+            "eoi_links": gettext_lazy("Expression of Interest (EOI) links. Press space or Enter after each one."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["team_size"].choices = [("", gettext("Select team size")), *TeamSizeRange.choices]
+        self.fields["year_of_establishment"].widget.choices = _year_choices()
+        self._drop_unpermitted_fields()
+        self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = self._layout()
+
+    def _drop_unpermitted_fields(self):
+        """Hook: remove fields the user may not edit, before the layout names them."""
+
+    def _layout(self):
+        return layout.Layout(
+            _wizard_step(
+                1,
+                gettext("Organization"),
+                "name",
+                "short_name",
+                layout.Field(
+                    "has_used_connect",
+                    wrapper_class="flex items-center gap-4 [&>label]:mb-0",
+                ),
+                "year_of_establishment",
+                "website",
+            ),
+            _wizard_step(
+                2,
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "regions",
+                "primary_sectors",
+            ),
+            _wizard_step(
+                3,
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+                *self._final_step_extras(),
+            ),
+        )
+
+    def _final_step_extras(self):
+        """Hook: layout items to show after the profile fields, beside the submit button."""
+        return ()
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        # Organizations that already share a name must stay editable; only a new or changed name is checked.
+        if "name" not in self.changed_data:
+            return name
+        duplicates = Organization.objects.filter(name__iexact=name)
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise ValidationError(gettext("An organization with this name already exists."))
+        return name
+
+    def clean_contact_emails(self):
+        return _clean_lines(
+            self.cleaned_data.get("contact_emails", ""),
+            EmailValidator(),
+            gettext("Invalid email(s): %(bad)s"),
+        )
+
+    def clean_eoi_links(self):
+        return _clean_lines(
+            self.cleaned_data.get("eoi_links", ""),
+            URLValidator(),
+            gettext("Invalid URL(s): %(bad)s"),
+        )
+
+    def clean_year_of_establishment(self):
+        return validate_year_of_establishment(self.cleaned_data.get("year_of_establishment"))
+
+
+EXISTING_ORGANIZATION_HELP_TEXTS = OrganizationProfileForm.Meta.help_texts | {
+    "name": gettext_lazy("Renaming the organization does not change its URL."),
+}
+
+
+class OrganizationCreateForm(OrganizationProfileForm):
+    """Creates an organization from the create wizard.
+
+    Only ORG_MANAGEMENT_SETTINGS_ACCESS holders may skip joining it: that permission still lets them
+    edit its profile, whereas anyone else would be locked out of the organization they just made.
+    """
+
+    skip_membership = forms.BooleanField(
+        required=False,
+        label=gettext_lazy("Create without becoming a member"),
+        help_text=gettext_lazy("You can still edit its profile, but not its members or opportunities."),
+    )
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user")
         super().__init__(*args, **kwargs)
 
-        layout_fields = [layout.Field("name")]
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+            del self.fields["skip_membership"]
 
-        if self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
-            layout_fields.append(
-                layout.Field(
-                    "program_manager",
-                    css_class=CHECKBOX_CLASS,
-                    wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
-                )
-            )
-        else:
+    def _final_step_extras(self):
+        if "skip_membership" in self.fields:
+            return (_toggle("skip_membership"),)
+        return ()
+
+
+class OrganizationChangeForm(OrganizationProfileForm):
+    """Edits an existing organization's profile from Organization Home."""
+
+    class Meta(OrganizationProfileForm.Meta):
+        fields = OrganizationProfileForm.Meta.fields + ("program_manager",)
+        labels = OrganizationProfileForm.Meta.labels | {
+            "program_manager": gettext_lazy("Enable Program Manager"),
+        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user")
+        super().__init__(*args, **kwargs)
+
+    def _drop_unpermitted_fields(self):
+        if not self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
             del self.fields["program_manager"]
 
-        layout_fields.append(layout.Field("llo_entity"))
-        instance_llo = getattr(self.instance, "llo_entity", None)
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            self.fields["llo_entity"] = CreatableModelChoiceField(
-                label=gettext("LLO Entity"),
-                queryset=LLOEntity.objects.order_by("name"),
-                widget=forms.Select(attrs={"x-ref": "llo_entity"}),
-                empty_label=gettext("Select a LLO Entity"),
-                required=False,
-                create_key_name="name",
-            )
-            self.fields["llo_entity"].initial = instance_llo
-            self.fields["llo_entity_short_name"] = forms.CharField(
-                label=format_html(
-                    '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
-                    gettext("LLO Entity Short Name"),
-                ),
-                max_length=40,
-                required=False,
-                widget=forms.TextInput(attrs={"x-ref": "llo_entity_short_name", ":required": "isNewEntity"}),
-                help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
-            )
-            layout_fields.append(
-                layout.Div(
-                    layout.Field("llo_entity_short_name"),
-                    **{"x-show": "isNewEntity", "x-cloak": True, "x-transition": True},
-                )
-            )
-        else:
-            if instance_llo:
-                self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
-
-        self.helper = helper.FormHelper(self)
-        self.helper.layout = layout.Layout(
-            *layout_fields,
+    def _layout(self):
+        return layout.Layout(
+            _section(
+                gettext("Organization"),
+                "name",
+                "short_name",
+                "year_of_establishment",
+                "website",
+                *self._toggles(),
+            ),
+            _section(
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "primary_sectors",
+                _full_width("regions"),
+            ),
+            _section(
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+            ),
             layout.Div(
                 layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
                 css_class="flex justify-end",
             ),
         )
 
-    def clean_llo_entity(self):
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            return self.cleaned_data["llo_entity"]
-        return self.instance.llo_entity
+    def _toggles(self):
+        """Pairs the two switches in one row, or spans the lone one when the user can't set both."""
+        if "program_manager" in self.fields:
+            return [_toggle("has_used_connect"), _toggle("program_manager")]
+        return [_full_width(_toggle("has_used_connect"))]
 
-    def clean(self):
-        cleaned_data = super().clean()
-        llo_entity = cleaned_data.get("llo_entity")
-        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
-            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
-        return cleaned_data
 
-    def save(self, commit=True):
-        org = super().save(commit=False)
-        llo_entity = self.cleaned_data.get("llo_entity")
-        short_name = self.cleaned_data.get("llo_entity_short_name") or None
+class OrganizationDirectoryForm(OrganizationProfileForm):
+    """Organization profile form requiring countries, regions and sectors, with status and agreement links."""
 
-        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
-            if llo_entity and not llo_entity.pk:
-                llo_entity.short_name = short_name
-                if commit:
-                    llo_entity.save()
-            org.llo_entity = llo_entity
+    REQUIRED_FIELDS = ("name", "short_name", "countries", "regions", "primary_sectors")
 
-        if commit:
-            org.save()
-        return org
+    class Meta(OrganizationProfileForm.Meta):
+        fields = (
+            "name",
+            "short_name",
+            "status",
+            "year_of_establishment",
+            "has_used_connect",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "latest_msa_link",
+            "latest_work_order_link",
+            "notes",
+            "is_test",
+        )
+        widgets = OrganizationProfileForm.Meta.widgets | {
+            "has_used_connect": forms.Select(choices=((True, gettext_lazy("Yes")), (False, gettext_lazy("No")))),
+            "is_test": forms.Select(choices=((False, gettext_lazy("No")), (True, gettext_lazy("Yes")))),
+            "regions": forms.TextInput(),
+            "office_address": forms.TextInput(),
+        }
+        labels = OrganizationProfileForm.Meta.labels | {
+            "has_used_connect": gettext_lazy("Has Used Connect"),
+            "team_size": gettext_lazy("Org Team Size"),
+            "flws_managed": gettext_lazy("No. of FLWs Managed"),
+            "countries": gettext_lazy("Countries of Operation"),
+            "regions": gettext_lazy("Regions / States of Operation"),
+            "primary_sectors": gettext_lazy("Primary Sector(s)"),
+            "contact_emails": gettext_lazy("Email Addresses"),
+            "latest_msa_link": gettext_lazy("Latest MSA Link"),
+            "latest_work_order_link": gettext_lazy("Latest Work Order Link"),
+            "notes": gettext_lazy("Organization Notes"),
+            "is_test": gettext_lazy("Test Organization?"),
+        }
+        help_texts = EXISTING_ORGANIZATION_HELP_TEXTS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.REQUIRED_FIELDS:
+            self.fields[field].required = True
+        self.fields["status"].choices = [("", "—"), *OrganizationStatus.choices]
+        self.fields["status"].label = value_with_icon_tooltip(
+            self.fields["status"].label,
+            render_to_string(
+                "organization/directory/status_definitions.html",
+                {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+            ),
+        )
+
+    def _layout(self):
+        return layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                "short_name",
+                "status",
+                "year_of_establishment",
+                "has_used_connect",
+                "team_size",
+                "flws_managed",
+                "is_test",
+                _full_width("countries"),
+                _full_width("regions"),
+                _full_width("primary_sectors"),
+                "website",
+                "office_address",
+                _full_width("contact_emails"),
+                _full_width("eoi_links"),
+                "latest_msa_link",
+                "latest_work_order_link",
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
+
+
+class ContactForm(forms.ModelForm):
+    class Meta:
+        model = Contact
+        fields = ("name", "organization", "title", "is_main_poc", "email", "phone", "notes")
+        widgets = {
+            "organization": forms.Select(
+                attrs={
+                    "data-tomselect": "1",
+                    "data-tomselect:no-remove-button": "1",
+                    "placeholder": gettext_lazy("Select organization"),
+                }
+            ),
+            "is_main_poc": forms.Select(choices=((False, gettext_lazy("No")), (True, gettext_lazy("Yes")))),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+        labels = {
+            "name": gettext_lazy("Contact Full Name"),
+            "organization": gettext_lazy("Organization Name"),
+            "title": gettext_lazy("Role / Title"),
+            "is_main_poc": gettext_lazy("Main Point of Contact?"),
+            "email": gettext_lazy("Email Address"),
+            "phone": gettext_lazy("Phone Number"),
+            "notes": gettext_lazy("Contact Notes"),
+        }
+        help_texts = {
+            "organization": gettext_lazy("Links this contact to an existing Organization."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organization"].queryset = Organization.objects.order_by("name")
+        self.fields["organization"].empty_label = gettext("Select organization")
+        self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = layout.Layout(
+            layout.Div(
+                _full_width("name"),
+                _full_width("organization"),
+                "title",
+                layout.Div(
+                    "is_main_poc",
+                    layout.HTML('{% include "organization/directory/poc_change_warning_slot.html" %}'),
+                ),
+                "email",
+                "phone",
+                _full_width("notes"),
+                css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1",
+            ),
+        )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        existing = (
+            Contact.objects.filter(email__iexact=email).exclude(pk=self.instance.pk).select_related("organization")
+        )
+        if contact := existing.first():
+            if contact.is_archived:
+                message = gettext("This email already belongs to %(name)s (archived) at %(organization)s.")
+            else:
+                message = gettext("This email already belongs to %(name)s at %(organization)s.")
+            raise ValidationError(message, params={"name": contact.name, "organization": contact.organization.name})
+        return email
+
+    def _get_validation_exclusions(self):
+        # Contact.save() unmarks the organization's other main contact first, so the one-main-contact
+        # constraint can't be broken by this form and must not reject a new main contact.
+        return super()._get_validation_exclusions() | {"is_main_poc"}
+
+
+def _wizard_step(number, title, *fields):
+    """Wraps a field group as one wizard step.
+
+    `organizationWizard` shows one step at a time and lifts `data-step-title` into the step
+    indicator, so the title is named once here rather than repeated as a heading in the form.
+    """
+    return layout.Div(
+        layout.Fieldset("", *fields, aria_label=title),
+        css_class="wizard-step",
+        data_step_title=title,
+        x_show=f"step === {number}",
+        x_cloak=True,
+    )
+
+
+def _section(title, *fields):
+    return layout.Div(
+        layout.Fieldset(
+            title,
+            layout.Div(*fields, css_class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1"),
+        ),
+        css_class="card_bg mb-6 form_section",
+    )
+
+
+def _toggle(field):
+    """Renders a boolean as a labelled row rather than a bare checkbox beside its label.
+
+    Help text wraps onto its own line beneath, so it doesn't push the switch off the row's edge.
+    """
+    return layout.Field(
+        field,
+        css_class=CHECKBOX_CLASS,
+        wrapper_class=(
+            "bg-slate-100 flex flex-wrap items-center justify-between p-4 rounded-lg "
+            "[&>label]:mb-0 [&>small]:basis-full [&>small]:mt-1"
+        ),
+    )
+
+
+def _full_width(field):
+    """Spans a field across both columns — for the ones a half-width control would cramp."""
+    return layout.Div(field, css_class="sm:col-span-2")
+
+
+def _year_choices():
+    """Newest first: a recently founded organization is the likelier pick."""
+    years = range(timezone.now().year, EARLIEST_ESTABLISHMENT_YEAR - 1, -1)
+    return [("", gettext("Select year")), *((year, year) for year in years)]
+
+
+def validate_year_of_establishment(year):
+    """Bounds the year against the calendar at call time, so the ceiling moves without a migration."""
+    if year is None:
+        return year
+    current = timezone.now().year
+    if year < EARLIEST_ESTABLISHMENT_YEAR or year > current:
+        raise ValidationError(
+            gettext("Year must be between %(earliest)s and %(current)s."),
+            params={"earliest": EARLIEST_ESTABLISHMENT_YEAR, "current": current},
+        )
+    return year
+
+
+def _clean_lines(raw, validator, error_message):
+    """Validates one entry per line, returning them normalized back into a newline-separated string."""
+    entries = [line.strip() for line in raw.splitlines() if line.strip()]
+    bad = []
+    for entry in entries:
+        try:
+            validator(entry)
+        except ValidationError:
+            bad.append(entry)
+    if bad:
+        raise ValidationError(error_message, params={"bad": ", ".join(bad)})
+    return "\n".join(entries)
+
+
+class PrimarySectorForm(ManagedOptionForm):
+    locked_slug_help_text = gettext_lazy("Data exports identify primary sectors by it, so it can't change.")
+
+    class Meta(ManagedOptionForm.Meta):
+        model = PrimarySector
 
 
 class OrganizationInviteForm(forms.ModelForm):
@@ -155,11 +531,11 @@ class OrganizationInviteForm(forms.ModelForm):
         email = self.cleaned_data["email"].strip().lower()
 
         if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
-            raise ValidationError(gettext("This person is already a member of this workspace."))
+            raise ValidationError(gettext("This person is already a member of this organization."))
 
         existing = OrganizationInvite.objects.filter(organization=self.organization, email=email).first()
-        if existing and existing.status == OrganizationInvite.Status.INVITED and not existing.is_expired:
-            raise ValidationError(gettext("An invite has already been sent to this email."))
+        if existing and existing.is_in_reinvite_cooldown:
+            raise ValidationError(gettext("An invite was just sent to this address. Try again in a few minutes."))
 
         return email
 
@@ -209,79 +585,20 @@ class AddCredentialForm(forms.Form):
         return split_users
 
 
-class OrganizationSelectOrCreateForm(forms.Form):
-    llo_entity = CreatableModelChoiceField(
-        label=gettext_lazy("LLO Entity"),
-        queryset=LLOEntity.objects.order_by("name"),
-        widget=forms.Select(attrs={"x-ref": "llo_entity"}),
-        empty_label=gettext_lazy("Select a LLO Entity"),
-        create_key_name="name",
-    )
-    llo_entity_short_name = forms.CharField(
-        label=format_html(
-            '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
-            gettext_lazy("LLO Entity Short Name"),
-        ),
-        max_length=40,
-        required=False,
-        widget=forms.TextInput(attrs={":required": "isNewEntity"}),
-        help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
-    )
-    org = DynamicCreatableChoiceField(
-        queryset=Organization.objects.order_by("name"),
-        create_key_name="name",
-        widget=forms.Select(attrs={"x-ref": "org"}),
-        label=gettext_lazy("Workspace Name"),
-        help_text=gettext_lazy(
-            "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
-        ),
-    )
+class ContactPocChangeForm(forms.Form):
+    """Reads a contact form's point of contact fields to find the main point of contact they would replace."""
 
-    def get_entity_wise_orgs(self):
-        data = {}
-        qs = (
-            LLOEntity.objects.prefetch_related(
-                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
-            )
-            .only("id", "name")
-            .order_by("name")
+    organization = forms.IntegerField()
+    is_main_poc = forms.BooleanField(required=False)
+    contact = forms.UUIDField(required=False)
+    name = forms.CharField(required=False)
+
+    def main_poc_to_replace(self):
+        if not self.is_valid() or not self.cleaned_data["is_main_poc"]:
+            return None
+        return (
+            Contact.objects.filter(organization_id=self.cleaned_data["organization"], is_main_poc=True)
+            .exclude(contact_id=self.cleaned_data["contact"])
+            .select_related("organization")
+            .first()
         )
-
-        for entity in qs:
-            data[str(entity.id)] = {
-                "organizations": [
-                    {"id": org.id, "name": org.name, "slug": org.slug} for org in entity.organization_set.all()
-                ]
-            }
-        return data
-
-    def clean(self):
-        cleaned_data = super().clean()
-        org = cleaned_data.get("org")
-        llo_entity = cleaned_data.get("llo_entity")
-        if org and org.pk:
-            if llo_entity and org.llo_entity != llo_entity:
-                raise ValidationError(
-                    {
-                        "llo_entity": gettext(
-                            "Selected LLO Entity does not match the existing organization's LLO Entity."
-                        )
-                    }
-                )
-        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
-            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
-        return cleaned_data
-
-    def save(self, commit=True):
-        org = self.cleaned_data["org"]
-        llo_entity = self.cleaned_data["llo_entity"]
-        is_new_org = not org.pk
-        org.llo_entity = llo_entity
-        if commit:
-            if llo_entity and not llo_entity.pk:
-                if short_name := self.cleaned_data.get("llo_entity_short_name") or None:
-                    llo_entity.short_name = short_name
-                llo_entity.save()
-            if is_new_org:
-                org.save()
-        return org, is_new_org

@@ -1,26 +1,182 @@
+from enum import IntEnum
+
+from django.db.models import Q
+from django.http import Http404
+
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.program.models import Program
+from commcare_connect.utils.db import get_object_by_uuid_or_int
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+
+
+class AccessLevel(IntEnum):
+    """How much a request may do to a resource (program/opportunity/org).
+
+    NONE: no access.
+    VIEW: read-only (e.g. a program watcher).
+    STANDARD: normal member access (e.g. a delivery org's day-to-day work on its own opportunity).
+    ADMIN: full control, including changing the resource itself.
+    """
+
+    NONE = 0
+    VIEW = 1
+    STANDARD = 2
+    ADMIN = 3
+
+    @staticmethod
+    def effective(level_a: "AccessLevel", level_b: "AccessLevel") -> "AccessLevel":
+        """Return the weaker of two access levels."""
+        return min(level_a, level_b)
+
+    @property
+    def has_view(self) -> bool:
+        return self >= AccessLevel.VIEW
+
+    @property
+    def has_standard(self) -> bool:
+        return self >= AccessLevel.STANDARD
+
+    @property
+    def has_admin(self) -> bool:
+        return self >= AccessLevel.ADMIN
+
+
+def user_access_for_org(membership) -> AccessLevel:
+    """What the user's role within the org allows: admin -> ADMIN, member -> STANDARD, viewer -> VIEW."""
+    if not membership:
+        return AccessLevel.NONE
+    if membership.is_admin:
+        return AccessLevel.ADMIN
+    if membership.is_member:
+        return AccessLevel.STANDARD
+    if membership.is_viewer:
+        return AccessLevel.VIEW
+    return AccessLevel.NONE
+
+
+def org_access_for_program(org, program) -> AccessLevel:
+    """What the org's relationship to the program allows: owner/funder -> ADMIN, watcher -> VIEW."""
+    if not org or not program:
+        return AccessLevel.NONE
+    if org.id in (program.organization_id, program.funder_id):
+        return AccessLevel.ADMIN
+    # .all() so a prefetched watchers cache is used.
+    if any(watcher.id == org.id for watcher in program.watchers.all()):
+        return AccessLevel.VIEW
+    return AccessLevel.NONE
+
+
+def programs_administered_by(org_ids):
+    """The programs these orgs administer: those they own or fund, the orgs `org_access_for_program` makes ADMIN."""
+    return Program.objects.filter(Q(organization__in=org_ids) | Q(funder__in=org_ids))
+
+
+def programs_accessible_to_org(org):
+    if not org:
+        return Program.objects.none()
+
+    watched = Program.objects.filter(id__in=org.watched_programs.values("id"))
+    return programs_administered_by([org.id]) | watched
+
+
+def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
+    if not resource:
+        return AccessLevel.NONE
+
+    base_access = _base_access_level(request)
+    if base_access is not None:
+        return base_access
+
+    org_level = org_access_fn(request.org, resource)
+    user_level = user_access_for_org(request.org_membership)
+
+    return AccessLevel.effective(org_level, user_level)
+
+
+def program_access_level_from_request(request, program) -> AccessLevel:
+    return _resource_access_level(request, program, org_access_for_program)
+
+
+def opportunity_access_level_from_request(request, opportunity) -> AccessLevel:
+    return _resource_access_level(request, opportunity, org_opportunity_access)
+
+
+def org_opportunity_access(org, opportunity) -> AccessLevel:
+    if not org or not opportunity:
+        return AccessLevel.NONE
+    if org.id in (opportunity.organization_id, opportunity.supervising_organization_id):
+        return AccessLevel.ADMIN
+    return org_access_for_program(org, opportunity.program)
+
+
+def opportunities_accessible_to_org(org):
+    if not org:
+        return Opportunity.objects.none()
+
+    return Opportunity.objects.filter(
+        Q(organization=org)
+        | Q(supervising_organization=org)
+        | Q(program__organization=org)
+        | Q(program__funder=org)
+        | Q(program__in=org.watched_programs.values("id"))
+    )
+
+
+def orgs_ids_with_admin_access_to_opportunity(opportunity) -> set:
+    """Every org with ADMIN access to this opportunity, independent of any request."""
+    org_ids = {
+        opportunity.organization_id,
+        opportunity.supervising_organization_id,
+        opportunity.program.organization_id,
+    }
+    if opportunity.program.funder_id:
+        org_ids.add(opportunity.program.funder_id)
+    return org_ids
+
+
+def opportunity_by_id(opp_id) -> Opportunity | None:
+    queryset = Opportunity.objects.select_related("program", "organization")
+    try:
+        return get_object_by_uuid_or_int(queryset, str(opp_id), uuid_field="opportunity_id")
+    except Http404:
+        return None
+
+
+def org_access_level_from_request(request) -> AccessLevel:
+    """Access level for org-related operations depends on the user's role.
+    Only the organization's users can access these operations.
+    """
+    base_access = _base_access_level(request)
+    if base_access is not None:
+        return base_access
+    return user_access_for_org(request.org_membership)
+
+
+def _base_access_level(request) -> AccessLevel | None:
+    if not request.org:
+        return AccessLevel.NONE
+    if request.user.has_perm(ALL_ORG_ACCESS):
+        return AccessLevel.ADMIN
+    return None
 
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
-def get_managed_opp(opp_id) -> Opportunity | None:
+def get_cached_opp(opp_id) -> Opportunity | None:
     queryset = Opportunity.objects.select_related("program__organization")
     if str(opp_id).isdigit():
         return queryset.filter(pk=int(opp_id)).first()
     return queryset.filter(opportunity_id=opp_id).first()
 
 
-def is_program_manager(request):
-    return request.org.program_manager and (
-        (request.org_membership != None and request.org_membership.is_admin) or request.user.is_superuser  # noqa: E711
-    )
+def clear_cached_opp(opportunity) -> None:
+    ids = (opportunity.pk, str(opportunity.pk), opportunity.opportunity_id, str(opportunity.opportunity_id))
+    for opp_id in ids:
+        get_cached_opp.clear(opp_id)
 
 
-def is_program_manager_of_opportunity(request, opp_id) -> bool:
-    managed_opp = get_managed_opp(opp_id)
-    return bool(
-        managed_opp and managed_opp.program.organization.slug == request.org.slug and is_program_manager(request)
-    )
+def is_opportunity_pm(request, opportunity) -> bool:
+    return request.opp_access_level.has_admin and request.org.id != opportunity.organization_id
 
 
 def populate_currency_and_country_fk_for_model(apps, model_name, app_label, total_label):
@@ -44,7 +200,7 @@ def populate_currency_and_country_fk_for_model(apps, model_name, app_label, tota
     print(f"Populating {total_label} currency_fk & country for {total} records...")
 
     for start in range(0, total, BATCH_SIZE):
-        batch = list(qs[start : start + BATCH_SIZE])  # noqa: E203
+        batch = list(qs[start : start + BATCH_SIZE])
         for record in batch:
             raw_code = (record.currency or "").strip().upper()
             if not raw_code:

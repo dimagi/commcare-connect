@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.utils.timezone import now
 from django.views import View
 
@@ -26,11 +27,10 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.reports import urls as reports_urls
-from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
+from commcare_connect.reports.decorators import kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportView
+from commcare_connect.reports.views import DeliveryStatsReportView, InvoiceReportFilter, InvoiceReportView
 from commcare_connect.users.tests.factories import (
-    LLOEntityFactory,
     MembershipFactory,
     OrganizationFactory,
     UserFactory,
@@ -58,37 +58,43 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
             **access_kwargs,
         )
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+        opportunity = access.opportunity
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        inv = PaymentInvoiceFactory(opportunity=opportunity, amount=100)
         cw = CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
             saved_payment_accrued_usd=i * 100,
             saved_org_payment_accrued_usd=100,
             payment_date=timestamp + timedelta(minutes=30),
-            invoice=inv,
         )
         UserVisitFactory(
             date_created=timestamp - timedelta(i * 10),
+            opportunity=opportunity,
+            user=user,
             opportunity_access=access,
+            deliver_unit__app=opportunity.deliver_app,
+            deliver_unit__payment_unit=payment_unit,
             completed_work=cw,
             status=VisitValidationStatus.approved,
         )
         PaymentFactory(opportunity_access=access, date_paid=timestamp, amount_usd=i * 50, confirmed=True)
-        PaymentFactory(invoice=inv, date_paid=timestamp, amount_usd=50)
-        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        PaymentFactory(opportunity_access=None, invoice=inv, date_paid=timestamp, amount_usd=50)
+        other_inv = PaymentInvoiceFactory(opportunity=opportunity, amount=100, service_delivery=False)
         CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=0,
             saved_payment_accrued_usd=0,
             saved_org_payment_accrued_usd=100,
             payment_date=timestamp + timedelta(minutes=30),
-            invoice=other_inv,
         )
-        PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
+        PaymentFactory(opportunity_access=None, invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
 
 @pytest.mark.django_db
@@ -222,7 +228,6 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 saved_payment_accrued_usd=i * 100,
                 saved_org_payment_accrued_usd=100,
                 payment_date=now + timedelta(minutes=1),
-                invoice=inv,
             )
             UserVisitFactory(
                 date_created=now - timedelta(i * 10),
@@ -305,12 +310,11 @@ def test_get_table_data_for_year_month_by_country(opp_country, filter_country, h
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("filter_same_llo", [True, False])
-def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
+@pytest.mark.parametrize("filter_same_organization", [True, False])
+def test_get_table_data_for_year_month_by_organization(filter_same_organization, httpx_mock):
     now = datetime.now(UTC)
-    llo_entity = LLOEntityFactory()
-    other_llo_entity = LLOEntityFactory()
-    org = OrganizationFactory(llo_entity=llo_entity)
+    org = OrganizationFactory()
+    other_org = OrganizationFactory()
 
     users = MobileUserFactory.create_batch(10)
     _create_kpi_test_data(users, now, opportunity__organization=org)
@@ -320,12 +324,12 @@ def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
         json={},
     )
 
-    filter_llo = llo_entity if filter_same_llo else other_llo_entity
-    data = get_table_data_for_year_month(llo=filter_llo)
+    filter_organization = org if filter_same_organization else other_org
+    data = get_table_data_for_year_month(organization=filter_organization)
     assert len(data)
 
     for row in data:
-        if filter_same_llo:
+        if filter_same_organization:
             assert row["users"] == 10
             assert row["services"] == 10
             assert row["flw_amount_earned"] == 4500
@@ -454,7 +458,8 @@ class TestKPIReportPermission:
             return HttpResponse("OK")
 
         # Dummy class-based view
-        class DummyKPIReportView(KPIReportMixin, View):
+        @method_decorator(kpi_report_access_required, name="dispatch")
+        class DummyKPIReportView(View):
             def get(self, request, *args, **kwargs):
                 return HttpResponse("OK")
 
@@ -474,6 +479,11 @@ class TestKPIReportPermission:
             url,
             "kpi_report_access",
         )
+
+    def test_delivery_stats_report_is_gated(self):
+        stub_get = lambda self, request, *args, **kwargs: HttpResponse("OK")  # noqa: E731
+        with mock.patch.object(DeliveryStatsReportView, "get", stub_get):
+            check_basic_permissions(UserFactory(), reverse("reports:delivery_stats_report"), "kpi_report_access")
 
 
 @pytest.mark.django_db

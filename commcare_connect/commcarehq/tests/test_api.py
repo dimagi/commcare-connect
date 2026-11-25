@@ -1,3 +1,4 @@
+import json
 import uuid
 from unittest.mock import patch
 
@@ -5,6 +6,7 @@ import pytest
 
 from commcare_connect.commcarehq.api import (
     CommCareCase,
+    bulk_create_or_update_cases,
     bulk_create_or_update_cases_by_work_areas,
     bulk_update_usercases,
     create_or_update_case_by_work_area,
@@ -54,17 +56,9 @@ class TestCreateOrUpdateCaseByWorkArea:
             case_id=case_id,
         )
 
-    def _make_link(self, work_area, hq_user_uuid=None):
+    def _make_work_area_link(self, work_area, hq_user_uuid=None):
         opp_access = work_area.opportunity_access
-        domain = opp_access.opportunity.deliver_app.cc_domain
-        user = opp_access.user
-        return ConnectIdUserLinkFactory(
-            user=user,
-            commcare_username=f"{user.username.lower()}@{domain}.commcarehq.org",
-            domain=domain,
-            hq_server=opp_access.opportunity.api_key.hq_server,
-            hq_user_uuid=hq_user_uuid,
-        )
+        return _make_link(opportunity=opp_access.opportunity, user=opp_access.user, hq_user_uuid=hq_user_uuid)
 
     @pytest.mark.parametrize("has_case_id", [False, True])
     def test_uses_stored_hq_user_uuid_when_available(self, has_case_id):
@@ -72,7 +66,7 @@ class TestCreateOrUpdateCaseByWorkArea:
         work_area = self._make_work_area(case_id=existing_case_id)
 
         hq_user_uuid = "stored-uuid"
-        self._make_link(work_area, hq_user_uuid=hq_user_uuid)
+        self._make_work_area_link(work_area, hq_user_uuid=hq_user_uuid)
         work_area_case = make_commcare_case(case_id=str(existing_case_id or str(uuid.uuid4())))
 
         with (
@@ -90,7 +84,7 @@ class TestCreateOrUpdateCaseByWorkArea:
 
     def test_fetches_and_persists_uuid_when_link_has_none(self):
         work_area = self._make_work_area()
-        link = self._make_link(work_area)
+        link = self._make_work_area_link(work_area)
 
         fetched_uuid = "fetched-uuid"
         work_area_case = make_commcare_case()
@@ -117,7 +111,7 @@ class TestCreateOrUpdateCaseByWorkArea:
 
     def test_raises_when_user_not_found_on_hq(self):
         work_area = self._make_work_area()
-        self._make_link(work_area)
+        self._make_work_area_link(work_area)
 
         with patch("commcare_connect.commcarehq.api.fetch_hq_user_uuid", return_value=None):
             with pytest.raises(CommCareHQAPIException, match="Failed to find HQ user"):
@@ -143,16 +137,6 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
         )
         return opp_access.opportunity, work_area
 
-    def _make_link(self, opportunity, user, hq_user_uuid=None):
-        domain = opportunity.deliver_app.cc_domain
-        return ConnectIdUserLinkFactory(
-            user=user,
-            commcare_username=f"{user.username.lower()}@{domain}.commcarehq.org",
-            domain=domain,
-            hq_server=opportunity.api_key.hq_server,
-            hq_user_uuid=hq_user_uuid,
-        )
-
     def test_uses_stored_uuid_and_fetches_missing(self):
         opportunity, wa_with_stored = self._make_opportunity_with_work_area()
         wa_group = wa_with_stored.work_area_group
@@ -163,8 +147,8 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
 
         stored_uuid = "stored-uuid"
         fetched_uuid = "fetched-uuid"
-        self._make_link(opportunity, wa_with_stored.opportunity_access.user, hq_user_uuid=stored_uuid)
-        link_to_backfill = self._make_link(opportunity, access_to_fetch.user)
+        _make_link(opportunity=opportunity, user=wa_with_stored.opportunity_access.user, hq_user_uuid=stored_uuid)
+        link_to_backfill = _make_link(opportunity=opportunity, user=access_to_fetch.user)
 
         returned_cases = [make_commcare_case(), make_commcare_case()]
         with (
@@ -176,6 +160,7 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
             bulk_create_or_update_cases_by_work_areas([wa_with_stored, wa_to_fetch], opportunity)
 
         mock_fetch.assert_called_once()
+        assert mock_bulk.call_args.kwargs["create"] is None  # UPSERT keyed on external_id
         sent_cases = mock_bulk.call_args[0][2]
         owners_by_external_id = {c["external_id"]: c["owner_id"] for c in sent_cases}
         assert owners_by_external_id[str(wa_with_stored.id)] == stored_uuid
@@ -185,7 +170,7 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
 
     def test_raises_when_user_not_found_on_hq(self):
         opportunity, work_area = self._make_opportunity_with_work_area()
-        self._make_link(opportunity, work_area.opportunity_access.user)
+        _make_link(opportunity=opportunity, user=work_area.opportunity_access.user)
 
         with patch("commcare_connect.commcarehq.api.fetch_hq_user_uuid", return_value=None):
             with pytest.raises(CommCareHQAPIException, match="Failed to find HQ user"):
@@ -211,7 +196,7 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
             for _ in range(3)
         ]
         for wa in work_areas:
-            self._make_link(opportunity, wa.opportunity_access.user, hq_user_uuid="stored-uuid")
+            _make_link(opportunity=opportunity, user=wa.opportunity_access.user, hq_user_uuid="stored-uuid")
 
         # Build HQ response in reversed order to prove ordering is not assumed.
         expected_case_ids = {str(wa.pk): str(uuid.uuid4()) for wa in work_areas}
@@ -248,4 +233,56 @@ class TestBulkUpdateUsercases:
         mock_get_usercase.assert_called_once_with(access)
         mock_bulk.assert_called_once()
         cases_data = mock_bulk.call_args[0][2]
-        assert cases_data == [{"case_id": hq_case_id, "create": False, "properties": {"prop": "value"}}]
+        assert cases_data == [{"case_id": hq_case_id, "properties": {"prop": "value"}}]
+
+    def test_raises_when_updates_span_multiple_opportunities(self):
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        access = OpportunityAccessFactory(opportunity__api_key=api_key)
+        other_access = OpportunityAccessFactory(opportunity__api_key=api_key)
+
+        with patch("commcare_connect.commcarehq.api.bulk_create_or_update_cases") as mock_bulk:
+            with pytest.raises(ValueError, match="same opportunity"):
+                bulk_update_usercases({access: {"properties": {}}, other_access: {"properties": {}}})
+
+        mock_bulk.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestBulkCreateOrUpdateCases:
+    def send(self, httpx_mock, cases_data, create=False):
+        """Send cases_data to a fake HQ, and return the requests it got."""
+        httpx_mock.add_response(json={"cases": []}, is_reusable=True)
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        bulk_create_or_update_cases(api_key=api_key, domain=DOMAIN, cases_data=cases_data, create=create)
+        return httpx_mock.get_requests()
+
+    @pytest.mark.parametrize("create", [False, None, True])
+    def test_injects_create_flag_into_every_row(self, httpx_mock, create):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": "case-1"}, {"case_id": "case-2"}], create=create)
+
+        assert json.loads(requests[0].content) == [
+            {"case_id": "case-1", "create": create},
+            {"case_id": "case-2", "create": create},
+        ]
+
+    def test_sends_100_cases_per_request(self, httpx_mock):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": f"case-{n}"} for n in range(201)])
+
+        assert [len(json.loads(request.content)) for request in requests] == [100, 100, 1]
+
+    def test_gives_hq_30_seconds_per_request(self, httpx_mock):
+        requests = self.send(httpx_mock, cases_data=[{"case_id": "case-1"}])
+
+        assert requests[0].extensions["timeout"] == {"connect": 30, "read": 30, "write": 30, "pool": 30}
+
+
+def _make_link(opportunity, user, hq_user_uuid=None):
+    """Link `user` to the HQ domain of the opportunity's deliver app."""
+    domain = opportunity.deliver_app.cc_domain
+    return ConnectIdUserLinkFactory(
+        user=user,
+        commcare_username=f"{user.username.lower()}@{domain}.commcarehq.org",
+        domain=domain,
+        hq_server=opportunity.api_key.hq_server,
+        hq_user_uuid=hq_user_uuid,
+    )

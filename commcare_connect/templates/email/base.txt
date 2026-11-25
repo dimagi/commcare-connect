@@ -1,4 +1,4 @@
-{% block content %}{% endblock %}
+{% autoescape off %}{% block content %}{% endblock %}{% endautoescape %}
 
 Thank you,
 Connect

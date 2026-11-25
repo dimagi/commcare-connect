@@ -4,7 +4,7 @@
 
 Python dependencies are managed with [uv](https://docs.astral.sh/uv/). Direct dependencies are declared in `pyproject.toml` using minimum-version ranges (`>=`); the full resolved dependency graph (including transitive deps) is recorded in `uv.lock` and committed to the repo.
 
-Two automated systems keep dependencies up to date and secure:
+Automated checks keep dependencies up to date and secure:
 
 | Tool | Purpose | Runs |
 |------|---------|------|
@@ -18,7 +18,7 @@ This mirrors the setup used in [commcare-hq](https://github.com/dimagi/commcare-
 
 ## Dependabot
 
-Config: [`.github/dependabot.yml`](../.github/dependabot.yml)
+Config: [`.github/dependabot.yml`](https://github.com/dimagi/commcare-connect/blob/main/.github/dependabot.yml)
 
 Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `package.json`, and the workflow files under `.github/workflows/`, then opens pull requests when newer versions are available.
 
@@ -31,6 +31,9 @@ Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `
 - Internal Dimagi git-sourced packages (`xml2json`, `git-build-branch`) are excluded — they have no PyPI versions to track
 
 **Reviewing a Dependabot PR:**
+
+The `dependabot-pr-review` skill in `.claude/skills/` walks through these steps in Claude Code, for a single PR or the whole Dependabot queue.
+
 1. Check the linked changelog for breaking changes
 2. Confirm the CI `Security Audit` and `CI` jobs pass
 3. For major bumps, check whether any direct call sites in our code are affected (Dependabot links to release notes)
@@ -39,7 +42,7 @@ Dependabot reads `pyproject.toml` / `uv.lock` (via the native `uv` ecosystem), `
 
 ## pip-audit and npm audit (Security Audit CI job)
 
-Config: [`.github/workflows/security.yml`](../.github/workflows/security.yml)
+Config: [`.github/workflows/security.yml`](https://github.com/dimagi/commcare-connect/blob/main/.github/workflows/security.yml)
 
 Runs on every pull request that modifies `pyproject.toml`, `uv.lock`, `package.json`, or `package-lock.json`.
 
@@ -52,15 +55,16 @@ Both jobs fail if any package has a known vulnerability in the OSV / PyPI / npm 
 
 ## Dependency groups
 
-`pyproject.toml` uses three groups:
+`pyproject.toml` uses four groups:
 
 | Group | Location | Contents |
 |-------|----------|----------|
 | Runtime | `[project.dependencies]` | Core app dependencies needed in all environments |
 | `production` | `[dependency-groups.production]` | Production-only deps (gunicorn, psycopg2, anymail, storages, allow-cidr) |
 | `dev` | `[dependency-groups.dev]` | Development and test-only deps |
+| `docs` | `[dependency-groups.docs]` | Developer docs site (Zensical). Not installed by a plain `uv sync`; use `uv run --group docs` |
 
-pip-audit scans runtime + production. Dev deps are not scanned.
+pip-audit scans runtime + production. Dev and docs deps are not scanned.
 
 ---
 
@@ -84,7 +88,7 @@ After bumping, run the full test suite before committing:
 
 ```bash
 uv run pytest
-uv run pre-commit run -a
+uv run prek run -a
 ```
 
 ---
@@ -103,4 +107,4 @@ uv add --group production <package>     # production-only dependency
 
 ## Periodic full audit
 
-For a deeper review (major version bumps, EoL packages, CVE triage), run the `/audit-dependencies` skill in Claude Code.
+There is no automated audit beyond Dependabot and the Security Audit job. For a deeper review (major version bumps, EoL packages, CVE triage), `uv tree --outdated` and `npm outdated` list what is behind, and `uvx pip-audit` checks the locked set by hand.

@@ -1,0 +1,8 @@
+{# `value` is the status's display label, so the stored `status` picks the badge. #}
+{% if status == "active" %}
+  <span class="badge badge-sm positive-light">{{ value }}</span>
+{% elif status == "inactive" %}
+  <span class="badge badge-sm label">{{ value }}</span>
+{% elif status == "prospective" %}
+  <span class="badge badge-sm badge-indigo">{{ value }}</span>
+{% endif %}

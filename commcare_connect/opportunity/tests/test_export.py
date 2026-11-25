@@ -8,14 +8,20 @@ from tablib import Dataset
 
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
-    export_catchment_area_table,
+    export_empty_payment_table,
     export_user_status_table,
     export_user_visit_review_data,
 )
-from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
+from commcare_connect.opportunity.models import (
+    Opportunity,
+    OverLimitReasonChoices,
+    UserInviteStatus,
+    UserVisit,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
-    CatchmentAreaFactory,
     CompletedModuleFactory,
     DeliverUnitFactory,
     LearnModuleFactory,
@@ -59,10 +65,10 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
     name = mobile_user_with_connect_link.name
 
     assert dataset.export("csv") == (
-        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
+        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Payment Unit,Over Limit Reason,Rejected Reason,"
         "Justification,Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
-        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,test_form1,\r\n"
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,test_form2,b\r\n"
+        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,,,test_form1,\r\n"
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,,,abc,A B C,,test_form2,b\r\n"
     )
 
 
@@ -136,12 +142,42 @@ def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
     assert dataset.export("csv") == (
-        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
+        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Payment Unit,Over Limit Reason,Rejected Reason,"
         "Justification,Duration,Entity ID,Entity Name,Flags,form_json\r\n"
-        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,"{form_json_1_string}"\r\n'
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,abc,A B C,,"
+        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,,,,"{form_json_1_string}"\r\n'
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,,,,abc,A B C,,"
         f'"{form_json_2_string}"\r\n'
     )
+
+
+@pytest.mark.parametrize(
+    "status, reasons, expected",
+    [
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.max_visits, OverLimitReasonChoices.max_daily],
+            f"{OverLimitReasonChoices.max_visits.label}; {OverLimitReasonChoices.max_daily.label}",
+        ),
+        (VisitValidationStatus.over_limit, [], "Not recorded (visit predates over-limit reason tracking)"),
+        (VisitValidationStatus.approved, [], ""),
+    ],
+)
+def test_export_user_visit_data_over_limit_columns(opportunity, mobile_user, status, reasons, expected):
+    visit = UserVisitFactory(
+        opportunity=opportunity,
+        user=mobile_user,
+        status=status,
+        over_limit_reasons=reasons,
+        visit_date=now(),
+        form_json={"form": {}},
+    )
+
+    dataset = UserVisitExporter(opportunity, True).get_dataset(visit.visit_date, visit.visit_date, [])
+
+    [row] = dataset.dict
+    assert row["Unit Name"] == visit.deliver_unit.name
+    assert row["Payment Unit"] == visit.completed_work.payment_unit.name
+    assert row["Over Limit Reason"] == expected
 
 
 def _get_prepared_dataset_for_user_status_test(data):
@@ -174,10 +210,7 @@ def test_export_user_status_table_no_data_only(opportunity: Opportunity):
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        access = OpportunityAccessFactory(
-            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
-        )
-        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
+        _create_accepted_access(opportunity=opportunity, user=mobile_user, date=date)
         rows.append(
             (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
         )
@@ -193,14 +226,8 @@ def test_export_user_status_table_learn_data_only(opportunity: Opportunity):
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        access = OpportunityAccessFactory(
-            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
-        )
-        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
-        for learn_module in opportunity.learn_app.learn_modules.all()[2:]:
-            CompletedModuleFactory(
-                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
-            )
+        access = _create_accepted_access(opportunity=opportunity, user=mobile_user, date=date)
+        _complete_learn_modules(access=access, modules=opportunity.learn_app.learn_modules.all()[2:], date=date)
         rows.append(
             (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
         )
@@ -216,22 +243,9 @@ def test_export_user_status_table_learn_assessment_data_only(opportunity: Opport
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        access = OpportunityAccessFactory(
-            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
-        )
-        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
-        for learn_module in opportunity.learn_app.learn_modules.all():
-            CompletedModuleFactory(
-                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
-            )
-        AssessmentFactory(
-            app=opportunity.learn_app,
-            opportunity=opportunity,
-            user=mobile_user,
-            passed=True,
-            date=date,
-            opportunity_access=access,
-        )
+        access = _create_accepted_access(opportunity=opportunity, user=mobile_user, date=date)
+        _complete_learn_modules(access=access, modules=opportunity.learn_app.learn_modules.all(), date=date)
+        _pass_assessment(access=access, date=date)
         rows.append(
             (
                 mobile_user.name,
@@ -257,23 +271,10 @@ def test_export_user_status_table_data(opportunity: Opportunity):
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        access = OpportunityAccessFactory(
-            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
-        )
+        access = _create_accepted_access(opportunity=opportunity, user=mobile_user, date=date)
         OpportunityClaimFactory(opportunity_access=access, max_payments=10, date_claimed=date)
-        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
-        for learn_module in opportunity.learn_app.learn_modules.all():
-            CompletedModuleFactory(
-                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
-            )
-        AssessmentFactory(
-            app=opportunity.learn_app,
-            opportunity=opportunity,
-            user=mobile_user,
-            passed=True,
-            date=date,
-            opportunity_access=access,
-        )
+        _complete_learn_modules(access=access, modules=opportunity.learn_app.learn_modules.all(), date=date)
+        _pass_assessment(access=access, date=date)
         UserVisitFactory.create_batch(
             1,
             opportunity=opportunity,
@@ -300,40 +301,28 @@ def test_export_user_status_table_data(opportunity: Opportunity):
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
 
 
-@pytest.mark.django_db
-def test_export_catchment_area_table_data(opportunity: Opportunity):
-    catchments = CatchmentAreaFactory.create_batch(5, opportunity=opportunity)
-    expected_headers = [
-        "Latitude",
-        "Longitude",
-        "Area name",
-        "Radius",
-        "Active",
-        "Username",
-        "Site code",
-        "Name",
-        "Phone Number",
-    ]
+def _create_accepted_access(*, opportunity, user, date):
+    access = OpportunityAccessFactory(opportunity=opportunity, user=user, accepted=True, date_learn_started=date)
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
+    return access
 
-    data_set = export_catchment_area_table(opportunity)
 
-    assert set(expected_headers).issubset(set(data_set.headers)), (
-        f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+def _complete_learn_modules(*, access, modules, date):
+    for learn_module in modules:
+        CompletedModuleFactory(
+            module=learn_module, user=access.user, opportunity=access.opportunity, date=date, opportunity_access=access
+        )
+
+
+def _pass_assessment(*, access, date):
+    AssessmentFactory(
+        app=access.opportunity.learn_app,
+        opportunity=access.opportunity,
+        user=access.user,
+        passed=True,
+        date=date,
+        opportunity_access=access,
     )
-
-    assert len(data_set) == len(catchments), f"Expected {len(catchments)} catchments, but got {len(data_set)}"
-
-    for i, catchment in enumerate(catchments):
-        exported_data = data_set[i]
-        assert catchment.latitude == exported_data[data_set.headers.index("Latitude")]
-        assert catchment.longitude == exported_data[data_set.headers.index("Longitude")]
-        assert catchment.name == exported_data[data_set.headers.index("Area name")]
-        assert catchment.radius == exported_data[data_set.headers.index("Radius")]
-        expected_active = "Yes" if catchment.active else "No"
-        assert expected_active == exported_data[data_set.headers.index("Active")]
-        expected_username = catchment.opportunity_access.user.username if catchment.opportunity_access.user else ""
-        assert expected_username == exported_data[data_set.headers.index("Username")]
-        assert catchment.site_code == exported_data[data_set.headers.index("Site code")]
 
 
 @pytest.mark.django_db
@@ -485,3 +474,31 @@ def test_user_visit_exporter_get_dataset_boundary_dates(opportunity, mobile_user
     dataset = exporter.get_dataset(from_date, to_date, [])
 
     assert len(dataset) == 2, f"Expected 2 visits (boundary dates), got {len(dataset)}"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("currency_code", "accrued_header"),
+    [("USD", "Accrued (USD)"), (None, "Accrued")],
+)
+def test_export_empty_payment_table_includes_accrued(opportunity: Opportunity, currency_code, accrued_header):
+    if currency_code is None:
+        opportunity.currency = None
+        opportunity.save()
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=1250)
+
+    dataset = export_empty_payment_table(opportunity)
+
+    assert dataset.headers == [
+        "Username",
+        "Phone Number",
+        "Name",
+        accrued_header,
+        "Payment Amount",
+        "Payment Date (YYYY-MM-DD)",
+        "Payment Method",
+        "Payment Operator",
+    ]
+    assert list(dataset) == [
+        (access.user.username, access.user.phone_number, access.user.name, 1250, "", "", "", ""),
+    ]

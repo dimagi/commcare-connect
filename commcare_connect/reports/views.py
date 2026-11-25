@@ -6,14 +6,19 @@ import django_tables2 as tables
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Layout, Row
 from django import forms
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db.models import F, Max
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.functional import cached_property
 from django.utils.translation import gettext as _
+from django.views import View
 from django.views.decorators.http import require_GET, require_POST
+from django.views.generic import FormView
 from django_filters.views import FilterView
 from django_tables2.views import SingleTableMixin
 
@@ -25,12 +30,19 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     PaymentInvoice,
 )
-from commcare_connect.organization.models import LLOEntity
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
-from commcare_connect.reports.decorators import KPIReportMixin
+from commcare_connect.reports.decorators import kpi_report_access_required
+from commcare_connect.reports.delivery_stats_export import (
+    add_recipient,
+    get_recipient_rows,
+    remove_recipient,
+)
+from commcare_connect.reports.forms import AddRecipientForm
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
-from commcare_connect.reports.tasks import export_invoice_report_task
+from commcare_connect.reports.tasks import email_delivery_stats_export, export_invoice_report_task
+from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
@@ -58,9 +70,9 @@ class DeliveryReportFilters(django_filters.FilterSet):
         queryset=Program.objects.all(),
         label="Program",
     )
-    llo = django_filters.ModelChoiceFilter(
-        queryset=LLOEntity.objects.all().order_by("name"),
-        label="LLO",
+    organization = django_filters.ModelChoiceFilter(
+        queryset=Organization.objects.all().order_by("name"),
+        label="Organization",
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     opportunity = django_filters.ModelChoiceFilter(
@@ -90,7 +102,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             Row(
                 Column("program", css_class="col-md-3"),
-                Column("llo", css_class="col-md-3"),
+                Column("organization", css_class="col-md-3"),
                 Column("opportunity", css_class="col-md-3"),
                 Column("country", css_class="col-md-3"),
             ),
@@ -120,7 +132,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
             "from_date",
             "to_date",
             "program",
-            "llo",
+            "organization",
             "opportunity",
         ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
@@ -143,7 +155,8 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelFilterView):
+@method_decorator(kpi_report_access_required, name="dispatch")
+class DeliveryStatsReportView(tables.SingleTableMixin, NonModelFilterView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
 
@@ -172,6 +185,63 @@ class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelF
     @property
     def object_list(self):
         return get_table_data_for_year_month(**self.filter_values)
+
+
+@kpi_report_access_required
+@require_POST
+def email_delivery_stats_view(request):
+    filter_data = {key: value for key, value in request.POST.items() if key != "csrfmiddlewaretoken"}
+    queue_delivery_stats_email(request, filter_data)
+    return render(request, "components/messages.html")
+
+
+@kpi_report_access_required
+@require_POST
+def email_delivery_stats_monthly(request):
+    queue_delivery_stats_email(request, None)
+    return render(request, "components/messages.html")
+
+
+def queue_delivery_stats_email(request, filter_data):
+    """Email the export to the requesting user only. filter_data=None means the monthly export."""
+    email = request.user.email
+    if not email:
+        messages.error(request, _("Your account has no email address, so the export can't be emailed."))
+        return
+    email_delivery_stats_export.delay_on_commit(request.user.pk, filter_data)
+    messages.success(request, _("The export will be emailed to {email} shortly.").format(email=email))
+
+
+@method_decorator(kpi_report_access_required, name="dispatch")
+class DeliveryStatsRecipientsView(FormView):
+    template_name = "reports/delivery_stats_recipients.html"
+    form_class = AddRecipientForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["recipients"] = get_recipient_rows()
+        return context
+
+    def form_valid(self, form):
+        user = form.cleaned_data["email"]
+        add_recipient(user)
+        messages.success(
+            self.request, _("{email} will receive the monthly Delivery Stats export.").format(email=user.email)
+        )
+        return redirect("reports:delivery_stats_recipients")
+
+
+@method_decorator(kpi_report_access_required, name="dispatch")
+class RemoveDeliveryStatsRecipientView(View):
+    http_method_names = ["post"]
+
+    def post(self, request, user_id):
+        user = get_object_or_404(User, pk=user_id)
+        remove_recipient(user)
+        messages.success(
+            request, _("{email} removed from the monthly Delivery Stats export.").format(email=user.email)
+        )
+        return redirect("reports:delivery_stats_recipients")
 
 
 class InvoiceReportFilter(django_filters.FilterSet):

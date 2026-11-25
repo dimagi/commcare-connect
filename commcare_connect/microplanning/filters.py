@@ -4,10 +4,10 @@ from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.coverage_progress import CoverageDateFilter
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
-from commcare_connect.opportunity.filters import CSRFExemptForm
-from commcare_connect.opportunity.models import UserVisit
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.opportunity.models import PaymentUnit, UserVisit
 from commcare_connect.users.models import User
+from commcare_connect.utils.filters import CSRFExemptForm
 
 INPUT_CSS = (
     "w-full rounded-md border border-gray-300 px-3 py-2 "
@@ -89,6 +89,21 @@ class CoverageProgressFilterSet(django_filters.FilterSet):
 
 
 class WorkAreaMapFilterSet(django_filters.FilterSet):
+    # Set from the map's search box, which has no sidebar control of its own to drive — picking a
+    # group or an implementation area there fills in those filters below instead. An id from
+    # another opportunity needs no rejecting: the queryset is already scoped, so it matches nothing.
+    work_area = django_filters.NumberFilter(
+        label="",
+        field_name="pk",
+        widget=forms.HiddenInput(),
+    )
+
+    unassigned_only = django_filters.BooleanFilter(
+        label=_("Show Only Unassigned"),
+        method="filter_unassigned_only",
+        widget=forms.CheckboxInput(attrs={"class": "simple-toggle"}),
+    )
+
     status = django_filters.MultipleChoiceFilter(
         label=_("Work Area Status"),
         choices=WorkAreaStatus.choices,
@@ -102,23 +117,37 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "class": INPUT_CSS}),
     )
 
+    implementation_area = django_filters.ModelMultipleChoiceFilter(
+        label=_("Implementation Area"),
+        queryset=ImplementationArea.objects.none(),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "class": INPUT_CSS}),
+    )
+
+    work_area_group = django_filters.ModelMultipleChoiceFilter(
+        label=_("Work Area Group"),
+        queryset=WorkAreaGroup.objects.none(),
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "class": INPUT_CSS}),
+    )
+
+    payment_unit = django_filters.ModelChoiceFilter(
+        label=_("Payment Unit"),
+        field_name="uservisit__deliver_unit__payment_unit",
+        queryset=PaymentUnit.objects.none(),
+        widget=forms.Select(attrs={"class": INPUT_CSS}),
+    )
+
     start_date = django_filters.DateFilter(
-        label=_("Start Date"),
+        label=_("Visit Start Date"),
         field_name="uservisit__visit_date",
         lookup_expr="date__gte",
         widget=forms.DateInput(attrs={"type": "date", "class": INPUT_CSS}),
     )
 
     end_date = django_filters.DateFilter(
-        label=_("End Date"),
+        label=_("Visit End Date"),
         field_name="uservisit__visit_date",
         lookup_expr="date__lte",
         widget=forms.DateInput(attrs={"type": "date", "class": INPUT_CSS}),
-    )
-
-    unassigned_only = django_filters.BooleanFilter(
-        label=_("Show Only Unassigned"),
-        method="filter_unassigned_only",
     )
 
     class Meta:
@@ -140,6 +169,15 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
                 )
                 .distinct()
                 .order_by("name")
+            )
+            self.filters["implementation_area"].queryset = ImplementationArea.objects.filter(
+                opportunity=opportunity
+            ).order_by("name")
+            self.filters["work_area_group"].queryset = WorkAreaGroup.objects.filter(opportunity=opportunity).order_by(
+                "name"
+            )
+            self.filters["payment_unit"].queryset = PaymentUnit.objects.filter(opportunity=opportunity).order_by(
+                "name"
             )
 
         # Display "name (username)" instead of default __str__

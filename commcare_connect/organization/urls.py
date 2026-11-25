@@ -7,9 +7,30 @@ app_name = "organization"
 urlpatterns = [
     path("organization/", views.organization_home, name="home"),
     path("organization/invite/<str:token>/", views.accept_invite, name="accept_invite"),
+    path("organization/invite/<int:invite_id>/reinvite", views.reinvite, name="reinvite"),
     path("organization/invite/<int:invite_id>/revoke", views.revoke_invite, name="revoke_invite"),
     path("organization/member", views.add_members_form, name="add_members"),
     path("organization/member/remove", views.remove_members, name="remove_members"),
     path("organization/member_table", views.org_member_table, name="org_member_table"),
     path("organization/pending_invites_table", views.org_pending_invites_table, name="pending_invites_table"),
+]
+
+# Routes that are not scoped to one organization.
+directory_urlpatterns = [
+    path("", views.OrganizationListView.as_view(), name="list"),
+    path("new/", views.OrganizationCreateView.as_view(), name="create"),
+    path("contacts/", views.ContactListView.as_view(), name="contacts"),
+    path("contacts/new/", views.ContactCreateView.as_view(), name="contact_create"),
+    path("contacts/poc-warning/", views.ContactPocWarningView.as_view(), name="contact_poc_warning"),
+    path("contacts/export/", views.ContactExportView.as_view(), name="contact_export"),
+    path("contacts/export/<slug:task_id>/", views.ContactExportStatusView.as_view(), name="contact_export_status"),
+    path(
+        "contacts/export/<slug:task_id>/download/",
+        views.ContactExportDownloadView.as_view(),
+        name="contact_export_download",
+    ),
+    path("contacts/<uuid:contact_id>/edit/", views.ContactUpdateView.as_view(), name="contact_edit"),
+    path("contacts/<uuid:contact_id>/archive/", views.ContactArchiveView.as_view(), name="contact_archive"),
+    path("contacts/<uuid:contact_id>/restore/", views.ContactRestoreView.as_view(), name="contact_restore"),
+    path("<slug:slug>/edit/", views.OrganizationUpdateView.as_view(), name="edit"),
 ]

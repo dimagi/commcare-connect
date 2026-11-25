@@ -1,86 +1,126 @@
+from crispy_forms.helper import FormHelper
 from django import forms
+from django.core.exceptions import ValidationError
+from django.utils.text import slugify
+from django.utils.timezone import localdate
+from django.utils.translation import gettext
+from django.utils.translation import gettext_lazy as _
 
-TOMSELECT_NEW_ENTRY_PREFIX = "new:"
+from commcare_connect.utils.datetime import DateRanges
 
 
-def tomselect_resolve_creatable_value(value, queryset, field_name="pk"):
+class PresetDateRangeField(forms.MultiValueField):
+    """A date range picked from relative presets ("Last 3 months") or entered as a custom From/To range.
+
+    Cleans to an inclusive `slice(date_from, date_to)`, the range value django-filter's RangeFilter takes (either
+    bound of a custom range may be None), or to None when no range is chosen. Presets are resolved against today
+    when the form is cleaned, so a saved URL stays relative. The submitted values are `<name>_range`, `<name>_from`
+    and `<name>_to`.
     """
-    Resolves a value from a creatable TomSelect field.
 
-    Returns:
-      - str: stripped new-entry text (when value starts with TOMSELECT_NEW_ENTRY_PREFIX)
-      - model instance: existing record (when value is a PK or field match)
-
-    Raises ValidationError if value is not prefixed and no matching record is found.
-    """
-    value = str(value)
-    if value.startswith(TOMSELECT_NEW_ENTRY_PREFIX):
-        return value[len(TOMSELECT_NEW_ENTRY_PREFIX) :]  # noqa: E203
-    try:
-        return queryset.get(**{field_name: value})
-    except (ValueError, TypeError, queryset.model.DoesNotExist):
-        raise forms.ValidationError(
-            "Select a valid choice. %(value)s is not one of the available choices.",
-            code="invalid_choice",
-            params={"value": value},
+    def __init__(self, *, presets, **kwargs):
+        choices = [("", _("Any time"))] + [(p.value, p.label) for p in (*presets, DateRanges.CUSTOM)]
+        fields = (
+            forms.ChoiceField(choices=choices, required=False),
+            forms.DateField(required=False),
+            forms.DateField(required=False),
         )
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("widget", PresetDateRangeWidget(choices=choices))
+        super().__init__(fields, require_all_fields=False, **kwargs)
 
-
-class CreatableModelChoiceField(forms.ModelChoiceField):
-    """Dropdown field that can be used for creating new choices using the TomSelect library.
-    This takes an already present Option on the Dropdown or a new user specified String value
-    that will be used to create the object."""
-
-    def __init__(self, *args, create_key_name, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.create_key_name = create_key_name
-        self.widget.attrs.update({"data-tomselect": "1", "data-tomselect:settings": '{"create": true}'})
-
-    def to_python(self, value):
-        if value in self.empty_values:
+    def compress(self, data_list):
+        preset, date_from, date_to = data_list or ("", None, None)
+        if not preset:
             return None
-        key = self.to_field_name or "pk"
-        if isinstance(value, self.queryset.model):
-            value = getattr(value, key)
-        return tomselect_resolve_creatable_value(value, self.queryset, field_name=key)
-
-    def validate(self, value):
-        if isinstance(value, str):
-            # Skip queryset validation for new string values used for creation.
-            return
-        return super().validate(value)
-
-    def clean(self, value):
-        value = super().clean(value)
-        if isinstance(value, str):
-            value = value.strip()
-            if not value:
-                if self.required:
-                    raise forms.ValidationError(self.error_messages["required"], code="required")
-                return None
-            # Raise if an entry with this name already exists — the user explicitly
-            # indicated intent to create, so a duplicate name is an error.
-            if self.queryset.filter(**{self.create_key_name: value}).exists():
-                raise forms.ValidationError(
-                    "%(value)s already exists. Select it from the list instead of creating a new entry.",
-                    code="duplicate",
-                    params={"value": value},
-                )
-            return self.queryset.model(**{self.create_key_name: value})
-        return value
+        if preset != DateRanges.CUSTOM:
+            return slice(*DateRanges(preset).bounds(localdate()))
+        if not (date_from or date_to):
+            return None
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError(_("The From date must be on or before the To date."), code="invalid_range")
+        return slice(date_from, date_to)
 
 
-class DynamicCreatableChoiceField(CreatableModelChoiceField):
-    """
-    CreatableModelChoiceField variant for TomSelect fields whose options are populated
-    dynamically by JS (not server-rendered). Widget starts empty; queryset is validation-only.
+class PresetDateRangeWidget(forms.MultiWidget):
+    """A preset dropdown, with From/To date inputs that Alpine shows (and enables) only for "Custom range".
+
+    The To input's `min` follows the From date, so the browser refuses a range that ends before it starts.
     """
 
-    @property
-    def choices(self):
-        return []
+    template_name = "widgets/preset_date_range.html"
 
-    @choices.setter
-    def choices(self, value):
-        # Intentionally discard: options are populated by JS, not server-rendered.
-        pass
+    def __init__(self, choices, attrs=None):
+        # Styled here because crispy-tailwind only styles the widgets it recognises by class name.
+        # Hidden From/To inputs are disabled too, so a preset doesn't send stale custom dates.
+        custom_only = {"type": "date", "class": "base-input", "x-bind:disabled": f"preset !== '{DateRanges.CUSTOM}'"}
+        widgets = {
+            "range": forms.Select(choices=choices, attrs={"class": "base-input", "x-model": "preset"}),
+            "from": forms.DateInput(format="%Y-%m-%d", attrs={**custom_only, "x-model": "dateFrom"}),
+            "to": forms.DateInput(format="%Y-%m-%d", attrs={**custom_only, "x-bind:min": "dateFrom"}),
+        }
+        super().__init__(widgets, attrs)
+
+    def decompress(self, value):
+        if not value:
+            return ["", None, None]
+        return [DateRanges.CUSTOM.value, value.start, value.stop]
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context["custom"] = DateRanges.CUSTOM.value
+        return context
+
+
+class ManagedOptionForm(forms.ModelForm):
+    """Adds or edits a name/slug/description option that Internal Features manages (see users/managed_options.py).
+
+    On create the slug is filled in from the name as you type (see slugAutofill in alpine_data.js) and, if left
+    blank, generated from it on save. After that it is read-only, as other systems identify options by it; subclasses
+    say which in `locked_slug_help_text`.
+    """
+
+    locked_slug_help_text = None
+
+    class Meta:
+        fields = ("name", "slug", "description")
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {"slug": _("Lowercase letters, numbers, hyphens and underscores.")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["description"].required = False
+        if self.instance.pk:
+            self.fields["slug"].disabled = True
+            self.fields["slug"].help_text = self.locked_slug_help_text
+        else:
+            self.fields["slug"].required = False
+            self.fields["name"].widget.attrs.update({"x-ref": "name", "x-on:input": "nameChanged()"})
+            self.fields["slug"].widget.attrs.update({"x-ref": "slug", "x-on:input": "slugChanged()"})
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if self._others().filter(name__iexact=name).exists():
+            raise ValidationError(gettext("A %(option)s with this name already exists."), params=self._params())
+        return name
+
+    def clean_slug(self):
+        if self.instance.pk:
+            return self.instance.slug
+        slug = self.cleaned_data["slug"].strip() or slugify(self.cleaned_data.get("name", ""))
+        if not slug:
+            raise ValidationError(gettext("Enter a slug, or a name containing at least one letter or number."))
+        if slug != slugify(slug):
+            raise ValidationError(gettext("Use only lowercase letters, numbers, hyphens and underscores."))
+        if self._others().filter(slug=slug).exists():
+            raise ValidationError(gettext("A %(option)s with this slug already exists."), params=self._params())
+        return slug
+
+    def _others(self):
+        return self._meta.model.objects.exclude(pk=self.instance.pk)
+
+    def _params(self):
+        return {"option": self._meta.model._meta.verbose_name}

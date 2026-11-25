@@ -1,11 +1,26 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
+from django.contrib.auth.models import Permission
 from django.db import IntegrityError
 from django.utils import timezone
 
-from commcare_connect.organization.models import LLOEntity, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.opportunity.models import Country
+from commcare_connect.organization.models import (
+    ContactEvent,
+    Organization,
+    OrganizationCountryEvent,
+    OrganizationEvent,
+    OrganizationInvite,
+    OrganizationPrimarySectorEvent,
+    OrganizationStatus,
+    PrimarySector,
+    UserOrganizationMembership,
+)
+from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
+    ContactFactory,
     MembershipFactory,
     OrganizationFactory,
     OrganizationInviteFactory,
@@ -13,20 +28,14 @@ from commcare_connect.users.tests.factories import (
 )
 
 
-class TestLLOEntity:
-    def test_str_without_short_name(self):
-        entity = LLOEntity(name="World Health Organization")
-        assert str(entity) == "World Health Organization"
-
-    def test_str_with_short_name(self):
-        entity = LLOEntity(name="World Health Organization", short_name="WHO")
-        assert str(entity) == "World Health Organization (WHO)"
-
-    @pytest.mark.django_db
-    def test_name_must_be_unique(self):
-        LLOEntity.objects.create(name="Unique LLO")
-        with pytest.raises(IntegrityError):
-            LLOEntity.objects.create(name="Unique LLO")
+def _user_with_privilege(privilege: str | None, own_org: Organization) -> User:
+    user = UserFactory(is_superuser=privilege == "superuser")
+    if privilege == "member":
+        MembershipFactory(user=user, organization=own_org)
+    if privilege == "permission":
+        user.user_permissions.add(Permission.objects.get(codename="workspace_entity_management_access"))
+        user = User.objects.get(pk=user.pk)  # drop the cached permissions
+    return user
 
 
 @pytest.mark.django_db
@@ -46,6 +55,42 @@ class TestOrganization:
         emails = organization.get_member_emails()
         assert sorted(emails) == sorted([org_user_admin.email, org_user_member.email])
 
+    @pytest.mark.parametrize(
+        "exclude_viewer,expect_viewer",
+        [(False, True), (True, False)],
+    )
+    def test_get_member_emails_viewer_exclusion(
+        self, organization, org_user_admin, org_user_member, exclude_viewer, expect_viewer
+    ):
+        viewer = UserFactory(email="viewer@example.com")
+        MembershipFactory(organization=organization, user=viewer, role=UserOrganizationMembership.Role.VIEWER)
+
+        emails = organization.get_member_emails(exclude_viewer=exclude_viewer)
+
+        expected = [org_user_admin.email, org_user_member.email]
+        if expect_viewer:
+            expected.append(viewer.email)
+        assert sorted(emails) == sorted(expected)
+
+    def test_get_member_emails_role_filter(self, organization, org_user_admin, org_user_member):
+        emails = organization.get_member_emails(role=UserOrganizationMembership.Role.ADMIN)
+        assert emails == [org_user_admin.email]
+
+    @pytest.mark.parametrize(
+        "privilege, visible",
+        [
+            (None, set()),
+            ("member", {"own"}),
+            ("permission", {"own", "other"}),
+            ("superuser", {"own", "other"}),
+        ],
+    )
+    def test_visible_to(self, privilege, visible):
+        orgs = {"own": OrganizationFactory(), "other": OrganizationFactory()}
+        user = _user_with_privilege(privilege, orgs["own"])
+
+        assert set(Organization.visible_to(user)) == {orgs[key] for key in visible}
+
 
 @pytest.mark.django_db
 class TestUserOrganizationMembership:
@@ -61,17 +106,33 @@ class TestUserOrganizationMembership:
         membership = MembershipFactory(role=UserOrganizationMembership.Role.VIEWER)
         assert membership.is_viewer
 
-    def test_is_program_manager_admin_in_pm_org(self, program_manager_org_user_admin, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_admin)
-        assert membership.is_program_manager
-
-    def test_is_program_manager_member_in_pm_org(self, program_manager_org_user_member, program_manager_org):
-        membership = program_manager_org.memberships.get(user=program_manager_org_user_member)
-        assert not membership.is_program_manager
-
 
 @pytest.mark.django_db
 class TestOrganizationInvite:
+    def test_expiry_date_is_expiry_days_after_last_update(self, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        assert invite.expiry_date == invite.date_modified + timedelta(days=OrganizationInvite.EXPIRY_DAYS)
+
+    @pytest.mark.parametrize(
+        "status,minutes_ago,in_cooldown",
+        [
+            (OrganizationInvite.Status.INVITED, 1, True),
+            (OrganizationInvite.Status.INVITED, 10, False),
+            # Only a pending invite can be reinvited, so nothing else is ever throttled.
+            (OrganizationInvite.Status.REVOKED, 1, False),
+            (OrganizationInvite.Status.ACCEPTED, 1, False),
+        ],
+    )
+    def test_only_pending_invites_are_in_reinvite_cooldown(self, organization, status, minutes_ago, in_cooldown):
+        invite = OrganizationInviteFactory(organization=organization, status=status)
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - timedelta(minutes=minutes_ago)
+        )
+        invite.refresh_from_db()
+        # Pinned so the test covers the window logic, not whatever REINVITE_COOLDOWN is tuned to.
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            assert invite.is_in_reinvite_cooldown is in_cooldown
+
     def test_not_expired_when_freshly_created(self, organization):
         invite = OrganizationInviteFactory(organization=organization)
         assert not invite.is_expired
@@ -117,9 +178,45 @@ class TestOrganizationInvite:
         assert reinvited.token != old_token
         assert not reinvited.is_expired
 
+    def test_send_invite_refuses_inside_the_reinvite_cooldown(self, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="fresh@example.com")
+        old_token = invite.token
+
+        refused = OrganizationInvite.send_invite(
+            organization=organization,
+            email="fresh@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert refused is None
+        invite.refresh_from_db()
+        assert invite.token == old_token
+
+    def test_send_invite_reinstates_a_revoked_invite_inside_the_cooldown(self, organization):
+        """Reinviting a revoked address is a fresh decision, not a retry, so the cooldown does not apply."""
+        invite = OrganizationInviteFactory(
+            organization=organization, email="revoked@example.com", status=OrganizationInvite.Status.REVOKED
+        )
+        old_token = invite.token
+
+        reinvited = OrganizationInvite.send_invite(
+            organization=organization,
+            email="revoked@example.com",
+            role=UserOrganizationMembership.Role.MEMBER,
+            invited_by=UserFactory(email="admin@example.com"),
+        )
+
+        assert reinvited.pk == invite.pk
+        assert reinvited.status == OrganizationInvite.Status.INVITED
+        assert reinvited.token != old_token
+
     def test_send_invite_preserves_original_created_by_on_reinvite(self, organization):
         invite = OrganizationInviteFactory(organization=organization, email="lapsed@example.com")
         original_created_by = invite.created_by
+        OrganizationInvite.objects.filter(pk=invite.pk).update(
+            date_modified=timezone.now() - OrganizationInvite.REINVITE_COOLDOWN - timedelta(minutes=1)
+        )
         admin = UserFactory(email="admin@example.com")
 
         reinvited = OrganizationInvite.send_invite(
@@ -141,5 +238,110 @@ class TestOrganizationInvite:
         assert membership.organization == organization
         assert membership.user == user
         assert membership.role == UserOrganizationMembership.Role.ADMIN
+        assert membership.accepted_at is not None
         invite.refresh_from_db()
         assert invite.status == OrganizationInvite.Status.ACCEPTED
+
+
+@pytest.mark.django_db
+class TestContact:
+    def test_a_new_main_poc_replaces_the_current_one(self):
+        current_main = ContactFactory(is_main_poc=True)
+
+        new_main = ContactFactory(organization=current_main.organization, is_main_poc=True)
+
+        current_main.refresh_from_db()
+        assert new_main.is_main_poc
+        assert not current_main.is_main_poc
+
+    def test_email_is_unique_ignoring_case(self):
+        ContactFactory(email="grace@umojahealth.org")
+
+        with pytest.raises(IntegrityError):
+            ContactFactory(email="Grace@UmojaHealth.org")
+
+
+@pytest.mark.django_db
+class TestOrganizationHistory:
+    def test_records_a_change_to_a_tracked_field(self, organization):
+        organization.status = OrganizationStatus.ACTIVE
+        organization.save()
+
+        event = organization.events.latest("pgh_id")
+        assert event.pgh_label == "update"
+        assert event.status == OrganizationStatus.ACTIVE
+
+    def test_ignores_a_change_to_audit_fields_only(self, organization):
+        events_before = organization.events.count()
+
+        organization.modified_by = "someone@example.com"
+        organization.save()
+
+        assert organization.events.count() == events_before
+
+    def test_records_a_deleted_organization(self):
+        organization = OrganizationFactory(name="Merged Away")
+        organization_id = organization.pk
+
+        organization.delete()
+
+        event = OrganizationEvent.objects.filter(pgh_obj_id=organization_id).latest("pgh_id")
+        assert event.pgh_label == "delete"
+        assert event.name == "Merged Away"
+
+
+@pytest.mark.django_db
+class TestContactHistory:
+    def test_records_a_change_to_a_tracked_field(self):
+        contact = ContactFactory()
+
+        contact.is_archived = True
+        contact.save()
+
+        event = contact.events.latest("pgh_id")
+        assert event.pgh_label == "update"
+        assert event.is_archived
+
+    def test_ignores_a_change_to_audit_fields_only(self):
+        contact = ContactFactory()
+        events_before = contact.events.count()
+
+        contact.modified_by = "someone@example.com"
+        contact.save()
+
+        assert contact.events.count() == events_before
+
+    def test_records_contacts_deleted_with_their_organization(self):
+        contact = ContactFactory(name="Grace Wanjiru")
+        contact_id = contact.pk
+
+        contact.organization.delete()
+
+        event = ContactEvent.objects.filter(pgh_obj_id=contact_id).latest("pgh_id")
+        assert event.pgh_label == "delete"
+        assert event.name == "Grace Wanjiru"
+
+
+@pytest.mark.django_db
+class TestOrganizationCountryAndSectorHistory:
+    def test_records_countries_added_and_removed(self, organization):
+        kenya, tanzania = Country.objects.get(code="KEN"), Country.objects.get(code="TZA")
+        organization.countries.add(kenya)
+
+        organization.countries.set([tanzania])
+
+        events = OrganizationCountryEvent.objects.filter(organization=organization).order_by("pgh_id")
+        assert [(event.pgh_label, event.country_id) for event in events] == [
+            ("insert", "KEN"),
+            ("delete", "KEN"),
+            ("insert", "TZA"),
+        ]
+
+    def test_records_sectors_added_and_removed(self, organization):
+        sector = PrimarySector.objects.create(name="Health", slug="health", description="")
+        organization.primary_sectors.add(sector)
+
+        organization.primary_sectors.remove(sector)
+
+        events = OrganizationPrimarySectorEvent.objects.filter(organization=organization).order_by("pgh_id")
+        assert [event.pgh_label for event in events] == ["insert", "delete"]

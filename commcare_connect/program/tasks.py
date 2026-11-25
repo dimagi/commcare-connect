@@ -111,11 +111,11 @@ def _get_program_home_url(org_slug):
 
 @celery_app.task()
 def send_monthly_delivery_reminder_email():
-    # Find organizations with pending delivery review or pending managed delivery reviews
+    # Find organizations with pending delivery review, or pending PM review in programs they run
     organizations_with_pending_deliveries = Organization.objects.filter(
         Q(opportunity__opportunityaccess__completedwork__status=CompletedWorkStatus.pending)
         | Q(
-            program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending  # noqa:E501
+            program__opportunity__opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending
         ),
     ).distinct()
 
@@ -123,7 +123,7 @@ def send_monthly_delivery_reminder_email():
         opportunities = get_org_opps_for_review(organization)
 
         if organization.program_manager:
-            opportunities.extend(get_org_managed_opps_for_review(organization))
+            opportunities.extend(get_org_pm_opps_for_review(organization))
 
         if not opportunities:
             continue
@@ -147,7 +147,7 @@ def get_org_opps_for_review(organization):
     )
 
 
-def get_org_managed_opps_for_review(organization):
+def get_org_pm_opps_for_review(organization):
     return list(
         Opportunity.objects.filter(
             program__organization=organization,
@@ -286,7 +286,7 @@ def send_pm_invoice_review_reminder():
 
 
 def _send_pm_invoice_review_reminder_email(pm_org, invoices):
-    recipient_emails = pm_org.get_member_emails()
+    recipient_emails = pm_org.get_member_emails(exclude_viewer=True)
     if not recipient_emails:
         return
 

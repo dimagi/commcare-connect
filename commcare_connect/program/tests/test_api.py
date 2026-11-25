@@ -182,23 +182,24 @@ class TestProgramApplication:
         application = ProgramApplication.objects.get(program=program, organization=organization)
         mock_send_email.assert_called_once_with(application.id)
 
-    def test_accept_application(self, api_client, program_manager_org_user_admin, program):
-        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.INVITED)
+    @pytest.mark.parametrize(
+        "initial_status,expected_status_code",
+        [
+            pytest.param(ProgramApplicationStatus.INVITED, 200, id="invited"),
+            pytest.param(ProgramApplicationStatus.ACCEPTED, 400, id="already_accepted"),
+        ],
+    )
+    def test_accept_application(
+        self, api_client, program_manager_org_user_admin, program, initial_status, expected_status_code
+    ):
+        application = ProgramApplicationFactory(program=program, status=initial_status)
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
             f"/api/programs/{program.program_id}/applications/{application.program_application_id}/accept/",
         )
-        assert response.status_code == 200
+        assert response.status_code == expected_status_code
         application.refresh_from_db()
         assert application.status == ProgramApplicationStatus.ACCEPTED
-
-    def test_accept_already_accepted_fails(self, api_client, program_manager_org_user_admin, program):
-        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.ACCEPTED)
-        api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/programs/{program.program_id}/applications/{application.program_application_id}/accept/",
-        )
-        assert response.status_code == 400
 
     def test_invite_requires_program_org_admin(self, api_client, user, program, organization):
         api_client.force_authenticate(user)
@@ -237,11 +238,11 @@ def _opportunity_payload(org, hq_server, hq_api_key):
 
 
 @pytest.mark.django_db
-class TestManagedOpportunityCreate:
+class TestProgramOpportunityCreate:
     @patch("commcare_connect.program.api.views.send_opportunity_created_email")
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
-    def test_create_managed_opportunity(
+    def test_create_opportunity(
         self,
         mock_deliver_units,
         mock_learn_modules,

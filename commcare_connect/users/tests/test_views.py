@@ -12,12 +12,20 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 from commcare_connect.flags.tests.factories import FlagFactory, SwitchFactory
+from commcare_connect.opportunity.models import UserInviteStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserInviteFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
+from commcare_connect.users.views import (
+    UpdateUserProfileView,
+    UserRedirectView,
+    UserToggleView,
+    UserUpdateView,
+    create_user_link_view,
+)
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -81,7 +89,7 @@ class TestUserRedirectView:
         request.org = None
 
         view.request = request
-        assert view.get_redirect_url() == "/home/"
+        assert view.get_redirect_url() == "/no-organization/"
 
     def test_get_redirect_url_for_org_user(
         self, organization: Organization, org_user_member: User, rf: RequestFactory
@@ -137,26 +145,25 @@ class TestRetrieveUserOTPView:
 
         assert response.status_code == 403
 
+    @pytest.mark.parametrize(
+        "otp,expected_message",
+        [
+            pytest.param("1234", "The user's OTP is: 1234", id="otp_found"),
+            pytest.param(
+                None,
+                "Failed to fetch OTP. Please make sure the number is correct "
+                "and that the user has started their device seating process.",
+                id="no_otp",
+            ),
+        ],
+    )
     @patch("commcare_connect.users.views.get_user_otp")
-    def test_can_get_user_otp(self, get_user_otp_mock, user, client):
-        get_user_otp_mock.return_value = "1234"
+    def test_otp_message(self, get_user_otp_mock, user, client, otp, expected_message):
+        get_user_otp_mock.return_value = otp
         response = self._get_response(client, user)
 
         messages = list(response.context["messages"])
-        assert str(messages[0]) == "The user's OTP is: 1234"
-
-    @patch("commcare_connect.users.views.get_user_otp")
-    def test_no_otp_returned(self, get_user_otp_mock, user, client):
-        get_user_otp_mock.return_value = None
-        response = self._get_response(client, user)
-
-        expected_failure_message = (
-            "Failed to fetch OTP. Please make sure the number is correct "
-            "and that the user has started their device seating process."
-        )
-
-        messages = list(response.context["messages"])
-        assert str(messages[0]) == expected_failure_message
+        assert str(messages[0]) == expected_message
 
     def _get_response(self, client, user):
         perm = Permission.objects.get(codename="otp_access")
@@ -175,7 +182,7 @@ class TestStartLearnAppView:
     def _post(self, client, user, data, create_user_result=True):
         client.force_authenticate(user)
         with patch(
-            "commcare_connect.users.views.create_hq_user_and_link", return_value=create_user_result
+            "commcare_connect.users.helpers.create_hq_user_and_link", return_value=create_user_result
         ) as mock_create:
             response = client.post(self.url, data=data)
         return response, mock_create
@@ -220,6 +227,18 @@ class TestStartLearnAppView:
         else:
             mock_create.assert_called_once()
         assert response.json()["error_code"] == expected_error
+
+    def test_hq_failure_is_reported_not_raised(self, opportunity, user, api_client):
+        """HQ refusing to create the mobile worker, e.g. a key without "Edit Mobile Workers", is a 502 the app
+        can show rather than a 500."""
+        api_client.force_authenticate(user)
+        with patch(
+            "commcare_connect.users.helpers.create_hq_user_and_link",
+            side_effect=CommCareHQAPIException("403 Error response while creating user"),
+        ):
+            response = api_client.post(self.url, data={"opportunity": opportunity.id})
+
+        assert (response.status_code, response.json()) == (502, {"error_code": ErrorCodes.FAILED_USER_CREATE})
 
     def test_starts_learning_successfully(self, opportunity, user, api_client):
         access = OpportunityAccessFactory(opportunity=opportunity, user=user)
@@ -417,3 +436,76 @@ class TestPermissionManagement:
         response = client.get(reverse("users:internal_features"))
         assert response.status_code == 200
         assert "Permission Management" in response.content.decode()
+
+
+class TestUpdateUserProfileView:
+    def _post(self, rf, data):
+        request = rf.post("/fake-url/", data=data)
+        with mock.patch(
+            "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
+        ) as authenticate_client:
+            authenticate_client.return_value = True
+            return UpdateUserProfileView.as_view()(request)
+
+    @pytest.mark.parametrize("name", ["New Name", "  New Name  "], ids=["plain", "padded"])
+    def test_updates_name(self, mobile_user: User, rf: RequestFactory, name):
+        response = self._post(rf, {"username": mobile_user.username, "name": name})
+
+        mobile_user.refresh_from_db()
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"updated": True}
+        assert mobile_user.name == "New Name"
+
+    def test_unknown_username_reports_no_update(self, rf: RequestFactory):
+        response = self._post(rf, {"username": "not-a-connectid-user", "name": "New Name"})
+
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"updated": False}
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"name": "New Name"},
+            {"username": "   ", "name": "New Name"},
+            {"username": "a-worker"},
+            {"username": "a-worker", "name": "   "},
+        ],
+        ids=["no_username", "blank_username", "no_name", "blank_name"],
+    )
+    def test_invalid_data_is_a_bad_request(self, rf: RequestFactory, data):
+        worker = UserFactory(username="a-worker", name="Old Name")
+
+        response = self._post(rf, data)
+
+        worker.refresh_from_db()
+        assert response.status_code == 400
+        assert worker.name == "Old Name"
+
+
+class TestSMSStatusCallbackView:
+    url = "/users/sms_status_callback/"
+
+    def test_missing_message_sid_returns_400(self, client):
+        invites = UserInviteFactory.create_batch(3, message_sid=None, status=UserInviteStatus.invited)
+        response = client.post(self.url, {"MessageStatus": "delivered"})
+        assert response.status_code == 400
+        for invite in invites:
+            invite.refresh_from_db()
+            assert invite.status == UserInviteStatus.invited
+
+    def test_empty_body_returns_400(self, client):
+        UserInviteFactory.create_batch(2, message_sid=None)
+        response = client.post(self.url, {})
+        assert response.status_code == 400
+
+    def test_delivered_updates_invite(self, client):
+        invite = UserInviteFactory(message_sid="SM123", status=UserInviteStatus.invited)
+        response = client.post(self.url, {"MessageSid": "SM123", "MessageStatus": "delivered"})
+        assert response.status_code == 200
+        invite.refresh_from_db()
+        assert invite.status == UserInviteStatus.sms_delivered
+        assert invite.notification_date is not None
+
+    def test_unknown_message_sid_returns_404(self, client):
+        response = client.post(self.url, {"MessageSid": "SM-unknown", "MessageStatus": "delivered"})
+        assert response.status_code == 404

@@ -65,9 +65,43 @@
   border-right-color: var(--color-tooltip-bg);
 }
 
+/* Dark, richer tooltip variant (opt in via x-tooltip.theme.dark).*/
+.tippy-box[data-theme~='dark'] {
+  background-color: var(--color-tooltip);
+  color: var(--color-tooltip-bg);
+  @apply rounded-lg shadow-lg;
+}
+
+.tippy-box[data-theme~='dark'] .tippy-content {
+  @apply p-4;
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='top'] > .tippy-arrow::before {
+  border-top-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='bottom']
+  > .tippy-arrow::before {
+  border-bottom-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='left'] > .tippy-arrow::before {
+  border-left-color: var(--color-tooltip);
+}
+
+.tippy-box[data-theme~='dark'][data-placement^='right'] > .tippy-arrow::before {
+  border-right-color: var(--color-tooltip);
+}
+
 /* ----- background -------*/
 .card_bg {
   @apply rounded-lg bg-white p-6 shadow-sm;
+}
+
+/* The card is the wrapper rather than the fieldset itself: a legend is laid out over
+   its fieldset's top border, which on a bordered card leaves the title hanging outside. */
+.form_section legend {
+  @apply text-brand-deep-purple mb-4 text-lg font-medium;
 }
 
 /* ------ Typography------ */
@@ -117,6 +151,21 @@
   .animate-marquee p {
     @apply truncate text-nowrap hover:overflow-visible;
   }
+
+  @keyframes progress-bar {
+    0% {
+      background-position: 0% 50%;
+    }
+    100% {
+      background-position: 200% 50%;
+    }
+  }
+
+  .animate-progress-bar {
+    background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6);
+    background-size: 200% 100%;
+    animation: progress-bar 2s linear infinite;
+  }
 }
 
 /*-- status ----------------------------------*/
@@ -141,6 +190,18 @@
   @apply inline-block text-nowrap rounded-full text-xs;
 }
 
+.badge-indigo {
+  @apply bg-indigo-100 text-indigo-700;
+}
+
+.badge-teal {
+  @apply bg-teal-100 text-teal-700;
+}
+
+.badge-amber {
+  @apply bg-amber-100 text-amber-700;
+}
+
 /* Size Variants */
 .badge-sm {
   @apply px-2 py-0.5;
@@ -150,10 +211,53 @@
   @apply px-4 py-1;
 }
 
+/*-- progress bars -------------------------------*/
+/* A track holds one fill, or several side by side for a split bar; widths are set inline. */
+.progress-track {
+  @apply flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-gray-200;
+}
+
+/* Fills may shrink so a split bar's gaps never push its last segment out of the track */
+.progress-fill {
+  @apply h-full rounded-full;
+}
+
+/*-- notes & banners -----------------------------*/
+.warning-note {
+  @apply flex items-center gap-1.5 text-xs font-medium text-amber-700;
+}
+
+.warning-note i {
+  @apply text-brand-marigold;
+}
+
+.warning-banner {
+  @apply text-brand-deep-purple border-brand-marigold bg-brand-marigold/10 flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm;
+}
+
+.warning-banner i {
+  @apply text-brand-marigold;
+}
+
+/* An amount line whose figures are <strong> inside translated text, e.g. "<strong>NGN 10</strong> workers / 50" */
+.amount-breakdown {
+  @apply text-sm font-medium text-gray-500;
+}
+
+.amount-breakdown strong {
+  @apply text-brand-deep-purple text-base font-semibold;
+}
+
+.amount-breakdown.over-budget strong {
+  @apply text-amber-700;
+}
+
 /*-- buttons -------------------------------------*/
 
 .button {
-  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
+  /* Reserve a 1px border on every button so solid variants (e.g. .primary-dark) render the
+     same size as bordered ones (e.g. .outline-style, which overrides the color). */
+  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-center border border-transparent text-sm font-medium transition-all duration-300;
 }
 
 .button:not(:disabled):hover::after {
@@ -272,6 +376,10 @@
   @apply text-brand-deep-purple rounded-lg border border-gray-400 bg-gray-50;
 }
 
+.negative-outline {
+  @apply rounded-lg border border-red-600 bg-white text-red-600;
+}
+
 /*-- chips ---------------------------------------*/
 .chip {
   @apply inline-block cursor-pointer text-nowrap rounded-full border border-gray-200 text-sm font-medium transition-all duration-300;
@@ -279,6 +387,19 @@
 
 .chip-md {
   @apply px-4 py-1;
+}
+
+.chip-group {
+  @apply inline-flex flex-wrap gap-1 rounded-full bg-gray-100 p-1;
+}
+
+.chip-group .chip {
+  @apply border-transparent text-gray-600;
+}
+
+/* The active chip is the current state, not an action: clicking it would only reload the page. */
+.chip-group .chip-active {
+  @apply text-brand-deep-purple pointer-events-none border-gray-200 bg-white shadow-sm;
 }
 
 /*-- tooltips ---------------------------------------*/
@@ -474,6 +595,61 @@
   }
 }
 
+/*--- tag input (static/js/tag_input.ts) ------- */
+@layer components {
+  .tag-input {
+    @apply focus-within:border-brand-indigo flex min-h-20 w-full cursor-text flex-wrap content-start items-center gap-1.5 rounded-lg border border-gray-300 bg-white p-2 text-xs text-gray-700;
+  }
+
+  .tag-input.tag-input-has-errors {
+    @apply border-red-600;
+  }
+
+  .tag-input-list {
+    @apply contents;
+  }
+
+  /* Matches `badge badge-sm primary-light`; an invalid tag matches `negative-light`. */
+  .tag-input-tag {
+    @apply inline-flex items-center gap-1 rounded-full bg-indigo-100 py-0.5 pl-2 pr-1 text-indigo-600;
+  }
+
+  .tag-input-tag-invalid {
+    @apply bg-red-100 text-red-600;
+  }
+
+  /* Every tag selected with Ctrl/Cmd+A. */
+  .tag-input-all-selected .tag-input-tag {
+    @apply outline-brand-indigo outline-2 outline-offset-1;
+  }
+
+  .tag-input-text {
+    @apply cursor-text;
+  }
+
+  /* The tag being edited in place: its text is swapped for an input sized to the text. */
+  .tag-input-tag-editing {
+    @apply outline-brand-indigo bg-white text-gray-700 outline outline-1;
+  }
+
+  .tag-input-edit {
+    @apply border-0 bg-transparent p-0 text-xs text-inherit outline-none focus:ring-0;
+  }
+
+  .tag-input-remove {
+    @apply inline-flex size-5 items-center justify-center rounded-full text-xs hover:bg-black/10;
+  }
+
+  .tag-input-field {
+    @apply min-w-32 flex-1 border-0 bg-transparent p-1 text-gray-900 outline-none focus:ring-0;
+  }
+
+  /* Matches crispy's field errors. */
+  .tag-input-error {
+    @apply mt-1 text-xs font-bold italic text-red-500;
+  }
+}
+
 /*--- simple textarea ------------------------- */
 @layer components {
   .simple-textarea {
@@ -501,11 +677,15 @@
   }
 
   .simple-toggle:checked {
-    @apply bg-green-600;
+    @apply bg-indigo-600;
   }
 
   .simple-toggle:checked::before {
     @apply translate-x-5;
+  }
+
+  .simple-toggle:disabled {
+    @apply cursor-not-allowed opacity-50;
   }
 }
 
@@ -625,6 +805,15 @@
 
   .base-table tbody td {
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
+  }
+
+  /* Narrow numeric columns: the header wraps instead of setting the column's width. */
+  .base-table th.col-stat {
+    @apply w-28 whitespace-normal px-2 text-center align-bottom;
+  }
+
+  .base-table td.col-stat {
+    @apply px-2 text-center;
   }
 
   .base-table th.col-action,
@@ -770,8 +959,11 @@
 }
 
 select:disabled,
-.textinput:disabled {
+.textinput:disabled,
+.numberinput:disabled,
+.textarea:disabled {
   @apply pointer-events-none opacity-50;
+  @apply bg-gray-200;
 }
 
 /* Multi-line truncation helper (2 lines). */
@@ -786,10 +978,84 @@ select:disabled,
 /* Metric cards (indigo header with stat tiles) */
 @layer components {
   .metric-container {
-    @apply w-full rounded-lg bg-brand-indigo p-6;
+    @apply bg-brand-indigo w-full rounded-lg p-6;
   }
 
   .metric-card {
     @apply rounded-lg border border-white/30 bg-white/10 text-white;
+  }
+}
+
+.dropdown {
+  @apply relative;
+}
+
+.dropdown > summary {
+  @apply list-none;
+}
+
+.dropdown > summary::-webkit-details-marker {
+  @apply hidden;
+}
+
+.dropdown[open] > summary .dropdown-chevron {
+  @apply rotate-180;
+}
+
+.dropdown-content {
+  @layer components {
+    @apply text-brand-deep-purple absolute z-10 mt-2 w-max max-w-sm overflow-hidden rounded-lg bg-white text-sm font-medium shadow-lg;
+
+    .dropdown-item {
+      @apply w-full cursor-pointer p-4 text-left hover:bg-gray-100;
+    }
+
+    .dropdown-item:disabled {
+      @apply cursor-not-allowed text-gray-600;
+    }
+
+    .dropdown-item .dropdown-item-icon {
+      @apply mr-2 text-lg text-red-600;
+    }
+
+    .dropdown-item:disabled .dropdown-item-icon {
+      @apply text-gray-400;
+    }
+  }
+}
+
+/*--- floating map control panel ------------------- */
+@layer components {
+  /* The map's top-right corner. Everything in here is laid out in one column so a message can
+     never land on top of the controls */
+  .map-control-stack {
+    @apply pointer-events-none absolute right-4 top-4 z-30 flex flex-col items-end gap-2;
+  }
+
+  .map-control-panel {
+    @apply pointer-events-auto flex flex-col gap-2 rounded-lg bg-white px-3 py-2 shadow-md;
+  }
+
+  .map-control-row {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  /* Progress note under a control, e.g. footprint tiles still loading. */
+  .map-control-status {
+    @apply flex items-center gap-2 text-xs text-gray-500;
+  }
+
+  /* Positioned by `.map-control-stack`. Hover-driven and passive: x-show drops it out of the
+     column entirely when hidden, so the toast below it does not move on its account. */
+  .map-hint {
+    @apply pointer-events-none rounded-md border border-white/10 bg-black/50 px-2 py-2 text-sm text-white shadow-lg;
+  }
+
+  /* Positioned by `.map-control-stack`, and in the DOM even when hidden, so it must never take the
+     pointer -- an invisible toast would otherwise eat clicks on the map beneath it. Callers toggle
+     `opacity-0`/`opacity-100` and the background colour on the element itself, so those stay out
+     of here. */
+  .map-toast {
+    @apply pointer-events-none flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-white shadow-lg transition-opacity duration-300;
   }
 }

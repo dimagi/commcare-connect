@@ -1,0 +1,19 @@
+{% extends "organization/directory/modal_form.html" %}
+{% load i18n %}
+{% block form_title %}
+  {% if object %}
+    {% translate "Edit Contact" %}
+  {% else %}
+    {% translate "Add Contact" %}
+  {% endif %}
+{% endblock form_title %}
+{% block form_subheading %}
+  <p class="hint">{% translate "One Organization can have many Contacts; only one is the Main Point of Contact." %}</p>
+{% endblock form_subheading %}
+{% block submit_label %}
+  {% if object %}
+    {% translate "Save Changes" %}
+  {% else %}
+    {% translate "Create Contact" %}
+  {% endif %}
+{% endblock submit_label %}

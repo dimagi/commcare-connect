@@ -6,6 +6,7 @@ from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from django.utils import timezone
 
 from commcare_connect.utils.oauth_tokens import (
+    DEFAULT_ACCESS_TOKEN_TTL,
     SocialTokenMissingError,
     TokenRefreshError,
     refresh_access_token,
@@ -81,6 +82,19 @@ class TestRefreshAccessToken:
         # regression guard against the old hardcoded 900s
         assert result.expires_at > timezone.now() + datetime.timedelta(seconds=1000)
 
+    def test_expiry_falls_back_to_default_when_expires_in_absent(self, user, httpx_mock):
+        # A 200 refresh with no expires_in must still advance expires_at, otherwise
+        # every subsequent call would re-refresh and burn a single-use refresh token.
+        past = timezone.now() - datetime.timedelta(minutes=5)
+        _make_token(user, expires_at=past)
+        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"access_token": "new"})
+
+        result = refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
+
+        assert result.expires_at > timezone.now() + datetime.timedelta(seconds=60)
+        expected = timezone.now() + DEFAULT_ACCESS_TOKEN_TTL
+        assert abs((result.expires_at - expected).total_seconds()) < 10
+
     def test_keeps_existing_refresh_token_when_response_omits_it(self, user, httpx_mock):
         past = timezone.now() - datetime.timedelta(minutes=5)
         _make_token(user, refresh="keep-me", expires_at=past)
@@ -133,18 +147,17 @@ class TestRefreshAccessToken:
         with pytest.raises(SocialTokenMissingError):
             refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
 
-    def test_raises_on_non_200_response(self, user, httpx_mock):
+    @pytest.mark.parametrize(
+        "response_kwargs",
+        [
+            pytest.param({"status_code": 400, "text": "invalid_grant"}, id="non_200_response"),
+            pytest.param({"json": {"expires_in": 3600}}, id="200_response_missing_access_token"),
+        ],
+    )
+    def test_raises_on_bad_response(self, user, httpx_mock, response_kwargs):
         past = timezone.now() - datetime.timedelta(minutes=5)
         _make_token(user, expires_at=past)
-        httpx_mock.add_response(url=TOKEN_URL, method="POST", status_code=400, text="invalid_grant")
-
-        with pytest.raises(TokenRefreshError):
-            refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
-
-    def test_raises_when_200_response_missing_access_token(self, user, httpx_mock):
-        past = timezone.now() - datetime.timedelta(minutes=5)
-        _make_token(user, expires_at=past)
-        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"expires_in": 3600})
+        httpx_mock.add_response(url=TOKEN_URL, method="POST", **response_kwargs)
 
         with pytest.raises(TokenRefreshError):
             refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)

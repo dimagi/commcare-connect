@@ -2,10 +2,26 @@ import logging
 
 import pghistory
 from django.db import transaction
+from django.db.models import Count, F, Q
+from django.utils import formats, timezone
+from django.utils.translation import gettext
 
-from commcare_connect.commcarehq.api import bulk_create_or_update_cases
-from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE, HQ_UNASSIGN_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.commcarehq.api import bulk_create_or_update_cases, bulk_create_or_update_cases_by_work_areas
+from commcare_connect.microplanning.const import (
+    HQ_ASSIGN_BULK_CHUNK_SIZE,
+    HQ_BULK_CHUNK_SIZE,
+    HQ_UNASSIGN_BULK_CHUNK_SIZE,
+    SEARCH_KIND_FILTERS,
+)
+from commcare_connect.microplanning.models import (
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
+from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.itertools import batched
 
@@ -33,6 +49,154 @@ def ratio(numerator, denominator, ndigits=2):
     return round(numerator / denominator, ndigits)
 
 
+MAP_WORK_AREA_FIELDS = (
+    "id",
+    "slug",
+    "status",
+    "building_count",
+    "expected_visit_count",
+    "group_id",
+    "group_name",
+    "assignee_name",
+    "assignee_phone",
+    "visits_completed",
+    "implementation_area_name",
+)
+
+
+def map_work_areas(opportunity):
+    """Work areas carrying every field the map shows for one.
+
+    Shared by the vector tile layer and ``work_area_detail`` so the sidebar renders identically
+    whether it was filled from a tile click or from the search box.
+    """
+    return WorkArea.objects.filter(opportunity=opportunity).annotate(
+        group_id=F("work_area_group__id"),
+        group_name=F("work_area_group__name"),
+        assignee_name=F("opportunity_access__user__name"),
+        assignee_phone=F("opportunity_access__user__phone_number"),
+        visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
+    )
+
+
+def work_area_detail(opportunity, work_area_id):
+    """One work area's map fields, or None if it isn't in this opportunity."""
+    return map_work_areas(opportunity).filter(id=work_area_id).values(*MAP_WORK_AREA_FIELDS).first()
+
+
+def pending_inaccessibility_requests(opportunity):
+    """Work areas awaiting an inaccessibility review, longest outstanding first.
+
+    The review sidebar renders these rows from JSON rather than through template filters, so the
+    date and the pending label arrive display-ready. "Pending" counts from the date of visit the
+    worker reported, the only date the request carries.
+    """
+    today = timezone.localdate()
+    pending_requests = (
+        WorkAreaInaccessibilityRequest.objects.filter(
+            status=InaccessibilityRequestStatus.PENDING,
+            work_area__opportunity=opportunity,
+            work_area__status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+        )
+        .order_by("date_of_visit")
+        .values(
+            "work_area_id",
+            "xform_id",
+            "date_of_visit",
+            "work_area__slug",
+            "work_area__work_area_group__name",
+            "work_area__implementation_area_name",
+            "opportunity_access__user__name",
+        )
+    )
+    photo_blob_ids = inaccessibility_photo_blob_ids([request["xform_id"] for request in pending_requests])
+    return [
+        {
+            "work_area_id": pending_request["work_area_id"],
+            "slug": pending_request["work_area__slug"],
+            "group_name": pending_request["work_area__work_area_group__name"],
+            "implementation_area_name": pending_request["work_area__implementation_area_name"],
+            "flw_name": pending_request["opportunity_access__user__name"],
+            "date_of_visit": formats.date_format(pending_request["date_of_visit"]),
+            "pending_label": gettext("{days}d pending").format(days=(today - pending_request["date_of_visit"]).days),
+            "photo_blob_id": photo_blob_ids.get(pending_request["xform_id"]),
+        }
+        for pending_request in pending_requests
+    ]
+
+
+def denied_inaccessibility_work_area_ids(opportunity):
+    """Work areas whose inaccessibility request was denied and not since re-raised.
+
+    A denial returns the area to Not Visited, which the tiles cannot tell apart from an area nobody
+    ever raised a request on — so the key's "Denied" colour has to be driven by these ids.
+    """
+    return list(
+        WorkAreaInaccessibilityRequest.objects.filter(
+            status=InaccessibilityRequestStatus.DENIED,
+            work_area__opportunity=opportunity,
+        )
+        .exclude(work_area__status__in=[WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.INACCESSIBLE])
+        .values_list("work_area_id", flat=True)
+        .distinct()
+    )
+
+
+def inaccessibility_photo_blob_ids(xform_ids):
+    """One blob id per form that submitted a photo, for the list's thumbnails.
+
+    A form can carry more than one attachment; the sidebar shows a single thumbnail, so the first
+    blob found for a form wins.
+    """
+    blob_ids = {}
+    for parent_id, blob_id in BlobMeta.objects.filter(parent_id__in=xform_ids).values_list("parent_id", "blob_id"):
+        blob_ids.setdefault(parent_id, blob_id)
+    return blob_ids
+
+
+def work_area_search_options(opportunity):
+    """Typeahead options for the map's work area search box, across all three searchable types.
+
+    Each option carries a typed token ("wa:42") rather than a bare pk, because the three models
+    share an id space once merged into a single dropdown.
+
+    ``type`` is the translated display label; ``kind`` repeats the prefix as a stable key, so the
+    badge colouring in work_area_search.js does not depend on the active language.
+
+    ``filter_name`` is the ``WorkAreaMapFilterSet`` filter this option drives, taken from
+    ``SEARCH_KIND_FILTERS`` so the map JS does not have to carry its own copy of that mapping.
+    """
+    sources = [
+        (
+            "wa",
+            gettext("Work Area"),
+            WorkArea.objects.filter(opportunity=opportunity).order_by("slug").values_list("id", "slug"),
+        ),
+        (
+            "wag",
+            gettext("Work Area Group"),
+            WorkAreaGroup.objects.filter(opportunity=opportunity).order_by("name").values_list("id", "name"),
+        ),
+        (
+            "ia",
+            gettext("Implementation Area"),
+            ImplementationArea.objects.filter(opportunity=opportunity).order_by("name").values_list("id", "name"),
+        ),
+    ]
+    return [
+        {
+            "value": f"{prefix}:{pk}",
+            "label": label,
+            "type": type_name,
+            "kind": prefix,
+            "object_id": pk,
+            "filter_name": SEARCH_KIND_FILTERS[prefix],
+        }
+        for prefix, type_name, rows in sources
+        for pk, label in rows
+    ]
+
+
 def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusion_reason):
     """Exclude work areas and unassign their HQ cases.
     HQ calls are batched by HQ_BULK_CHUNK_SIZE; a batch failure skips DB exclusion
@@ -43,6 +207,8 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
     failed = 0
 
     work_areas_map = {wa.id: wa for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=opportunity)}
+
+    wa_to_wag_id_map = {wa.id: wa.work_area_group_id for wa in work_areas_map.values()}
 
     api_key = opportunity.api_key
     domain = opportunity.deliver_app.cc_domain if opportunity.deliver_app else None
@@ -64,9 +230,9 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
     pghistory_ctx = dict(reason=exclusion_reason, username=user.username, user_email=user.email)
 
     for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
-        chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
+        chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-", "create": False} for wa in chunk]
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
             with transaction.atomic(), pghistory.context(**pghistory_ctx):
                 _bulk_exclude(chunk, user, exclusion_reason)
@@ -81,6 +247,12 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
         with transaction.atomic(), pghistory.context(**pghistory_ctx):
             _bulk_exclude(db_only, user, exclusion_reason)
         excluded_ids.extend(wa.id for wa in db_only)
+
+    work_area_group_ids = {wa_to_wag_id_map[wa_id] for wa_id in excluded_ids}
+    work_area_groups = list(WorkAreaGroup.objects.filter(id__in=work_area_group_ids))
+    for wag in work_area_groups:
+        wag.update_centroid(commit=False)
+    WorkAreaGroup.objects.bulk_update(work_area_groups, fields=["centroid"])
 
     logger.info(
         "exclude_work_areas_for_opportunity finished opp=%s requested=%d excluded=%d skipped=%d failed=%d",
@@ -103,6 +275,33 @@ def _bulk_exclude(work_areas, user, exclusion_reason):
         work_areas,
         fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
     )
+
+
+def assign_work_areas_and_sync_to_hq(opportunity, work_areas, user):
+    """Persist work-area assignments and push the new owners to HQ, one HQ POST per chunk in
+    its own savepoint.
+
+    Each ``work_area`` must already have its target ``opportunity_access``/``status`` set in
+    memory.
+    """
+    assigned_ids = []
+    failed_ids = []
+    pghistory_ctx = dict(reason="assigned", username=user.username, user_email=user.email)
+
+    for batch in batched(work_areas, HQ_ASSIGN_BULK_CHUNK_SIZE):
+        chunk = list(batch)
+        try:
+            with transaction.atomic(), pghistory.context(**pghistory_ctx):
+                WorkArea.objects.bulk_update(chunk, ["opportunity_access", "status"])
+                bulk_create_or_update_cases_by_work_areas(chunk, opportunity)
+        except CommCareHQAPIException as e:
+            logger.warning(
+                "Failed to sync work area assignment chunk to HQ opp=%s size=%d: %s", opportunity.id, len(chunk), e
+            )
+            failed_ids.extend(wa.id for wa in chunk)
+            continue
+        assigned_ids.extend(wa.id for wa in chunk)
+    return {"assigned_ids": assigned_ids, "failed_ids": failed_ids}
 
 
 def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):
@@ -148,7 +347,7 @@ def unassign_work_areas_for_opportunity(opportunity, work_area_ids, user):
 
     for chunk in batched(needs_hq, HQ_UNASSIGN_BULK_CHUNK_SIZE):
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-", "create": False} for wa in chunk]
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
             with transaction.atomic(), pghistory.context(**pghistory_ctx):
                 _bulk_unassign(chunk)

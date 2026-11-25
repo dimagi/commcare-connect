@@ -1,17 +1,23 @@
 from datetime import timedelta
+from importlib import import_module
+from unittest.mock import patch
 
 import pytest
+from django import forms
 from django.contrib.auth.models import Permission
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
-from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
+from commcare_connect.organization.forms import (
+    EARLIEST_ESTABLISHMENT_YEAR,
+    OrganizationChangeForm,
+    OrganizationProfileForm,
+)
+from commcare_connect.organization.models import Organization, OrganizationInvite, TeamSizeRange
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationInviteFactory, UserFactory
-from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 class TestAddMembersView:
@@ -58,16 +64,42 @@ class TestAddMembersView:
         assert not OrganizationInvite.objects.filter(organization=organization, email=member.email).exists()
 
     @pytest.mark.django_db
-    def test_invite_rejected_when_pending_invite_already_exists(self, organization):
-        existing_invite = OrganizationInviteFactory(organization=organization, email="pending@example.com")
+    def test_reinvite_refreshes_existing_pending_invite(self, organization):
+        existing_invite = OrganizationInviteFactory(
+            organization=organization, email="pending@example.com", role="member"
+        )
+        old_token = existing_invite.token
+        stale_modified = timezone.now() - timedelta(days=3)
+        OrganizationInvite.objects.filter(pk=existing_invite.pk).update(date_modified=stale_modified)
 
         response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
 
         messages = list(response.context["messages"])
         assert len(messages) == 1
-        assert messages[0].level_tag == "error"
-        assert "already been sent" in str(messages[0])
+        assert messages[0].level_tag == "success"
+        existing_invite.refresh_from_db()
+        assert existing_invite.token != old_token
+        assert existing_invite.role == "admin"
+        assert existing_invite.date_modified > stale_modified
         assert OrganizationInvite.objects.filter(organization=organization, email=existing_invite.email).count() == 1
+
+    @pytest.mark.django_db
+    def test_reinvite_rejected_while_the_invite_is_in_cooldown(self, organization):
+        existing_invite = OrganizationInviteFactory(
+            organization=organization, email="pending@example.com", role="member"
+        )
+        old_token = existing_invite.token
+
+        with patch.object(OrganizationInvite, "REINVITE_COOLDOWN", timedelta(minutes=5)):
+            response = self.client.post(self.url, {"email": existing_invite.email, "role": "admin"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "error"
+        assert "was just sent" in str(messages[0])
+        existing_invite.refresh_from_db()
+        assert existing_invite.token == old_token
+        assert existing_invite.role == "member"
 
     @pytest.mark.django_db
     def test_reinvite_after_expiry_resets_existing_invite(self, organization):
@@ -97,8 +129,8 @@ class TestAddMembersView:
 
 @pytest.mark.django_db
 class TestOrganizationChangeForm:
-    def _grant_entity_management_perm(self, user: User) -> User:
-        app_label, codename = WORKSPACE_ENTITY_MANAGEMENT_ACCESS.split(".")
+    def _grant_org_settings_perm(self, user: User) -> User:
+        app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
         perm = Permission.objects.get(codename=codename, content_type__app_label=app_label)
         user.user_permissions.add(perm)
         # Django caches permissions on the user instance; fetch a fresh instance to clear the cache.
@@ -111,224 +143,246 @@ class TestOrganizationChangeForm:
         organization.refresh_from_db()
         assert organization.name == "New Name"
 
-    @pytest.mark.parametrize(
-        "permission, program_manager",
-        [
-            (None, False),
-            (None, True),
-            (WORKSPACE_ENTITY_MANAGEMENT_ACCESS, False),
-            (WORKSPACE_ENTITY_MANAGEMENT_ACCESS, True),
-        ],
-    )
-    def test_update_program_manager_without_permission(
-        self, organization: Organization, user: User, permission, program_manager
+    def test_organization_sharing_a_name_stays_editable(self, organization: Organization, user: User):
+        Organization.objects.create(name=organization.name.upper())
+
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "short_name": "SHN"}, user=user, instance=organization
+        )
+
+        assert form.is_valid(), form.errors
+        form.save()
+        organization.refresh_from_db()
+        assert organization.short_name == "SHN"
+
+    def test_rename_to_a_taken_name_is_rejected(self, organization: Organization, user: User):
+        Organization.objects.create(name="Taken Name")
+
+        form = OrganizationChangeForm(data={"name": "taken name"}, user=user, instance=organization)
+
+        assert form.errors["name"] == ["An organization with this name already exists."]
+
+    @pytest.mark.parametrize("program_manager", [False, True])
+    def test_program_manager_field_hidden_without_permission(
+        self, organization: Organization, user: User, program_manager
     ):
-        if permission is not None:
-            user = self._grant_entity_management_perm(user)
-
-        llo_entity = LLOEntity.objects.create(name="Test LLO")
-
         organization.program_manager = program_manager
         organization.save()
+
         form = OrganizationChangeForm(
-            data={"name": organization.name, "llo_entity": llo_entity.pk},
+            data={"name": organization.name, "program_manager": "on"},
+            user=user,
+            instance=organization,
+        )
+        assert "program_manager" not in form.fields
+        assert form.is_valid(), form.errors
+        form.save()
+        organization.refresh_from_db()
+        assert organization.program_manager == program_manager
+
+    def test_program_manager_updates_with_permission(self, organization: Organization, user: User):
+        user = self._grant_org_settings_perm(user)
+        organization.program_manager = False
+        organization.save()
+
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "program_manager": "on"},
             user=user,
             instance=organization,
         )
         assert form.is_valid(), form.errors
         form.save()
         organization.refresh_from_db()
-        if permission is None:
-            assert organization.llo_entity is None
-        else:
-            assert organization.llo_entity == llo_entity
+        assert organization.program_manager
 
-    @pytest.mark.parametrize("permission", [None, WORKSPACE_ENTITY_MANAGEMENT_ACCESS])
-    def test_create_llo_entity(self, organization: Organization, user: User, permission):
-        if permission is not None:
-            user = self._grant_entity_management_perm(user)
 
-        organization.save()
+@pytest.mark.django_db
+class TestOrganizationProfileForm:
+    @staticmethod
+    def _data(**overrides):
+        return {"name": "Profile Org", **overrides}
 
-        assert LLOEntity.objects.count() == 0
+    @pytest.mark.parametrize(
+        "field,raw,expected",
+        [
+            ("contact_emails", "  one@example.com \n\n two@example.com  ", "one@example.com\ntwo@example.com"),
+            (
+                "eoi_links",
+                " https://example.com/eoi \n\n https://example.org/eoi ",
+                "https://example.com/eoi\nhttps://example.org/eoi",
+            ),
+        ],
+    )
+    def test_line_fields_are_normalized(self, organization: Organization, field, raw, expected):
+        form = OrganizationProfileForm(data=self._data(**{field: raw}), instance=organization)
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data[field] == expected
+
+    @pytest.mark.parametrize(
+        "field,raw,invalid_line",
+        [
+            ("contact_emails", "ok@example.com\nnot-an-email", "not-an-email"),
+            ("eoi_links", "https://example.com/eoi\nnope", "nope"),
+        ],
+    )
+    def test_invalid_line_fields_are_rejected(self, organization: Organization, field, raw, invalid_line):
+        form = OrganizationProfileForm(data=self._data(**{field: raw}), instance=organization)
+        assert not form.is_valid()
+        assert invalid_line in form.errors[field][0]
+
+    @pytest.mark.parametrize("year", [1799, 3000])
+    def test_year_of_establishment_out_of_range_is_rejected(self, organization: Organization, year):
+        form = OrganizationProfileForm(data=self._data(year_of_establishment=year), instance=organization)
+        assert not form.is_valid()
+        assert "year_of_establishment" in form.errors
+
+    def test_profile_is_saved_to_the_organization(self, organization: Organization):
+        form = OrganizationProfileForm(
+            data=self._data(
+                short_name="PO",
+                year_of_establishment=2005,
+                contact_emails="one@example.com",
+                eoi_links="https://example.com/eoi",
+                website="https://example.com",
+                regions="North",
+            ),
+            instance=organization,
+        )
+        assert form.is_valid(), form.errors
+        form.save()
+
+        organization.refresh_from_db()
+        assert organization.name == "Profile Org"
+        assert organization.short_name == "PO"
+        assert organization.year_of_establishment == 2005
+        assert organization.contact_emails == "one@example.com"
+        assert organization.eoi_links == "https://example.com/eoi"
+
+    def test_name_is_a_text_input(self):
+        # Organizations are typed in, not picked from a list of existing ones.
+        widget = OrganizationProfileForm().fields["name"].widget
+        assert isinstance(widget, forms.TextInput)
+
+    def test_year_of_establishment_is_a_year_picker(self):
+        """Years run newest first and stop at the same bounds clean_year_of_establishment enforces."""
+        widget = OrganizationProfileForm().fields["year_of_establishment"].widget
+        years = [value for value, _label in widget.choices if value != ""]
+
+        assert widget.attrs.get("data-tomselect") == "1"
+        assert years[0] == timezone.now().year
+        assert years[-1] == EARLIEST_ESTABLISHMENT_YEAR
+        assert years == sorted(years, reverse=True)
+
+    @pytest.mark.parametrize("field_name", ["countries", "primary_sectors"])
+    def test_multi_select_is_a_tomselect_widget(self, field_name):
+        # tomselect.js binds on the [data-tomselect] attribute at DOMContentLoaded, and
+        # picks up multi-select from the `multiple` attribute SelectMultiple renders.
+        widget = OrganizationProfileForm().fields[field_name].widget
+
+        assert isinstance(widget, forms.SelectMultiple)
+        assert widget.attrs.get("data-tomselect") == "1"
+
+    def test_new_organization_is_created_with_a_slug(self):
+        form = OrganizationProfileForm(data=self._data(name="Brand New Organization"))
+
+        assert form.is_valid(), form.errors
+        org = form.save()
+
+        assert org.pk is not None
+        assert org.slug == "brand-new-organization"
+
+    def test_name_is_required(self):
+        form = OrganizationProfileForm(data=self._data(name=""))
+
+        assert not form.is_valid()
+        assert "name" in form.errors
+
+    @pytest.mark.parametrize("name", ["Taken Name", "taken name"])
+    def test_duplicate_name_is_rejected(self, name):
+        Organization.objects.create(name="Taken Name")
+
+        form = OrganizationProfileForm(data=self._data(name=name))
+
+        assert not form.is_valid()
+        assert "name" in form.errors
+
+    def test_own_name_is_not_a_duplicate_when_editing(self, organization: Organization):
+        form = OrganizationProfileForm(data=self._data(name=organization.name), instance=organization)
+
+        assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+class TestOrganizationChangeFormProfileFields:
+    """The home-page edit form inherits the create wizard's fields, with its own layout."""
+
+    def test_profile_fields_are_editable(self, organization: Organization, user: User):
         form = OrganizationChangeForm(
             data={
                 "name": organization.name,
-                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO Entity",
-                "llo_entity_short_name": "NL",
+                "short_name": "PO",
+                "team_size": TeamSizeRange.M,
+                "flws_managed": 120,
+                "regions": "North",
+                "website": "https://example.com",
+                "contact_emails": "one@example.com",
+                "eoi_links": "https://example.com/eoi",
+                "notes": "Met at the summit.",
             },
             user=user,
             instance=organization,
         )
         assert form.is_valid(), form.errors
         form.save()
+
         organization.refresh_from_db()
-        if permission is None:
-            assert organization.llo_entity is None
-        else:
-            assert organization.llo_entity is not None
-            assert organization.llo_entity.name == "New LLO Entity"
-            assert organization.llo_entity.short_name == "NL"
-            assert LLOEntity.objects.count() == 1
+        assert organization.short_name == "PO"
+        assert organization.team_size == TeamSizeRange.M
+        assert organization.flws_managed == 120
+        assert organization.contact_emails == "one@example.com"
 
-    def test_existing_llo_entity_short_name_not_updated(self, organization: Organization, user: User):
-        user = self._grant_entity_management_perm(user)
+    def test_team_size_is_a_range_dropdown(self, user: User):
+        field = OrganizationChangeForm(user=user).fields["team_size"]
 
-        llo_entity = LLOEntityFactory(short_name="OLD")
-        organization.llo_entity = llo_entity
-        organization.save()
+        assert isinstance(field.widget, forms.Select)
+        assert [value for value, _label in field.choices if value] == list(TeamSizeRange.values)
 
+    @pytest.mark.parametrize("team_size", ["42", "1-10 employees"])
+    def test_team_size_outside_the_ranges_is_rejected(self, organization: Organization, user: User, team_size):
         form = OrganizationChangeForm(
-            data={"name": organization.name, "llo_entity": llo_entity.pk, "llo_entity_short_name": "CHANGED"},
+            data={"name": organization.name, "team_size": team_size}, user=user, instance=organization
+        )
+
+        assert not form.is_valid()
+        assert "team_size" in form.errors
+
+    def test_line_validation_is_inherited(self, organization: Organization, user: User):
+        form = OrganizationChangeForm(
+            data={"name": organization.name, "contact_emails": "not-an-email"},
             user=user,
             instance=organization,
         )
-        assert form.is_valid(), form.errors
-        form.save()
-        llo_entity.refresh_from_db()
-        assert llo_entity.short_name == "OLD"
-
-    def test_create_llo_entity_without_short_name_is_invalid(self, organization: Organization, user: User):
-        user = self._grant_entity_management_perm(user)
-
-        form = OrganizationChangeForm(
-            data={"name": organization.name, "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO Entity"},
-            user=user,
-            instance=organization,
-        )
-        assert not form.is_valid()
-        assert "llo_entity_short_name" in form.errors
-
-
-@pytest.mark.django_db
-class TestOrganizationSelectOrCreateForm:
-    def test_both_llo_entity_and_org_exist(self):
-        existing_llo = LLOEntity.objects.create(name="Existing LLO")
-        existing_org = Organization.objects.create(name="Existing Org", llo_entity=existing_llo)
-
-        initial_llo_count = LLOEntity.objects.count()
-        initial_org_count = Organization.objects.count()
-
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": str(existing_org.pk),
-                "llo_entity": str(existing_llo.pk),
-            }
-        )
-
-        assert form.is_valid(), form.errors
-        org, is_new_org = form.save()
-
-        assert LLOEntity.objects.count() == initial_llo_count
-        assert Organization.objects.count() == initial_org_count
-
-        assert org.pk == existing_org.pk
-        assert org.name == "Existing Org"
-        assert org.llo_entity == existing_llo
-        assert not is_new_org
-
-    def test_llo_entity_exists_new_org_created(self):
-        existing_llo = LLOEntity.objects.create(name="Existing LLO")
-
-        initial_llo_count = LLOEntity.objects.count()
-        initial_org_count = Organization.objects.count()
-
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Organization",
-                "llo_entity": str(existing_llo.pk),
-            }
-        )
-
-        assert form.is_valid(), form.errors
-        org, is_new_org = form.save()
-
-        assert LLOEntity.objects.count() == initial_llo_count
-        assert Organization.objects.count() == initial_org_count + 1
-
-        assert org.pk is not None
-        assert org.name == "New Organization"
-        assert org.llo_entity == existing_llo
-        assert is_new_org
-
-    def test_both_new_llo_entity_and_new_org_created(self):
-        initial_llo_count = LLOEntity.objects.count()
-        initial_org_count = Organization.objects.count()
-
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New Organization",
-                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New LLO",
-                "llo_entity_short_name": "BNL",
-            }
-        )
-
-        assert form.is_valid(), form.errors
-        org, is_new_org = form.save()
-
-        assert LLOEntity.objects.count() == initial_llo_count + 1
-        assert Organization.objects.count() == initial_org_count + 1
-
-        assert org.pk is not None
-        assert org.name == "Brand New Organization"
-        assert org.llo_entity is not None
-        assert org.llo_entity.pk is not None
-        assert org.llo_entity.name == "Brand New LLO"
-        assert org.llo_entity.short_name == "BNL"
-        assert is_new_org
-
-    def test_validation_error_mismatched_llo_entity(self):
-        llo1 = LLOEntity.objects.create(name="LLO One")
-        llo2 = LLOEntity.objects.create(name="LLO Two")
-        existing_org = Organization.objects.create(name="Org With LLO One", llo_entity=llo1)
-
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": str(existing_org.pk),
-                "llo_entity": str(llo2.pk),  # Different LLO
-            }
-        )
 
         assert not form.is_valid()
-        assert "llo_entity" in form.errors
-        assert form.errors["llo_entity"] == [
-            "Selected LLO Entity does not match the existing organization's LLO Entity."
-        ]
+        assert "not-an-email" in form.errors["contact_emails"][0]
 
-    def test_create_new_llo_entity_with_short_name(self):
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
-                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO",
-                "llo_entity_short_name": "NL",
-            }
-        )
-        assert form.is_valid(), form.errors
-        org, is_new_org = form.save()
-        assert org.llo_entity is not None
-        assert org.llo_entity.name == "New LLO"
-        assert org.llo_entity.short_name == "NL"
 
-    def test_existing_llo_entity_short_name_not_updated(self):
-        existing_llo = LLOEntityFactory(short_name="EL")
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
-                "llo_entity": str(existing_llo.pk),
-                "llo_entity_short_name": "CHANGED",
-            }
-        )
-        assert form.is_valid(), form.errors
-        form.save()
-        existing_llo.refresh_from_db()
-        assert existing_llo.short_name == "EL"
+@pytest.mark.parametrize(
+    ("headcount", "expected"),
+    [
+        (0, "1-10"),
+        (1, "1-10"),
+        (10, "1-10"),
+        (11, "11-50"),
+        (200, "51-200"),
+        (201, "201-500"),
+        (500, "201-500"),
+        (501, "500+"),
+        (10_000, "500+"),
+    ],
+)
+def test_headcounts_bucket_into_ranges(headcount, expected):
+    """Guards the boundaries the 0017 data migration used to convert the old integer column."""
+    migration = import_module("commcare_connect.organization.migrations.0018_organization_team_size_range")
 
-    def test_create_new_llo_entity_without_short_name_is_invalid(self):
-        form = OrganizationSelectOrCreateForm(
-            data={
-                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Org",
-                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO",
-            }
-        )
-        assert not form.is_valid()
-        assert "llo_entity_short_name" in form.errors
+    assert migration.bucket(headcount) == expected

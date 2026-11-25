@@ -1,3 +1,5 @@
+from django.utils.translation import gettext_lazy as _
+
 from commcare_connect.microplanning.models import WorkAreaStatus
 
 WORK_AREA_STATUS_COLORS = {
@@ -10,12 +12,52 @@ WORK_AREA_STATUS_COLORS = {
     WorkAreaStatus.EXCLUDED: "bg-gray-500 text-white",
 }
 WORK_AREA_CASE_TYPE = "work-area"
+
+# Fill colours for the Inaccessibility Review map and its key. Keyed rather than positional so the
+# map paint expression and the key's swatches cannot drift apart.
+INACCESSIBILITY_LEGEND = [
+    {"key": "requested", "color": "#f59e0b", "label": _("Request for Inaccessible")},
+    {"key": "approved", "color": "#bbf7d0", "label": _("Approved as Inaccessible")},
+    {"key": "denied", "color": "#fecaca", "label": _("Denied")},
+    {"key": "other", "color": "#e5e7eb", "label": _("All other work areas")},
+]
+
+# Deliver units the coverage metrics are defined on.
+SERVICE_DELIVERY_UNIT_SLUG = "services_delivery_unit"
+NO_CHILDREN_WORK_AREA_UNIT_SLUG = "no-children-wa"
+REQUIRED_DELIVER_UNIT_SLUGS = (SERVICE_DELIVERY_UNIT_SLUG, NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+
+# Zoom levels for the microplanning map. Work area tiles are not served below MIN, so a fit that
+# zooms out past it blanks the layer. MAX_AUTOZOOM caps the other end, pinning zoom when the work
+# areas are very small e.g. <100m.
+# The range of MapBox zoom is 0-22. See https://docs.mapbox.com/help/glossary/zoom-level/.
+WORKAREA_MIN_ZOOM = 6
+MAX_AUTOZOOM_ZOOM = 18
+
+# Two work areas overlap when they share more than this fraction of the smaller one's area.
+# Not 0%: boundaries from GIS tools rarely line up exactly, so neighbours often share thin slivers
+# along their edges, and a 0% rule would reject correctly drawn files. 5% tolerates those slivers
+# while still catching real problems such as duplicates or one work area drawn inside another.
+WORK_AREA_MAX_OVERLAP_RATIO = 0.05
+# Measured ratios carry floating-point noise: a pair drawn at exactly 5% can measure 0.05000000000023
+# or 0.04999999999997 depending on where it sits. Ratios within this of the limit count as the limit.
+WORK_AREA_OVERLAP_RATIO_TOLERANCE = 1e-9
+# Overlap errors listed for a rejected upload; the rest are summed up in one line.
+WORK_AREA_OVERLAP_ERROR_LIMIT = 50
+
 MAX_EXCLUDE_WORK_AREAS = 200
 MAX_UNASSIGN_WORK_AREAS = 200
 HQ_BULK_CHUNK_SIZE = 50
 HQ_UNASSIGN_BULK_CHUNK_SIZE = 200
+HQ_ASSIGN_BULK_CHUNK_SIZE = 100
 
 # Bounds for the user-configurable target building count per work area group.
 MIN_BUILDING_COUNT = 100
 MAX_BUILDING_COUNT = 300
 DEFAULT_BUILDING_COUNT = 200
+
+SEARCH_KIND_FILTERS = {
+    "wa": "work_area",
+    "wag": "work_area_group",
+    "ia": "implementation_area",
+}

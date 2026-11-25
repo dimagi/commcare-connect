@@ -1,21 +1,47 @@
+import datetime
+from decimal import Decimal
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
+
 import pytest
 from django.test import RequestFactory
+from django.test.signals import template_rendered
+from django.utils.html import strip_tags
 from django_tables2 import RequestConfig
 
-from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
-from commcare_connect.opportunity.models import AssignedTaskStatus
+from commcare_connect.opportunity.helpers import WorkerDelivery, get_worker_tasks_base_queryset
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    CompletedWork,
+    ExchangeRate,
+    Opportunity,
+    OpportunityAccess,
+    PaymentUnit,
+)
 from commcare_connect.opportunity.tables import (
+    OpportunityTable,
+    ProgramManagerOpportunityTable,
+)
+from commcare_connect.opportunity.tables.invoices import (
     InvoiceDeliveriesTable,
     InvoiceLineItemsTable,
-    WorkerTasksTable,
+    PaymentInvoiceTable,
 )
+from commcare_connect.opportunity.tables.worker import WorkerDeliveryTable, WorkerTasksTable
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
-    CompletedWorkFactory,
     OpportunityAccessFactory,
+    PaymentInvoiceFactory,
     TaskTypeFactory,
     UserInviteFactory,
 )
+from commcare_connect.opportunity.utils.invoice_line_items import LineItem, Money, WorkPayRow
+from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.users.models import User
+from commcare_connect.utils.test_utils import make_membership, make_request
+
+Role = UserOrganizationMembership.Role
 
 
 @pytest.mark.parametrize("show_org", [False, True])
@@ -31,6 +57,27 @@ def test_invoice_line_items_table_org_column_visibility(show_org):
         assert table.columns["org_amount_local"].column.verbose_name == "Org Pay (KES)"
 
 
+def test_invoice_line_items_table_reads_money_off_line_items():
+    line_item = LineItem(
+        month=datetime.date(2026, 1, 1),
+        payment_unit_name="Household visit",
+        number_approved=2,
+        late_delta_units=0,
+        flw_pay=Money(Decimal("40"), Decimal("4")),
+        org_pay=Money(Decimal("10"), Decimal("1")),
+        exchange_rate=Decimal("10"),
+    )
+    table = InvoiceLineItemsTable("KES", [line_item], show_org=True)
+
+    rows = list(table.as_values())
+    row = dict(zip(rows[0], rows[1]))
+
+    assert row["FLW Pay (KES)"] == Decimal("40")
+    assert row["Org Pay (KES)"] == Decimal("10")
+    assert row["Total Pay (KES)"] == Decimal("50")  # 40 + 10
+    assert row["Number Approved"] == 2
+
+
 @pytest.mark.parametrize("show_org", [False, True])
 def test_invoice_deliveries_table_org_column_visibility(show_org):
     table = InvoiceDeliveriesTable("KES", [], show_org=show_org)
@@ -41,25 +88,37 @@ def test_invoice_deliveries_table_org_column_visibility(show_org):
     assert "Total Pay (USD)" in headers
 
 
-@pytest.mark.django_db
-def test_invoice_deliveries_table_total_folds_in_org_pay():
-    completed_work = CompletedWorkFactory(
-        saved_payment_accrued=40,
-        saved_org_payment_accrued=10,
-        saved_payment_accrued_usd=4,
-        saved_org_payment_accrued_usd=1,
+@pytest.mark.parametrize(("is_delta", "billing_type"), [(False, "First Billing"), (True, "Additional Delivery")])
+def test_invoice_deliveries_table_row_values(is_delta, billing_type):
+    delivery = WorkPayRow(
+        completed_work=CompletedWork(
+            entity_name="Baby A",
+            date_created=datetime.datetime(2026, 1, 10, tzinfo=datetime.UTC),
+            status_modified_date=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
+            payment_unit=PaymentUnit(name="Household visit", opportunity=Opportunity(name="Test opp")),
+            opportunity_access=OpportunityAccess(user=User(name="flw")),
+        ),
+        billed_count=1,
+        month=datetime.date(2026, 1, 1),
+        flw_pay=Money(Decimal("40"), Decimal("4")),
+        org_pay=Money(Decimal("10"), Decimal("1")),
+        exchange_rate=ExchangeRate(rate=Decimal("10")),
+        is_delta=is_delta,
     )
-    table = InvoiceDeliveriesTable("KES", [completed_work], show_org=True)
+    table = InvoiceDeliveriesTable("KES", [delivery], show_org=True)
 
     rows = list(table.as_values())
     headers, values = rows[0], rows[1]
     row = dict(zip(headers, values))
 
-    # as_values keeps numeric cells numeric (force_str strings_only=True).
     assert row["FLW Pay (KES)"] == 40
     assert row["Org Pay (KES)"] == 10
     assert row["Total Pay (KES)"] == 50  # 40 + 10
     assert row["Total Pay (USD)"] == 5  # 4 + 1
+    assert row["Billing Month"] == "January 2026"
+    assert row["Billing Type"] == billing_type
+    assert "First Visit Date" in headers
+    assert "First Approved Date" in headers
 
 
 def _make_table(opportunity, per_page=25):
@@ -97,3 +156,132 @@ def test_worker_tasks_table_empty(opportunity):
     table = _make_table(opportunity)
     rows = list(table.rows)
     assert len(rows) == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("table_class", [OpportunityTable, ProgramManagerOpportunityTable])
+@pytest.mark.parametrize(
+    "relationship,role,offered",
+    [
+        ("delivery", Role.ADMIN, True),
+        ("delivery", Role.MEMBER, True),
+        ("watcher", Role.ADMIN, False),
+        ("delivery", Role.VIEWER, False),
+    ],
+    ids=["manager", "member", "watching_org", "viewer_role"],
+)
+def test_invoice_action_needs_more_than_view_access(
+    table_class, relationship, role, offered, opp_orgs, pm_opportunity, user
+):
+    """The invoice list itself requires standard access, so a viewer must not be sent there."""
+    org = opp_orgs[relationship]
+    request = make_request(user, org=org, membership=make_membership(org, user, role))
+    table = table_class([pm_opportunity], org_slug=org.slug, request=request)
+
+    actions = table.render_actions(pm_opportunity)
+
+    assert "View Opportunity" in actions
+    assert ("View Invoices" in actions) is offered
+
+
+@pytest.mark.parametrize(
+    "amount_usd, expected",
+    [
+        (Decimal("5931.80"), 'data-amount-usd="5931.80"'),
+        # An unpriced invoice must not look like a zero-value one to the selection bar.
+        (None, 'data-amount-usd=""'),
+        (Decimal("0.00"), 'data-amount-usd="0.00"'),
+    ],
+)
+def test_payment_invoice_table_carries_the_usd_amount_for_selection(opportunity, amount_usd, expected):
+    invoice = PaymentInvoiceFactory(opportunity=opportunity, amount_usd=amount_usd)
+    table = PaymentInvoiceTable(
+        [invoice],
+        org_slug=opportunity.organization.slug,
+        opportunity=opportunity,
+        csrf_token="token",
+    )
+    assert expected in table.as_html(RequestFactory().get("/"))
+
+
+def _rendered_context(render):
+    """The context `render` drew its template with, captured from Django's test-mode template_rendered signal."""
+    contexts = []
+
+    def capture(sender, context, **kwargs):
+        contexts.append(context)
+
+    template_rendered.connect(capture)
+    try:
+        render()
+    finally:
+        template_rendered.disconnect(capture)
+    return contexts[0]
+
+
+@pytest.mark.parametrize("over_limit", [0, 2], ids=["within_limit", "over_limit"])
+def test_worker_delivery_table_counts(over_limit):
+    record = WorkerDelivery(
+        opportunity_access=None,
+        payment_unit_label="Visit",
+        payment_unit_ids=[uuid4()],
+        allocation=5,
+        pending=1,
+        approved=1,
+        rejected=4,
+        over_limit=over_limit,
+        incomplete=1,
+    )
+    table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
+
+    progress = _rendered_context(lambda: table.render_delivery_progress(record))
+    delivered = _rendered_context(lambda: table.render_delivered(record))
+
+    # Only pending and approved work counts towards the allocation.
+    assert (progress["current"], progress["percentage"]) == (2, 40.0)
+    # Over-limit work is listed on its own, not inside Completed.
+    assert delivered["value"] == 6 + over_limit
+    assert [row["value"] for row in delivered["rows"]] == [6, 1, over_limit]
+    assert delivered["over_limit"] == bool(over_limit)
+    assert table.has_over_limit == bool(over_limit)
+    assert table.rows[0].get_cell("payment_unit") == "Visit"
+
+
+def test_worker_delivery_table_summary_row():
+    access = SimpleNamespace(
+        opportunity_access_id=uuid4(),
+        user=SimpleNamespace(user_id=uuid4(), name="Worker", username="worker"),
+        status=None,
+        suspended=False,
+        last_active=None,
+    )
+    counts = {"allocation": 5, "pending": 1, "approved": 1, "rejected": 0, "over_limit": 0, "incomplete": 0}
+    units = [
+        WorkerDelivery(opportunity_access=access, payment_unit_label=name, payment_unit_ids=[uuid4()], **counts)
+        for name in ("Visit", "Screening")
+    ]
+    record = WorkerDelivery(
+        opportunity_access=access,
+        payment_unit_label="2 payment units",
+        payment_unit_ids=[unit.payment_unit_ids[0] for unit in units],
+        sub_rows=units,
+        **counts,
+    )
+    table = WorkerDeliveryTable([record], org_slug="org", opp_id="opp")
+    summary = table.rows[0]
+
+    payment_unit = summary.get_cell("payment_unit")
+    assert strip_tags(payment_unit).strip() == "2 payment units"
+    assert '@click="open = !open"' in payment_unit
+    summary_counts_url = _rendered_context(lambda: summary.get_cell("pending"))["counts_url"]
+    assert _payment_unit_ids(summary_counts_url) == [str(unit_id) for unit_id in record.payment_unit_ids]
+
+    for sub_row, unit in zip(record.bound_sub_rows, units):
+        assert all(sub_row.get_cell(name) == "" for name in table.header_columns)
+        assert sub_row.get_cell("payment_unit") == unit.payment_unit_label
+        counts_url = _rendered_context(lambda: sub_row.get_cell("pending"))["counts_url"]
+        assert _payment_unit_ids(counts_url) == [str(unit_id) for unit_id in unit.payment_unit_ids]
+
+
+def _payment_unit_ids(url):
+    return parse_qs(urlparse(url).query)["payment_unit_id"]

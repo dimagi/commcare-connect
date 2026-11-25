@@ -2,15 +2,16 @@
 {% load static %}
 {% load crispy_forms_tags %}
 <div class="relative underline"
-     x-data="{ isOpen: false, historyLoaded: false, positionMenu() { const rect = this.$el.getBoundingClientRect(); const menu = this.$refs.menu; const top = rect.bottom + 5; const left = rect.left + rect.width/2 - menu.offsetWidth/2; menu.style.top = top + 'px'; menu.style.left = left + 'px'; } }"
+     x-data="{ isOpen: false, historyLoaded: false, positionMenu() { const rect = this.$el.getBoundingClientRect(); const menu = this.$refs.menu; let top = rect.bottom + 5; const maxTop = window.innerHeight - menu.offsetHeight - 8; if (top > maxTop) top = Math.max(8, maxTop); let left = rect.left + rect.width / 2 - menu.offsetWidth / 2; const maxLeft = window.innerWidth - menu.offsetWidth - 8; left = Math.min(Math.max(8, left), Math.max(8, maxLeft)); menu.style.top = top + 'px'; menu.style.left = left + 'px'; }, }"
      x-init="$watch('isOpen', value => { if (value && !historyLoaded) { $dispatch('load-payment-history'); historyLoaded = true; } })"
-     x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })">
+     x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })"
+     x-on:htmx:after-swap.window="if (isOpen) $nextTick(() => positionMenu())">
   <span class="px-3 py-1 rounded-lg cursor-pointer hover:bg-slate-200">{{ value }}</span>
   <div x-ref="menu"
        x-show="isOpen"
        x-on:click.outside="isOpen = false"
        x-transition
-       class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
+       class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap max-h-[70vh] max-w-[90vw] overflow-y-auto overflow-x-auto"
        style="display: none">
     <div hx-get="{% url 'opportunity:worker_payment_history' org_slug=org_slug opp_id=opp_id access_id=record.opportunity_access_id %}"
          hx-trigger="load-payment-history from:closest div[x-data]"

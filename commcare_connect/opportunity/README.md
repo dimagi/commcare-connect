@@ -1,11 +1,11 @@
 # Opportunity App
 
-The opportunity app is the core domain of CommCare Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
+The opportunity app is the core domain of Connect. It manages paid programs where mobile users learn skills and deliver health services in exchange for payment.
 
 ## Key Concepts
 
 - **Opportunity** — A paid program created by an organization. It has a learn app (training), a deliver app (fieldwork), a budget, and a time window.
-- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → delivering → paid.
+- **OpportunityAccess** — Links a user to an opportunity. Tracks their journey: invited → accepted → learning → claimed → delivering → paid.
 - **OpportunityClaim** — Created when a user commits to delivering work. Allocates visit limits per payment unit.
 - **PaymentUnit** — Defines what a user gets paid for and how much. Can be hierarchical (parent/child).
 - **DeliverUnit** — A type of form submission within a delivery app (e.g., "household visit", "follow-up").
@@ -15,7 +15,7 @@ The opportunity app is the core domain of CommCare Connect. It manages paid prog
 - **CompletedWork** — Aggregates visits for a specific entity (beneficiary) and payment unit. Tracks approval status and payment.
 - **AssignedTask** — Tracks completion of individual tasks by a user (assigned → completed).
 - **Payment** — A confirmed payment to a user for approved work.
-- **PaymentInvoice** — An invoice for a managed opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
+- **PaymentInvoice** — An invoice for an opportunity. Tracks status through NM/PM review workflow and links to completed work and payments.
 
 ## User Journey
 
@@ -45,7 +45,7 @@ The user submits forms through the deliver app in CommCare. Each form submission
 
 ### 6. Payment
 
-Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow for managed opportunities.
+Approved work accrues payment. Payments can be distributed manually via CSV upload or through the invoicing workflow. See [PAYMENTS.md](PAYMENTS.md) for how accrual is calculated and how invoicing works.
 
 ## Verification Flags
 
@@ -56,14 +56,14 @@ When a delivery form is received, it is checked against the opportunity's `Oppor
 | `duplicate`              | Entity already visited           | `OpportunityVerificationFlags` |
 | `gps`                    | GPS location missing             | `OpportunityVerificationFlags` |
 | `location`               | Visit too close to another visit | `OpportunityVerificationFlags` |
-| `catchment`              | Outside allowed geographic area  | `OpportunityVerificationFlags` |
 | `form_submission_period` | Outside allowed time window      | `OpportunityVerificationFlags` |
 | `duration`               | Form completed too quickly       | `DeliverUnitFlagRules`         |
 | `attachment_missing`     | Required attachments missing     | `DeliverUnitFlagRules`         |
 | `form_value_not_found`   | Custom form validation failed    | `FormJsonValidationRules`      |
 | `user_suspended`         | User is suspended                | `OpportunityAccess.suspended`  |
+| `pending_task`           | Worker has an incomplete task    | Always on (`AssignedTask`)     |
 
-Flag codes are defined in `commcare_connect/utils/flags.py`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
+Flag codes are defined in `commcare_connect/utils/flags.py`. It also keeps `catchment`, whose check has been removed, so that old `flag_reason` values still have a label. `user_suspended` and `pending_task` reject the visit outright; see the visit status table in `../form_receiver/README.md`. If `auto_approve_visits` is enabled and the visit is not flagged, the visit is automatically approved.
 
 ## Auto-Approval
 
@@ -81,12 +81,12 @@ Organization
   │     ├── Task
   │     └── DeliverUnit → PaymentUnit
   └── Opportunity (refs learn_app, deliver_app)
+        ├── DeliverUnit (its own units of deliver_app)
         ├── PaymentUnit (amount, limits)
         │     └── PaymentUnit (child, optional)
         ├── OpportunityVerificationFlags (1:1)
         ├── DeliverUnitFlagRules (per DeliverUnit)
         ├── FormJsonValidationRules (per DeliverUnit, M2M)
-        ├── CatchmentArea (per user, optional)
         ├── PaymentInvoice
         │     └── Payment (1:1)
         └── OpportunityAccess (per user)
@@ -102,16 +102,22 @@ Organization
 
 ## Key Files
 
-| File                            | Purpose                                                               |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `models.py`                     | All model definitions                                                 |
-| `api/views.py`                  | Mobile API: claim, progress, delivery                                 |
-| `views.py`                      | Web UI: create, edit, finalize, dashboard                             |
-| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports          |
-| `forms.py`                      | Django forms for opportunity creation/editing                         |
-| `export.py`                     | Exports: visits, payments, user status, work status, catchment areas  |
-| `visit_import.py`               | Bulk visit/payment import, exchange rates                             |
-| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                  |
-| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual        |
-| `utils/invoice.py`              | Invoice number generation and start date utilities                    |
-| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits |
+| File                            | Purpose                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `models/`                       | Models, one module per domain; import them from the package root                                      |
+| `api/views.py`                  | Mobile API: claim, progress, delivery                                                                 |
+| `views/`                        | Web UI; feature modules `invoices.py`, `worker.py` and `assigned_tasks.py`, the rest in `__init__.py` |
+| `tasks.py`                      | Celery tasks: invites, notifications, auto-approval, exports                                          |
+| `forms/`                        | Django forms; feature modules `invoices.py` and `assigned_tasks.py`, the rest in `__init__.py`        |
+| `tables/`                       | Tables; feature modules `invoices.py`, `worker.py` and `assigned_tasks.py`, the rest in `__init__.py` |
+| `export.py`                     | Exports: visits, payments, user status, deliver status                                                |
+| `visit_import.py`               | Bulk visit/payment import, exchange rates                                                             |
+| `deletion.py`                   | `delete_opportunity()` for stale opportunity cleanup                                                  |
+| `utils/completed_work.py`       | `CompletedWorkUpdater`: status calculation and payment accrual                                        |
+| `utils/invoice.py`              | Invoice number generation and start date utilities                                                    |
+| `../form_receiver/processor.py` | Processes forms from CommCareHQ into modules, assessments, and visits                                 |
+
+`views/`, `forms/` and `tables/` are being split by feature. A feature module such as `invoices.py`, `worker.py` or
+`assigned_tasks.py` imports shared helpers from its package's `__init__.py`; the `__init__.py` never imports it back, so
+import its names from the submodule itself. The assigned-task modules are named after `models/assigned_tasks.py`, not
+`tasks.py`, because `opportunity/tasks.py` holds the Celery tasks.

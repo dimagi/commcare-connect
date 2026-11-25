@@ -1,1 +1,236 @@
-@CLAUDE.md
+# Connect
+
+Django 5.2 + PostGIS monolith for managing community health worker opportunities, payments, and workflows. Integrates with CommCare HQ and ConnectID services.
+
+<!-- --8<-- [start:commands] -->
+
+## Commands
+
+```bash
+# Local services (PostgreSQL/PostGIS + Redis)
+inv up                              # docker compose up
+inv down                            # docker compose down
+
+# Django
+./manage.py migrate                 # run migrations (dev)
+./manage.py migrate_multi           # run migrations on both primary + secondary DB (prod)
+./manage.py runserver               # dev server
+./manage.py generate_microplanning_data --fake-hq  # demo work areas; HQ calls go to run_fake_hq
+./manage.py run_fake_hq             # stand-in for CommCare HQ on :8001 that prints each request it gets
+./manage.py run_scenario <name> --admin-email you@example.com  # build local data through the app (simulation/)
+
+# Worktrees: each gets its own DB + Redis DB (see "Working in git worktrees" in README.md)
+wt switch --create <branch>         # create and set up via .config/wt.toml
+wt new <branch> --share=1           # reuse the main checkout's DB + Redis DB; skips migrate
+
+# JavaScript/CSS
+npm ci                              # install deps
+inv build-js                        # dev build
+inv build-js -w                     # dev build with watch
+inv build-js --prod                 # production build
+npm run build                       # production build (what CI runs)
+
+# Celery (local dev)
+# Tasks run eagerly inside the request by default, so no worker is needed -- but that blocks the
+# request and hides progress UIs. Set CELERY_TASK_ALWAYS_EAGER=False in .env and run a worker:
+celery -A config.celery_app worker -B -l info
+
+# Tests
+pytest                              # run all tests
+pytest -n auto                      # run all tests in parallel, one pytest-xdist worker per core (what CI runs)
+pytest -n auto --create-db          # rebuild the per-worker test databases if setup fails on a stale one
+pytest path/to/test_file.py::test_name  # run single test
+npm run typecheck                   # type-check the TypeScript
+
+# Duplicate code
+inv duplicate-code-report           # run before opening a PR; fails on clones your branch adds and lists only those (settings in .jscpd.json)
+inv duplicate-code-report --base origin/<branch>  # compare against another branch, e.g. the PR this one is stacked on
+
+# Linting (ruff, ruff-format, django-upgrade, prettier, djlint, eslint, actionlint, zizmor)
+prek run -a
+
+# Requirements (uv)
+uv sync
+uv add <pkg>
+
+# Translations
+inv translations
+
+# Developer docs site (Zensical; config in zensical.toml, pages in docs/)
+uv run --group docs zensical serve  # live preview on :8000
+uv run --group docs zensical build  # strict build into ./site, as CI does
+```
+
+<!-- --8<-- [end:commands] -->
+
+<!-- --8<-- [start:architecture] -->
+
+## Architecture
+
+- **Monolith**: Django serves both HTML templates (Tailwind + Alpine.js + htmx) and a DRF REST API
+- **URL pattern**: Most views scoped under `/a/<org_slug>/` via `OrganizationMiddleware`
+- **API versioning**: `AcceptHeaderVersioning` with versions `1.0` and `2.0`
+- **Background tasks**: Celery with Redis broker; beat scheduler uses DB
+- **Feature flags**: django-waffle with a custom `Flag` model. Flag names in `flags/flag_names.py`, switch names in `flags/switch_names.py` — see Terminology below
+- **Audit trail**: django-pghistory stores `username` + `user_email` in context (survives user deletion). Read `docs/audit-history.md` before tracking a model or reading its events
+- **Database**: PostgreSQL + PostGIS. `ATOMIC_REQUESTS = True` (all requests are transactions)
+- **Deployment**: Kamal (Docker-based) + Ansible on EC2. See `deploy/README.md`
+
+### Key directories
+
+```
+commcare_connect/
+  opportunity/     # Core domain: opportunities, visits, payments (largest app)
+  organization/    # Org management, membership roles
+  program/         # Program management, linking orgs/opportunities
+  users/           # Custom User model, ConnectID links
+  audit/           # Audit reports: CHC indicators, sampling, review workflow
+  commcarehq/      # CommCare HQ server integration
+  connect_id_client/  # HTTP client for ConnectID service
+  form_receiver/   # Receives xforms from CommCare HQ
+  commcarehq_provider/ # OAuth provider: HQ as an identity provider
+  ocs_provider/    # Open Chat Studio integration
+  data_export/     # CSV/streaming exports over OAuth token scopes
+  microplanning/   # Work areas, coverage tracking, maps (Mapbox)
+  reports/         # KPI and admin reports
+  flags/           # Waffle feature flag/switch name constants
+  health/          # /up liveness probe, token-gated /status/ dependency checks (see its README)
+  multidb/         # Secondary DB support + logical replication
+  deid/            # SQL generator for de-identifying a DB copy; only in INSTALLED_APPS under local.py
+  simulation/      # Builds local data by driving the real forms/functions/APIs; only in INSTALLED_APPS under local.py and test.py
+  web/             # Context processors, shared template tags
+  prelogin/        # Public marketing pages
+  utils/           # BaseModel, middleware, caching, permissions
+config/
+  settings/        # base.py, local.py, test.py; deploy_base.py shared by staging.py + production.py
+  api_router.py    # DRF API URL routing
+  celery_app.py    # Celery config
+  urls.py          # Root URL config
+```
+
+## Terminology
+
+Some words mean several unrelated things here. Work out which one you are in before searching.
+
+**"flag"** — four separate concepts:
+
+- **Waffle flags**: per-request/per-user feature toggles. Names in `flags/flag_names.py`, checked with `flag_is_active(request, NAME)`, backed by the custom `Flag` model in `flags/models.py`.
+- **Waffle switches**: global on/off toggles. Names in `flags/switch_names.py`, checked with `switch_is_active(NAME)`.
+- **Visit validation flags**: why a `UserVisit` was flagged for review (`duplicate`, `gps`, …). Defined in `utils/flags.py` (`Flags`, `FlagDescription`, `FlagLabels`), stored on `UserVisit.flagged` and `UserVisit.flag_reason`.
+- **Verification flag config**: which validation flags an opportunity applies — `OpportunityVerificationFlags` and `DeliverUnitFlagRules` in `opportunity/models/verification.py`.
+
+**"worker"** — there is no `Worker` model. A worker is a `User` reached through an `OpportunityAccess`, and `WorkerPageView` (`opportunity/views/worker.py`), the `Worker*Table` classes (`opportunity/tables/worker.py`) and the worker templates all resolve to that pair. Nothing on `User` marks someone as a worker: org staff have a `UserOrganizationMembership`, workers have an `OpportunityAccess`. Worker-scoped URLs pass `?user=<User.user_id>` — the UUID, not the PK.
+
+<!-- --8<-- [end:architecture] -->
+
+<!-- --8<-- [start:code-style] -->
+
+## Code Style
+
+- **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
+- **JS/CSS**: prettier (tab-width 2, single-quote)
+- **Templates**: djlint owns them, not prettier — `djlint-reformat-django` will rewrite your formatting on commit. `templates/prelogin/home.html` is excluded from both djlint hooks
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus django-upgrade (--target-version 5.2), djlint (templates), eslint (`commcare_connect/static/**/*.js`), and actionlint + zizmor (`.github/` workflows; pin new actions to a commit SHA with a `# vX.Y.Z` comment, and suppress a zizmor finding only with an inline `# zizmor: ignore[<audit>]` and a reason); ruff's UP rules cover what pyupgrade used to
+- Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
+- Custom `User` model uses single `name` field instead of `first_name`/`last_name`
+- **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
+- **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
+- **Code organization**: read `docs/code-organization.md` before adding code that writes another app's models, adding a utility, or moving existing code
+- **Refactoring code you touch**: when code you touch breaks the rules in `docs/code-organization.md`, or a module you change has grown large enough to split, ask the user whether to refactor it and say why you want to. If they agree and the fix is small, do it in its own `refactor:` commit; larger fixes get a separate PR
+- **Duplicate code (jscpd)**: before opening a PR, run the jscpd command under Commands. It fails when your branch adds a clone, meaning your change copied code; extract the shared part into one function or class that both callers use. Clones that were already on `main` don't fail it: if one is in code you touched, follow **Refactoring code you touch**. jscpd also flags code that only looks alike. Don't extract imports, `Meta` classes, single field declarations, crispy-form layouts, argparse options or other framework boilerplate; copies that differ in their details, so a shared version would need flags or parameters per caller; or a few lines that would read worse extracted. Do extract a field that brings its own queryset, widget setup or validation when a second form needs it: that is a field factory. Leave clones of these kinds in place and list them in the PR description
+- **Prefer class-based views** for form handling and views that switch on request method. Use function views only for simple cases. Note that most existing views are function views (`opportunity/views/` is roughly 2:1 function to class) — they are legacy, not the pattern to copy
+- **Use Django Forms** over raw HTML forms for validation and rendering
+- **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
+- **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
+- **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
+- **Searchable selects are opt-in**: nothing enhances a `<select>` by default. Add `data-tomselect="1"` to the widget's attrs (or the tag) to have `static/js/tomselect.js` turn it into a tom-select, and add `data-tomselect:no-remove-button` on single selects or the chosen value renders as a removable chip. Extra TomSelect options go through `data-tomselect:settings` as JSON; anything needing render _functions_ gets its own module and must **not** carry `data-tomselect`, or the generic initializer claims it first (see `static/js/work_area_search.js`). Use it for long or searchable lists, not short fixed choices. The page must also load `bundles/js/tomselect-bundle.js` and `bundles/css/tomselect.css` or a marked field silently stays native — check they are there, and that they don't arrive by accident: if they only come in through a permission-gated include, the page's other marked fields are searchable for some users and plain for others
+- **List fields use the tag input**: a textarea that stores one entry per line (phone numbers, emails, links) becomes a row of tags with `TagInput.attach(textarea, {separators, normalize, validate})` from `static/js/tag_input.ts` (its state rules are in `static/js/tag_input_state.ts`). Each page's own module passes its separator keys and callbacks (see `static/js/invite_workers.js`, `static/js/organization_profile.js`). The textarea stays in the form, so the server-side parsing doesn't change. Listen for `tag-input:change` (its `detail.valid` is false while any tag is invalid) to react to bad entries
+- **Use predefined style classes** for elements instead of raw Tailwind utility classes. The vocabulary lives in `tailwind/tailwind.css` (`button`, `button-outline-rounded`, `badge`, `card_bg`, `title`, `status-active`, …); `grep -E '^\s*\.[a-z][a-zA-Z0-9_-]*\s*\{' tailwind/tailwind.css` lists them all. Plenty of templates still use raw utilities; that's legacy
+- **Tables should fit without horizontal scrolling**: `.base-table` sets `whitespace-nowrap` on every header and cell, so each column is as wide as its longest label, and `base_table.html` falls back to `overflow-x-auto` when the columns don't fit. When you add a column, make room instead of relying on that scroll bar: let long headers wrap, and give narrow numeric columns the `col-stat` class (see `STAT_COLUMN_ATTRS` in `opportunity/tables/__init__.py`). Only accept a horizontal scroll bar when there's an explicit reason, such as a wide data grid, and say why in a comment next to the table
+- **App READMEs are part of the change**: `opportunity/README.md`, `opportunity/PAYMENTS.md`, `form_receiver/README.md`, `flags/README.md`, `health/README.md` and `templates/README.md` document non-obvious behaviour (status rules, accrual, status codes and HQ retries, payload contract, constraints, Celery tasks). If your change alters something one of them states, update it in the same PR.
+- **So is `docs/core-flows.md`**: it lists the flows Connect exists to run (form ingest, visit status, accrual, invoicing and payment, claiming, worker identity, org access) and the code each one starts from. The `pr-impact` skill grades PR risk against it, so a stale entry means wrong grades. If you move, rename or delete code it lists, or add a flow, update it in the same PR.
+<!-- --8<-- [end:code-style] -->
+- **So are the Confluence docs**: user-facing changes must list the Confluence pages they affect in the PR's **Documentation** section, or say "None". To find them, search Confluence for the features the branch changes and compare the results against the documentation links on the Jira ticket. If the `connect-tech:docs-affected-by-branch` skill is available (Claude Code with the `connect-tech` plugin), open the PR first with "Pending" under the **Documentation** header, then run the skill on the branch in a subagent. Pass the subagent the PR link and the Jira ticket key, and tell it to replace "Pending" with its findings when it is done. A subagent can't ask the user, so if you don't know the ticket, ask the user before opening the PR; pass "none" if there isn't one. Without Confluence access, ask the user which pages are affected. Never drop the section as empty.
+- **Moving or renaming a module**: grep `*.md` for the old path and update it in the same commit.
+- **Moving or deleting a function**: grep `*/migrations/*.py` for imports of it and copy it into each of those migrations, in the same commit.
+
+<!-- --8<-- [start:conventions] -->
+
+## Commits
+
+Use semantic commit messages (`feat: add CSV export for visits`, `fix(opportunity): handle missing payment unit`). Don't mix change types in one commit; split them instead.
+
+## Code review
+
+When you review a change locally (the working tree or a branch, rather than reviewing on GitHub), end the review by running the `pr-impact` skill (`.claude/skills/pr-impact/`) on the same change, so the risk grade reflects what the review found. Use its pre-PR mode if the branch has no PR yet. The skill asks the author to confirm the grade before it labels anything.
+
+## Robustness
+
+- **Guard against missing environmental dependencies**: Code must not hard-fail because the environment isn't fully set up. This covers settings/env values (`settings.MAPBOX_TOKEN`, Twilio creds, API keys), DB records that act as configuration (`SocialApp`, `Site`, `Currency`/`Country`, waffle `Flag`s), and unreachable external services (HQ, ConnectID, OCS)
+- **Required vs optional**: if only one feature needs it, degrade that feature alone — hide or disable the UI and say why (see `configured_provider` in `commcare_connect/users/templatetags/socialaccount_extras.py` and `commcare_connect/templates/ocs/_connect_prompt.html`). If the app genuinely can't work without it, fail loudly and early in the code path that needs it rather than half-working.
+- **Never render broken UI**: don't emit a button, link or map that 500s or dead-ends when the config is absent
+- **Set an explicit timeout on outbound calls**: all HTTP goes through **httpx**, which defaults to 5s — fine for quick calls, too short for bulk work, so pass a timeout sized to the operation (see `_make_request` in `commcare_connect/connect_id_client/main.py`: `timeout=10` default, 15–30s for bulk sends; `commcare_connect/ocs_provider/views.py`)
+- **Dispatch Celery tasks after commit**: `ATOMIC_REQUESTS = True` means a bare `task.delay()` in a request can run before the transaction commits, so the worker may not see the rows it was told about. Dispatch from the service, not the view, so every caller gets it, and wrap the dispatch: `task.delay_on_commit(obj.pk)` (see `commcare_connect/form_receiver/processor.py`). Most views still call `.delay()` directly — don't copy that.
+- **Celery tasks: skip vs retry**: missing configuration won't fix itself — log and return (`commcare_connect/audit/tasks.py`). A transient failure (unreachable service, lock contention) should retry with `autoretry_for` + `retry_backoff` (`commcare_connect/opportunity/tasks.py`)
+- **Log, don't spam**: use the module `logger` (`logger.exception` / `logger.error`). Log at error level only when the config is _expected_ in that environment; things that are legitimately absent in dev belong at `info` (e.g. `audit/tasks.py`)
+- **Test the unconfigured path**: add a test that runs with the setting unset or the record missing — an optional feature still renders/runs, a required one fails early with a clear error
+
+## Testing
+
+- **Framework**: pytest + pytest-django + factory-boy
+- **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
+- **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `user_with_connectid_link`, `mobile_user_with_connect_link`, `paymentunit_options`, `org_user_member`, `org_user_admin`, `program_manager_org`, `pm_opportunity`, `program_manager_org_user_member`, `program_manager_org_user_admin`, `api_rf`, `api_client`
+- **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
+- HTTP mocking: `pytest-httpx` for httpx calls
+- **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
+- **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
+- **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
+
+## Local data
+
+Local dev data (not test fixtures) comes from the `simulation` app, which builds it by driving the real forms, functions and APIs. See `commcare_connect/simulation/README.md`.
+
+- **Never seed with the ORM or factories.** Compose `Sim` steps. If a step is missing, add one that submits the page's request as the acting admin (`sim.browser(user)`); don't change production code to make a step possible
+- **Shared vs personal scenarios**: `simulation/scenarios/` holds a few shared scenarios that CI builds; one-off data (a feature in progress, a bug repro) goes in the gitignored `simulation/scenarios/local/` and is never committed. Prefer extending a shared scenario over adding one
+- **Changing a user flow means updating its step in the same PR.** If you change a form, view or function a step calls, update the step; `test_scenarios.py` usually fails otherwise. Scenarios only call steps, so they rarely need changing
+- **A fixed bug leaves a regression test, not a scenario**
+
+## Gotchas
+
+- **PostGIS required everywhere** (including tests). Local dev needs `gdal`, `geos`, `proj` system libs. On macOS, set `GDAL_LIBRARY_PATH` and `GEOS_LIBRARY_PATH` in `.env`
+- **`.env` leaks into test settings**: `base.py` calls `env.read_env(BASE_DIR / ".env")`, so local `.env` values also apply under `config.settings.test`. An _empty_ value overrides a code default with `""` rather than falling back — `CONNECTID_URL=` breaks the suite. CI has no `.env`, so these failures are local-only
+- **`--reuse-db` + Currency/Country data**: These models get flushed between tests. The `ensure_currency_country_data` autouse fixture handles this — don't remove it
+- **Secondary DB is opt-in**: `DATABASE_ROUTERS` is only installed when `SECONDARY_DATABASE_URL` is set (`config/settings/base.py:52-56`). Without it `SECONDARY_DB_ALIAS` is `None`, routing is off and `migrate_multi` just migrates `default` — so multidb routing behaviour can't be reproduced locally by default
+- **API UUID transition**: The `API_UUID` waffle switch controls whether API endpoints accept integer PKs or UUIDs. Use `get_object_or_list_by_uuid_or_int()` from `utils/db.py` for API lookups.
+- **htmx settles attributes onto swapped-in content**: when a response replaces content that held an element with the same tag and `id`, htmx copies the old element's attributes onto the incoming one and restores the server-rendered values during the settle step. Anything JS applies to swapped-in elements at insertion time is therefore undone from the second swap onwards — enhance on `htmx:afterSettle`, not inside the fragment (this is why `static/js/tomselect.js` listens for it)
+- **Alpine `<template x-if>`/`x-for` content is inert**: it is parsed into a separate fragment and is not in the document until Alpine mounts it, so page-load scans never see it and mounting fires no htmx event. Anything that enhances elements has to be handed the subtree on mount — `x-init="htmx.process($el); initTomSelectElements()"` (see `tasks/new_task_modal.html`, which uses `x-if` deliberately so the form resets on close). Options rendered into a select by `x-for` are a separate trap: tom-select snapshots the option list when it initializes, so later additions only reach it through the instance
+- **CSRF via sessions**: `CSRF_USE_SESSIONS = True`. Templates use `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>` for htmx
+- **Webpack output**: Bundles are built to `commcare_connect/static/bundles/` and referenced with plain `{% static 'bundles/...' %}`, served via `STATICFILES_DIRS`. `webpack-stats.json` is written but unused — django-webpack-loader is not installed
+- **CI uses**: `postgis/postgis:15-3.5` image, Python 3.11, requires `gdal-bin libproj-dev` apt packages
+
+## Architecture Decision Records
+
+ADRs live in `docs/adr/`. Start a new one from `docs/adr/_template.md`, numbered after the highest existing file, and add it to the "Architecture decisions" section of `nav` in `zensical.toml` so the developer docs site lists it.
+
+Write ADRs for significant decisions only. A decision is significant when it is costly or disruptive to reverse, or when it shapes how the rest of the system is built. Examples: core architecture and system boundaries; the design of critical components such as data storage, authentication, multi-tenancy or message flow; new infrastructure or major dependencies; public APIs and data contracts; and cross-cutting concerns such as security, observability or scaling. If you're unsure whether a decision meets this bar, write the ADR and let the reviewers decide whether to keep it.
+
+- Before designing a change, read the ADRs that touch that area.
+- Cite them as `ADR-NNNN` in code comments, PR descriptions and conversations.
+- If your proposal contradicts an ADR, say so explicitly ("Contradicts ADR-0007 because …") rather than silently overriding it.
+- Ask before editing an accepted ADR. Reversing a decision means writing a new ADR that supersedes it.
+- To record a decision, run `/create-adr`.
+
+<!-- --8<-- [end:conventions] -->
+
+## Further reading
+
+The developer docs site (`zensical.toml`) publishes these and the app READMEs. Most of its pages under `docs/` are one-line `--8<--` stubs that include a README from beside the code, so edit the README, not the stub. `README.md` and this file are published in parts, delimited by `<!-- --8<-- [start:name] -->` / `[end:name]` comments; keep those markers when you move sections around. A new doc page needs a `nav` entry in `zensical.toml`; links to files outside the site (`.github/`, source files) must be absolute GitHub URLs, because the site has no copy of them and the build's link check does not catch these.
+
+- `docs/code-organization.md` — writing another app's models, where utilities go, and migration imports
+- `docs/core-flows.md` — the core flows (field work, money, identity and access) and where their code starts
+- `pr_guidelines.md` — PR size, description and review conventions
+- `docs/dependency-management.md` — adding/upgrading dependencies
+- `deploy/README.md` — Kamal + Ansible deployment
+- `commcare_connect/<app>/README.md` — per-app behaviour docs (opportunity, opportunity/PAYMENTS.md, form_receiver, flags, health, templates)
+- `docs/audit-history.md` — django-pghistory change tracking
+- `docs/design/` — design docs for larger changes

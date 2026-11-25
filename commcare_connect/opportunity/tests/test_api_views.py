@@ -11,6 +11,7 @@ from commcare_connect.opportunity.api.serializers.mobile import (
     OpportunityClaimSerializer,
     OpportunitySerializer,
     PaymentSerializer,
+    PaymentUnitSerializer,
 )
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
@@ -19,6 +20,8 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentUnit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -26,24 +29,28 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
+    OpportunityClaimFactory,
+    OpportunityClaimLimitFactory,
     OpportunityFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
 from commcare_connect.utils.error_codes import ErrorCodes
 
 
-def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10):
+def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10, org_amount=0):
     opportunity = OpportunityFactory(
         total_budget=total_budget,
         end_date=end_date,
     )
-    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100, org_amount=0)
+    PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100, org_amount=org_amount)
     opportunity_access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     ConnectIdUserLinkFactory(
         user=mobile_user,
@@ -66,7 +73,6 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=["opportunity"])
 def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
     pu = PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
     opportunity.total_budget = 10 * 100
@@ -102,16 +108,6 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
     assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
-def test_claim_endpoint_end_date_exceeded(mobile_user: User, api_client: APIClient):
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user, total_budget=1000, end_date=datetime.date.today() - datetime.timedelta(days=100)
-    )
-    api_client.force_authenticate(mobile_user)
-    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_ENDED
-
-
 def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_client: APIClient):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user, total_budget=1000, end_date=datetime.date.today() + datetime.timedelta(days=100)
@@ -127,31 +123,91 @@ def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_clien
     assert response.data == "Opportunity is already claimed"
 
 
-def test_claim_endpoint_less_budget_than_visit(mobile_user: User, api_client: APIClient):
+@pytest.mark.parametrize(
+    "total_budget, days_until_end, budget_per_visit, error_code",
+    [
+        (1000, -100, 10, ErrorCodes.OPPORTUNITY_ENDED),
+        # The budget doesn't cover a single visit.
+        (1, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+        # The budget covers one visit, but not the worker's full limit of 100 visits.
+        (3, 100, 2, ErrorCodes.OPPORTUNITY_FULL),
+    ],
+    ids=["end_date_exceeded", "less_budget_than_visit", "budget_for_partial_limit"],
+)
+def test_claim_endpoint_rejects_claim(
+    mobile_user: User, api_client: APIClient, total_budget, days_until_end, budget_per_visit, error_code
+):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user,
-        total_budget=1,
-        end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
+        total_budget=total_budget,
+        end_date=datetime.date.today() + datetime.timedelta(days=days_until_end),
+        budget_per_visit=budget_per_visit,
     )
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+    assert response.json()["error_code"] == error_code
+    assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
 
 
-def test_claim_endpoint_uneven_visits(mobile_user: User, api_client: APIClient):
+@pytest.mark.parametrize(
+    "total_budget, org_amount, extra_payment_unit, existing_claim_visits, expected_status",
+    [
+        # One unit of 10 x 100 visits: the budget must cover all 1000.
+        (1000, 0, False, 0, 201),
+        (999, 0, False, 0, 400),
+        # Org pay counts towards the budget: 10 + 2 per visit x 100 visits.
+        (1000, 2, False, 0, 400),
+        (1200, 2, False, 0, 201),
+        # Every payment unit counts: an extra unit of (1 + 1) x 10 visits adds 20.
+        (1019, 0, True, 0, 400),
+        (1020, 0, True, 0, 201),
+        # Only the budget left after existing claims counts: another worker holds 10 x 100 visits.
+        (2000, 0, False, 100, 201),
+        (1999, 0, False, 100, 400),
+    ],
+)
+def test_claim_endpoint_requires_budget_for_full_limit(
+    mobile_user: User,
+    api_client: APIClient,
+    total_budget,
+    org_amount,
+    extra_payment_unit,
+    existing_claim_visits,
+    expected_status,
+):
     opportunity, opportunity_access = _setup_opportunity_and_access(
         mobile_user,
-        total_budget=3,
+        total_budget=total_budget,
         end_date=datetime.date.today() + datetime.timedelta(days=100),
-        budget_per_visit=2,
+        org_amount=org_amount,
     )
+    if existing_claim_visits:
+        OpportunityClaimLimitFactory(
+            opportunity_claim=OpportunityClaimFactory(
+                opportunity_access=OpportunityAccessFactory(opportunity=opportunity)
+            ),
+            payment_unit=opportunity.paymentunit_set.get(),
+            max_visits=existing_claim_visits,
+        )
+    if extra_payment_unit:
+        PaymentUnitFactory(opportunity=opportunity, amount=1, org_amount=1, max_total=10)
+
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
-    assert response.status_code == 201
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
+        assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
+    else:
+        _assert_full_claim_limits(opportunity, opportunity_access)
+
+
+def _assert_full_claim_limits(opportunity: Opportunity, opportunity_access: OpportunityAccess):
     claim = OpportunityClaim.objects.get(opportunity_access=opportunity_access)
-    assert claim.opportunityclaimlimit_set.first().max_visits == 1
+    limits = {limit.payment_unit_id: limit.max_visits for limit in claim.opportunityclaimlimit_set.all()}
+    assert limits == {pu.id: pu.max_total for pu in opportunity.paymentunit_set.all()}
 
 
 @pytest.mark.django_db
@@ -225,6 +281,73 @@ def test_opportunity_list_endpoint(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "headers, expected_max_daily, expected_daily_max_visits_per_user",
+    [
+        pytest.param({}, [5, 1], 6, id="default_version"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=1.0"}, [5, 1], 6, id="v1"),
+        pytest.param({"HTTP_ACCEPT": "application/json; version=2.0"}, [5, None], -1, id="v2"),
+    ],
+)
+def test_opportunity_list_endpoint_payment_unit_without_daily_limit(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    headers,
+    expected_max_daily,
+    expected_daily_max_visits_per_user,
+):
+    capped, uncapped = opportunity.paymentunit_set.order_by("pk")
+    PaymentUnit.objects.filter(pk=capped.pk).update(max_daily=5, max_total=20, display_name="Home visit")
+    PaymentUnit.objects.filter(pk=uncapped.pk).update(max_daily=None, max_total=1)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", **headers)
+
+    assert response.status_code == 200
+    assert [unit["max_daily"] for unit in response.data[0]["payment_units"]] == expected_max_daily
+    assert [unit["display_name"] for unit in response.data[0]["payment_units"]] == ["Home visit", ""]
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_dailies, expected_daily_max_visits_per_user",
+    [
+        pytest.param([5, 3], 8, id="all_units_capped"),
+        pytest.param([None, None], -1, id="no_units_capped"),
+        pytest.param([], -1, id="no_payment_units"),
+    ],
+)
+def test_opportunity_list_endpoint_v2_daily_max(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    max_dailies,
+    expected_daily_max_visits_per_user,
+):
+    units = opportunity.paymentunit_set.order_by("pk")
+    if not max_dailies:
+        units.delete()
+    for unit, max_daily in zip(units, max_dailies):
+        PaymentUnit.objects.filter(pk=unit.pk).update(max_daily=max_daily)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+
+    response = api_client.get("/api/opportunity/", HTTP_ACCEPT="application/json; version=2.0")
+
+    assert response.status_code == 200
+    assert response.data[0]["daily_max_visits_per_user"] == expected_daily_max_visits_per_user
+
+
+@pytest.mark.django_db
+def test_payment_unit_serializer_keeps_null_daily_limit(opportunity):
+    # The data export reuses this serializer and must not imply a daily limit that doesn't exist
+    unit = PaymentUnitFactory(opportunity=opportunity, max_daily=None, max_total=1)
+
+    assert PaymentUnitSerializer(unit).data["max_daily"] is None
+
+
+@pytest.mark.django_db
 def test_opportunity_list_endpoint_excludes_archived(
     mobile_user_with_connect_link: User,
     api_client: APIClient,
@@ -239,10 +362,13 @@ def test_opportunity_list_endpoint_excludes_archived(
 
 
 def test_delivery_progress_endpoint(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+    mobile_user_with_connect_link: User, api_client: APIClient, worker_access: OpportunityAccess
 ):
-    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-    completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
+    access = worker_access
+    opportunity = access.opportunity
+    completed_work = CompletedWorkFactory(
+        opportunity_access=access, status=CompletedWorkStatus.pending, saved_completed_count=1
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         user=mobile_user_with_connect_link,
@@ -274,6 +400,52 @@ def test_delivery_progress_endpoint(
     assert response.status_code == 200
     assert len(response.data["payments"]) == 1
     assert response.data["payments"][0].keys() == PaymentSerializer().get_fields().keys()
+
+
+@pytest.fixture
+def worker_access(mobile_user_with_connect_link, opportunity):
+    return OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+
+
+def test_delivery_progress_hides_work_until_optional_unit_delivered(worker_access: OpportunityAccess):
+    payment_unit = PaymentUnitFactory(opportunity=worker_access.opportunity)
+    required_unit, optional_unit = (
+        DeliverUnitFactory(payment_unit=payment_unit, optional=optional) for optional in (False, True)
+    )
+    work = CompletedWorkFactory(opportunity_access=worker_access, payment_unit=payment_unit)
+
+    def add_approved_visit(deliver_unit):
+        UserVisitFactory(
+            deliver_unit=deliver_unit,
+            completed_work=work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        update_status(worker_access.completedwork_set.all(), worker_access)
+
+    add_approved_visit(required_unit)
+    assert DeliveryProgressSerializer().get_deliveries(worker_access) == []
+
+    add_approved_visit(optional_unit)
+    deliveries = DeliveryProgressSerializer().get_deliveries(worker_access)
+    assert [(d["id"], d["status"]) for d in deliveries] == [(work.id, CompletedWorkStatus.approved)]
+
+
+@pytest.mark.parametrize(
+    "status, saved_completed_count, visible",
+    [
+        (CompletedWorkStatus.pending, 0, False),
+        (CompletedWorkStatus.pending, 1, True),
+        (CompletedWorkStatus.rejected, 0, True),
+        (CompletedWorkStatus.incomplete, 1, False),
+        (CompletedWorkStatus.over_limit, 1, False),
+    ],
+)
+def test_delivery_progress_deliveries_filter(worker_access, status, saved_completed_count, visible):
+    CompletedWorkFactory(opportunity_access=worker_access, status=status, saved_completed_count=saved_completed_count)
+
+    deliveries = DeliveryProgressSerializer().get_deliveries(worker_access)
+    assert [d["status"] for d in deliveries] == ([status] if visible else [])
 
 
 def test_delivery_progress_no_assigned_tasks(

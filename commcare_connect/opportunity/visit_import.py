@@ -4,6 +4,8 @@ import textwrap
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
+from functools import partial
+from itertools import chain
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
@@ -11,11 +13,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
+from django.utils.translation import ngettext
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
-    CatchmentArea,
-    CompletedWork,
     CompletedWorkStatus,
     ExchangeRate,
     Opportunity,
@@ -37,28 +38,35 @@ AMOUNT_COL = "payment amount"
 PAYMENT_DATE_COL = "payment date (yyyy-mm-dd)"
 REASON_COL = "rejected reason"
 JUSTIFICATION_COL = "justification"
-WORK_ID_COL = "instance id"
-PAYMENT_APPROVAL_STATUS_COL = "payment approval"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
-LATITUDE_COL = "latitude"
-LONGITUDE_COL = "longitude"
-RADIUS_COL = "radius"
-AREA_NAME_COL = "area name"
-ACTIVE_COL = "active"
-SITE_CODE_COL = "site code"
 PAYMENT_METHOD_COL = "payment method"
 PAYMENT_OPERATOR_COL = "payment operator"
 REVIEW_STATUS_COL = "program manager review"
 
+# Imported files carry a header line, so the first row of data is line 2 of the file.
+FIRST_DATA_ROW_NUMBER = 2
+
+# The file formats get_imported_dataset() is able to read.
+PAYMENT_IMPORT_FORMATS = ("csv", "xlsx")
+
+# Every column a payment import file must carry, in the order the export writes them.
+PAYMENT_COLS = [USERNAME_COL, AMOUNT_COL, PAYMENT_DATE_COL, PAYMENT_METHOD_COL, PAYMENT_OPERATOR_COL]
+
 
 class ImportException(Exception):
-    def __init__(self, message, rows=None):
+    def __init__(self, message, rows=None, errors=None):
         self.message = message
         self.rows = rows
+        # {description: [row numbers]}
+        self.errors = errors or {}
 
 
 class RowDataError(Exception):
-    pass
+    """One or more problems with a single imported row."""
+
+    def __init__(self, *reasons):
+        super().__init__(*reasons)
+        self.reasons = list(reasons)
 
 
 class InvalidValueError(RowDataError):
@@ -105,54 +113,9 @@ class VisitImportStatus:
 @dataclass
 class PaymentImportStatus:
     seen_users: set[str]
-    missing_users: set[str]
 
     def __len__(self):
         return len(self.seen_users)
-
-    def get_missing_message(self):
-        joined = ", ".join(self.missing_users)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return format_html(
-            "<br>{} usernames were not found:<br>{}",
-            len(self.missing_users),
-            format_html_join(
-                "<br>",
-                "{}",
-                ((u,) for u in missing),
-            ),
-        )
-
-
-@dataclass
-class CompletedWorkImportStatus:
-    seen_completed_works: set[str]
-    missing_completed_works: set[str]
-
-    def __len__(self):
-        return len(self.seen_completed_works)
-
-    def get_missing_message(self):
-        joined = ", ".join(self.missing_completed_works)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return format_html(
-            "<br>{} completed works were not found:<br>{}",
-            len(self.missing_completed_works),
-            format_html_join(
-                "<br>",
-                "{}",
-                ((u,) for u in missing),
-            ),
-        )
-
-
-@dataclass
-class CatchmentAreaImportStatus:
-    seen_catchments: set[str]
-    new_catchments: int
-
-    def __len__(self):
-        return len(self.seen_catchments)
 
 
 @dataclass
@@ -306,124 +269,208 @@ def _get_header_index(headers: list[str], col_name: str, required=True) -> int:
 
 
 def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[list]):
+    """Import payment rows, writing nothing at all unless every row in the file is payable."""
     opportunity = Opportunity.objects.get(id=opportunity_id)
-    headers = [header.lower() for header in headers]
-    if not headers:
+    columns = _payment_column_indexes([header.lower() for header in headers])
+
+    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
+    payments_by_user, accesses = _validate_payment_rows(opportunity, columns, rows)
+    exchange_rates = _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today)
+    return _create_payments(opportunity, payments_by_user, accesses, exchange_rates)
+
+
+def _payment_column_indexes(headers: list[str]) -> dict[str, int]:
+    column_to_index = {column: headers.index(column) for column in PAYMENT_COLS if column in headers}
+    if not column_to_index:
         raise ImportException("The uploaded file did not contain any headers")
 
-    username_col_index = _get_header_index(headers, USERNAME_COL)
-    amount_col_index = _get_header_index(headers, AMOUNT_COL)
-    payment_date_col_index = _get_header_index(headers, PAYMENT_DATE_COL)
-    payment_method_col_index = _get_header_index(headers, PAYMENT_METHOD_COL)
-    payment_operator_col_index = _get_header_index(headers, PAYMENT_OPERATOR_COL)
+    missing = [column for column in PAYMENT_COLS if column not in column_to_index]
+    if missing:
+        listed = ", ".join(f"'{column}'" for column in missing)
+        raise ImportException(f"Missing required column(s): {listed}")
+    return column_to_index
 
-    invalid_rows = []
+
+def _validate_payment_rows(opportunity, columns, rows):
+    """Check every row and raise if any of them cannot be paid.
+
+    Returns the (row number, payment) pairs grouped by username, together with the
+    OpportunityAccess each of those usernames resolves to so the write need not look them up again.
+    A row that failed to parse is kept with a payment of None until the raise, so that its username
+    is checked too rather than only surfacing on the next upload.
+    """
+    username_col_index = columns[USERNAME_COL]
+    amount_col_index = columns[AMOUNT_COL]
+    payment_date_col_index = columns[PAYMENT_DATE_COL]
+    payment_method_col_index = columns[PAYMENT_METHOD_COL]
+    payment_operator_col_index = columns[PAYMENT_OPERATOR_COL]
+
+    errors_by_reason = defaultdict(list)
     payments_by_user = defaultdict(list)
-    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
-    if not exchange_rate_today:
-        raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
-    for row in rows:
+    for row_number, row in enumerate(rows, start=FIRST_DATA_ROW_NUMBER):
         row = list(row)
-        username = str(row[username_col_index])
-        amount_raw = row[amount_col_index]
-        payment_date_raw = row[payment_date_col_index]
-        payment_method = row[payment_method_col_index]
-        payment_operator = row[payment_operator_col_index]
-
-        if not amount_raw:
-            continue
-
-        if not username:
-            invalid_rows.append(([escape(r) for r in row], "username required"))
-            continue
-
+        username = str(row[username_col_index] or "").strip()
         try:
-            amount = Decimal(amount_raw)
-        except InvalidOperation:
-            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
-            continue
-
-        try:
-            if payment_date_raw:
-                if isinstance(payment_date_raw, datetime.datetime):
-                    payment_date = payment_date_raw.date()
-                else:
-                    payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
-            else:
-                payment_date = None
-        except ValueError:
-            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
-            continue
-
-        payment_row = {
-            "amount": amount,
-            "payment_date": payment_date,
-            "payment_method": payment_method,
-            "payment_operator": payment_operator,
-        }
-        user_last_payment = (
-            Payment.objects.filter(
-                opportunity_access__user__username=username,
-                opportunity_access__opportunity=opportunity,
+            payment = _parse_payment_row(
+                username=username,
+                amount_raw=row[amount_col_index],
+                payment_date_raw=row[payment_date_col_index],
+                payment_method=row[payment_method_col_index],
+                payment_operator=row[payment_operator_col_index],
             )
-            .order_by("-created_at")
-            .first()
-        )
-        date_paid = payment_date if payment_date else datetime.date.today()
-        if (
-            user_last_payment
-            and user_last_payment.amount == amount
-            and user_last_payment.date_paid.date() == date_paid
-        ):
-            invalid_rows.append(
-                (
-                    [escape(r) for r in row],
-                    "A payment for this user with the same amount and date already exists.",
-                )
-            )
-        payments_by_user[username].append(payment_row)
+        except RowDataError as e:
+            for reason in e.reasons:
+                errors_by_reason[reason].append(row_number)
+            if username:
+                payments_by_user[username].append((row_number, None))
+            continue
+        if payment is None:
+            continue
+        payments_by_user[payment.pop("username")].append((row_number, payment))
 
-    if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join([str(r) for r in invalid_rows]))
-
-    seen_users = set()
-    payment_ids = []
-    with transaction.atomic():
-        usernames = payments_by_user.keys()
-        users = OpportunityAccess.objects.filter(
-            user__username__in=usernames, opportunity=opportunity, suspended=False
+    accesses = {
+        access.user.username: access
+        for access in OpportunityAccess.objects.filter(
+            user__username__in=payments_by_user, opportunity=opportunity
         ).select_related("user")
+    }
+    _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason)
 
-        for access in users:
-            username = access.user.username
-            if username not in payments_by_user:
+    if errors_by_reason:
+        count = len(set(chain.from_iterable(errors_by_reason.values())))
+        summary = ngettext("%(count)d row has errors", "%(count)d rows have errors", count) % {"count": count}
+        raise ImportException(summary, errors=dict(errors_by_reason))
+
+    return payments_by_user, accesses
+
+
+def _parse_payment_row(username, amount_raw, payment_date_raw, payment_method, payment_operator):
+    """The payment described by one row, or None when the row has no amount at all.
+
+    An amount of zero is a payment of zero rather than a row to skip, so only a blank
+    amount means there is nothing to pay.
+
+    Raises RowDataError listing every problem with the row rather than stopping at the first.
+    """
+    is_amount_blank = amount_raw is None or (isinstance(amount_raw, str) and not amount_raw.strip())
+    if is_amount_blank:
+        return None
+
+    error_reasons = []
+    if not username:
+        error_reasons.append("Username is required")
+
+    try:
+        amount = Decimal(str(amount_raw).strip())
+    except InvalidOperation:
+        error_reasons.append("Payment amount must be a number")
+    else:
+        if amount < 0:
+            error_reasons.append("Payment amount cannot be negative")
+
+    payment_date = None
+    if payment_date_raw:
+        if isinstance(payment_date_raw, datetime.datetime):
+            payment_date = payment_date_raw.date()
+        else:
+            try:
+                payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                error_reasons.append("Payment date must be in YYYY-MM-DD format")
+
+    if error_reasons:
+        raise RowDataError(*error_reasons)
+
+    return {
+        "username": username,
+        "amount": amount,
+        "payment_date": payment_date,
+        "payment_method": payment_method,
+        "payment_operator": payment_operator,
+    }
+
+
+def _add_unpayable_row_errors(opportunity, payments_by_user, accesses, errors_by_reason):
+    """Record a row error for every row whose username cannot be paid, or that repeats a payment."""
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses.get(username)
+        if access is None:
+            unpayable_reason = "Username was not found in this opportunity"
+        elif access.suspended:
+            unpayable_reason = "Worker is suspended"
+        else:
+            continue
+        errors_by_reason[unpayable_reason].extend(row_number for row_number, _ in numbered_payments)
+
+    last_payments = _last_payment_by_username(opportunity, payments_by_user)
+    for username, numbered_payments in payments_by_user.items():
+        last_payment = last_payments.get(username)
+        if not last_payment:
+            continue
+
+        for row_number, payment in numbered_payments:
+            if payment is None:  # The row failed to parse, so there is nothing to compare.
                 continue
-            for payment_row in payments_by_user[username]:
-                amount = payment_row["amount"]
-                payment_date = payment_row["payment_date"]
-                if payment_date:
-                    exchange_rate = get_exchange_rate(opportunity.currency_code, payment_date)
-                else:
-                    exchange_rate = exchange_rate_today
+            date_paid = payment["payment_date"] or datetime.date.today()
+            if last_payment.amount == payment["amount"] and last_payment.date_paid.date() == date_paid:
+                reason = "A payment for this user with the same amount and date already exists"
+                errors_by_reason[reason].append(row_number)
 
-                payment_data = {
-                    "opportunity_access": access,
-                    "amount": amount,
-                    "amount_usd": amount / exchange_rate,
-                    "payment_method": payment_row["payment_method"],
-                    "payment_operator": payment_row["payment_operator"],
-                }
-                if payment_date:
-                    payment_data["date_paid"] = payment_date
-                payment = Payment.objects.create(**payment_data)
-                payment_ids.append(payment.pk)
-            seen_users.add(username)
-            update_work_payment_date(access)
-    missing_users = set(usernames) - seen_users
-    send_payment_notification.delay(opportunity.id, payment_ids)
 
-    return PaymentImportStatus(seen_users, missing_users)
+def _last_payment_by_username(opportunity, usernames) -> dict[str, Payment]:
+    """The most recently created payment for each of these usernames, in a single query."""
+    payments = (
+        Payment.objects.filter(
+            opportunity_access__opportunity=opportunity,
+            opportunity_access__user__username__in=usernames,
+        )
+        .select_related("opportunity_access__user")
+        .order_by("opportunity_access__user__username", "-created_at")
+        .distinct("opportunity_access__user__username")
+    )
+    return {payment.opportunity_access.user.username: payment for payment in payments}
+
+
+def _exchange_rates_by_payment_date(opportunity, payments_by_user, exchange_rate_today):
+    """One rate lookup per distinct payment date, resolved before anything is written so that a
+    missing rate cannot abort the import half way through. None keys the rows that carried no date.
+    """
+    dates = {payment["payment_date"] for rows in payments_by_user.values() for _, payment in rows}
+    rates = {date: get_exchange_rate(opportunity.currency_code, date) for date in dates if date}
+    rates[None] = exchange_rate_today
+    return rates
+
+
+def _create_payments(opportunity, payments_by_user, accesses, exchange_rates):
+    """Write the validated rows. Only ever called once the whole file is known to be payable."""
+    payments = []
+    for username, numbered_payments in payments_by_user.items():
+        access = accesses[username]
+        for _row_number, payment_row in numbered_payments:
+            amount = payment_row["amount"]
+            payment_date = payment_row["payment_date"]
+            payment = Payment(
+                opportunity_access=access,
+                amount=amount,
+                amount_usd=amount / exchange_rates[payment_date],
+                payment_method=payment_row["payment_method"],
+                payment_operator=payment_row["payment_operator"],
+            )
+            if payment_date:
+                payment.date_paid = payment_date
+            payments.append(payment)
+
+    with transaction.atomic():
+        Payment.objects.bulk_create(payments)
+        for username in payments_by_user:
+            update_work_payment_date(accesses[username])
+
+    transaction.on_commit(
+        partial(send_payment_notification.delay, opportunity.id, [payment.pk for payment in payments])
+    )
+
+    return PaymentImportStatus(set(payments_by_user))
 
 
 def get_exchange_rate(currency_code, date=None):
@@ -445,251 +492,6 @@ def get_exchange_rate(currency_code, date=None):
         raise ImportException("Rate not found for opportunity currency")
 
     return rate
-
-
-def bulk_update_completed_work_status(opportunity: Opportunity, file: UploadedFile) -> CompletedWorkImportStatus:
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_completed_work_status(opportunity, imported_data)
-
-
-def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Dataset):
-    status_by_work_id, reasons_by_work_id = get_status_by_completed_work_id(dataset)
-    work_ids = list(status_by_work_id)
-    missing_completed_works = set()
-    seen_completed_works = set()
-    user_ids = set()
-    with transaction.atomic():
-        for work_batch in batched(work_ids, 100):
-            to_update = []
-            completed_works = CompletedWork.objects.filter(
-                id__in=work_batch, opportunity_access__opportunity=opportunity
-            )
-            for completed_work in completed_works:
-                seen_completed_works.add(str(completed_work.id))
-                status = status_by_work_id[str(completed_work.id)]
-                reason = reasons_by_work_id.get(str(completed_work.id))
-                changed = False
-
-                if completed_work.status != status:
-                    completed_work.status = status
-                    changed = True
-                if status == CompletedWorkStatus.rejected and reason and reason != completed_work.reason:
-                    completed_work.reason = reason
-                    changed = True
-
-                if changed:
-                    to_update.append(completed_work)
-                user_ids.add(completed_work.opportunity_access.user_id)
-            CompletedWork.objects.bulk_update(to_update, fields=["status", "reason", "status_modified_date"])
-            missing_completed_works |= set(work_batch) - seen_completed_works
-
-        bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
-    return CompletedWorkImportStatus(seen_completed_works, missing_completed_works)
-
-
-def get_status_by_completed_work_id(dataset):
-    headers = [header.lower() for header in dataset.headers or []]
-    if not headers:
-        raise ImportException("The uploaded file did not contain any headers")
-
-    work_id_col_index = _get_header_index(headers, WORK_ID_COL)
-    status_col_index = _get_header_index(headers, PAYMENT_APPROVAL_STATUS_COL)
-    reason_col_index = _get_header_index(headers, REASON_COL)
-    status_by_work_id = {}
-    reason_by_work_id = {}
-    invalid_rows = []
-    for row in dataset:
-        row = list(row)
-        work_id = str(row[work_id_col_index])
-        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
-        try:
-            status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
-        except KeyError:
-            invalid_rows.append(([escape(r) for r in row], f"status must be one of {CompletedWorkStatus.values}"))
-        if status_raw == CompletedWorkStatus.rejected.value:
-            reason_by_work_id[work_id] = str(row[reason_col_index]) if row[reason_col_index] is not None else None
-
-    if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
-    return status_by_work_id, reason_by_work_id
-
-
-def bulk_update_catchments(opportunity: Opportunity, file: UploadedFile):
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_catchments(opportunity, imported_data)
-
-
-class RowData:
-    def __init__(self, row: list[str], headers: list[str]):
-        self.row = row
-        self.headers = headers
-        self.latitude = self._get_latitude()
-        self.longitude = self._get_longitude()
-        self.radius = self._get_radius()
-        self.active = self._get_active()
-        self.area_name = self._get_area_name()
-        self.username = self._get_username()
-        self.site_code = self._get_site_code()
-
-    def _get_latitude(self) -> Decimal:
-        error_message = "Latitude must be between -90 and 90 degrees."
-        index = _get_header_index(self.headers, LATITUDE_COL)
-        try:
-            latitude = Decimal(self.row[index])
-        except (ValueError, TypeError, InvalidOperation):
-            raise InvalidValueError(error_message)
-        if not Decimal("-90") <= latitude <= Decimal("90"):
-            raise InvalidValueError(error_message)
-        return latitude
-
-    def _get_longitude(self) -> Decimal:
-        index = _get_header_index(self.headers, LONGITUDE_COL)
-        try:
-            longitude = Decimal(self.row[index])
-        except (ValueError, TypeError, InvalidOperation):
-            raise InvalidValueError(f"Invalid longitude value: {self.row[index]}")
-        if not Decimal("-180") <= longitude <= Decimal("180"):
-            raise InvalidValueError("Longitude must be between -180 and 180 degrees")
-        return longitude
-
-    def _get_radius(self) -> int:
-        index = _get_header_index(self.headers, RADIUS_COL)
-        try:
-            radius = int(self.row[index])
-        except (ValueError, TypeError):
-            raise InvalidValueError(f"Invalid radius value: {self.row[index]}")
-        if radius <= 0:
-            raise InvalidValueError("Radius must be a positive integer")
-        return radius
-
-    def _get_active(self) -> bool:
-        error_message = "Active status must be 'yes' or 'no'"
-        index = _get_header_index(self.headers, ACTIVE_COL)
-        active = self.row[index]
-        if not active or not isinstance(active, str):
-            raise InvalidValueError(error_message)
-        active = active.lower().strip()
-        if active not in ["yes", "no"]:
-            raise InvalidValueError(error_message)
-        return active == "yes"
-
-    def _get_area_name(self) -> str:
-        index = _get_header_index(self.headers, AREA_NAME_COL)
-        area_name = self.row[index]
-        if not area_name:
-            raise InvalidValueError("Area name is not valid.")
-        return area_name
-
-    def _get_username(self) -> str | None:
-        try:
-            index = _get_header_index(self.headers, USERNAME_COL)
-        except ImportException:
-            return None
-        username = self.row[index]
-        return username if username else None
-
-    def _get_site_code(self) -> str:
-        index = _get_header_index(self.headers, SITE_CODE_COL)
-        site_code = self.row[index]
-        if not site_code:
-            raise InvalidValueError("Site code is not provided.")
-        return site_code
-
-
-def create_or_update_catchment(row_data: RowData, opportunity: Opportunity, username_to_oa_map: dict):
-    try:
-        catchment = CatchmentArea.objects.get(site_code=row_data.site_code, opportunity=opportunity)
-        catchment.latitude = row_data.latitude
-        catchment.longitude = row_data.longitude
-        catchment.radius = row_data.radius
-        catchment.name = row_data.area_name
-        catchment.active = row_data.active
-        catchment.opportunity_access = username_to_oa_map.get(row_data.username, None)
-        return catchment, False
-    except CatchmentArea.DoesNotExist:
-        return (
-            CatchmentArea(
-                latitude=row_data.latitude,
-                longitude=row_data.longitude,
-                radius=row_data.radius,
-                opportunity=opportunity,
-                name=row_data.area_name,
-                active=row_data.active,
-                site_code=row_data.site_code,
-                opportunity_access=username_to_oa_map.get(row_data.username, None),
-            ),
-            True,
-        )
-
-
-def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
-    headers = [header.lower() for header in dataset.headers or [] if header]
-    if not headers:
-        raise ImportException("The uploaded file did not contain any headers")
-
-    with transaction.atomic():
-        to_create = []
-        to_update = []
-        invalid_rows = []
-        seen_catchments = set()
-        new_catchments = 0
-
-        username_to_oa_map = {}
-        if USERNAME_COL in headers:
-            username_index = _get_header_index(headers, USERNAME_COL)
-            usernames = []
-            for row in dataset:
-                row_list = list(row)
-                if row_list[username_index]:
-                    usernames.append(row_list[username_index])
-
-            opportunity_accesses = OpportunityAccess.objects.filter(
-                opportunity=opportunity, user__username__in=usernames
-            ).select_related("user")
-            username_to_oa_map = {oa.user.username: oa for oa in opportunity_accesses}
-
-        for row in dataset:
-            row = list(row)
-            try:
-                row_data = RowData(row, headers)
-                catchment, created = create_or_update_catchment(row_data, opportunity, username_to_oa_map)
-
-                if created:
-                    to_create.append(catchment)
-                    new_catchments += 1
-                else:
-                    to_update.append(catchment)
-                    seen_catchments.add(str(catchment.id))
-
-            except InvalidValueError as e:
-                invalid_rows.append(([escape(r) for r in row], f"Error in row: {e}"))
-
-        if to_create:
-            CatchmentArea.objects.bulk_create(to_create)
-
-        if to_update:
-            CatchmentArea.objects.bulk_update(
-                to_update,
-                [
-                    "latitude",
-                    "longitude",
-                    "radius",
-                    "active",
-                    "name",
-                    "opportunity_access",
-                ],
-            )
-
-        if invalid_rows:
-            raise ImportException(f"{len(invalid_rows)} rows have errors", invalid_rows)
-
-    return CatchmentAreaImportStatus(seen_catchments, new_catchments)
 
 
 class ReviewVisitRowData:
@@ -758,6 +560,7 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     user_ids = set()
     updated_visit_ids = set()
     locked_visit_ids = set()
+    review_status_modified_date = now()
     with transaction.atomic():
         for visit in existing_visits:
             new_status = visit_data.get(visit.xform_id)
@@ -767,12 +570,13 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
 
             if new_status and visit.review_status != new_status:
                 visit.review_status = new_status
+                visit.review_status_modified_date = review_status_modified_date
                 to_update.append(visit)
                 updated_visit_ids.add(visit.xform_id)
                 user_ids.add(visit.user_id)
 
         if to_update:
-            UserVisit.objects.bulk_update(to_update, fields=["review_status"])
+            UserVisit.objects.bulk_update(to_update, fields=["review_status", "review_status_modified_date"])
 
     if user_ids:
         bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))

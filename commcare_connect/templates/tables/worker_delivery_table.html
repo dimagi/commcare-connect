@@ -1,0 +1,48 @@
+{% extends "base_table.html" %}
+{% load i18n %}
+{% block table.tbody %}
+  {% for row in table.paginated_rows %}
+    <tbody x-data="{ open: false }">
+      <tr {{ row.attrs.as_html }}>
+        {% for column, cell in row.items %}
+          <td {{ column.attrs.td.as_html }}>{{ cell }}
+          </td>
+        {% endfor %}
+      </tr>
+      {% for sub_row in row.record.bound_sub_rows %}
+        <tr {{ sub_row.attrs.as_html }} x-show="open" x-cloak>
+          {% for column, cell in sub_row.items %}
+            <td {{ column.attrs.td.as_html }}>{{ cell }}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  {% empty %}
+    <tbody>
+      <tr>
+        <td colspan="{{ table.columns|length }}" class="text-center py-4">{{ table.empty_text }}</td>
+      </tr>
+    </tbody>
+  {% endfor %}
+  {% if table.has_footer %}
+    <tbody>
+      <tr class="border-2 border-gray-100 font-bold">
+        {% for column in table.columns %}
+          <td {{ column.attrs.tf.as_html }}>{{ column.footer }}
+          </td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  {% endif %}
+{% endblock table.tbody %}
+{% block pagination %}
+  {% if table.has_over_limit %}
+    <p class="flex items-center gap-2 text-xs text-slate-500">
+      <i class="fa-solid fa-triangle-exclamation text-brand-marigold"
+         aria-hidden="true"></i>
+      {% translate "Delivery limit exceeded" %}
+    </p>
+  {% endif %}
+  {{ block.super }}
+{% endblock pagination %}

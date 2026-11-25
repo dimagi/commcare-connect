@@ -1,161 +1,96 @@
+import re
+from datetime import date
+from unittest.mock import patch
+
 import pytest
 from django import forms
 
-from commcare_connect.organization.models import LLOEntity, Organization
-from commcare_connect.users.tests.factories import OrganizationFactory
-from commcare_connect.utils.forms import (
-    TOMSELECT_NEW_ENTRY_PREFIX,
-    CreatableModelChoiceField,
-    DynamicCreatableChoiceField,
-    tomselect_resolve_creatable_value,
+from commcare_connect.utils.datetime import DateRanges
+from commcare_connect.utils.forms import PresetDateRangeField
+
+TODAY = date(2026, 5, 31)
+
+
+class RangeForm(forms.Form):
+    period = PresetDateRangeField(presets=[DateRanges.LAST_30_DAYS, DateRanges.LAST_3_MONTHS, DateRanges.NEXT_30_DAYS])
+
+
+def _clean(data):
+    form = RangeForm(data=data)
+    with patch("commcare_connect.utils.forms.localdate", return_value=TODAY):
+        valid = form.is_valid()
+    return valid, form
+
+
+@pytest.mark.parametrize(
+    "preset, expected",
+    [
+        ("last_30_days", slice(date(2026, 5, 1), TODAY)),
+        ("last_3_months", slice(date(2026, 2, 28), TODAY)),
+        ("next_30_days", slice(TODAY, date(2026, 6, 30))),
+    ],
 )
+def test_a_preset_cleans_to_its_dates_and_ignores_custom_ones(preset, expected):
+    valid, form = _clean({"period_range": preset, "period_from": "2020-01-01", "period_to": "2020-12-31"})
+
+    assert valid
+    assert form.cleaned_data["period"] == expected
 
 
-class LLOEntityForm(forms.Form):
-    entity = CreatableModelChoiceField(
-        queryset=LLOEntity.objects.all(),
-        create_key_name="name",
-        required=False,
-    )
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        ({}, None),
+        ({"period_range": ""}, None),
+        ({"period_from": "2026-01-01", "period_to": "2026-02-01"}, None),
+        ({"period_range": "custom"}, None),
+        ({"period_range": "custom", "period_from": "2026-01-01"}, slice(date(2026, 1, 1), None)),
+        ({"period_range": "custom", "period_to": "2026-02-01"}, slice(None, date(2026, 2, 1))),
+        (
+            {"period_range": "custom", "period_from": "2026-01-01", "period_to": "2026-01-01"},
+            slice(date(2026, 1, 1), date(2026, 1, 1)),
+        ),
+    ],
+)
+def test_custom_dates_apply_only_under_custom_range(data, expected):
+    valid, form = _clean(data)
+
+    assert valid
+    assert form.cleaned_data["period"] == expected
 
 
-@pytest.mark.django_db
-class TestResolveCreatableValue:
-    def test_new_prefix_returns_stripped_text(self):
-        qs = LLOEntity.objects.all()
-        result = tomselect_resolve_creatable_value(TOMSELECT_NEW_ENTRY_PREFIX + "Foo Bar", qs)
-        assert result == "Foo Bar"
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"period_range": "last_12_months"},  # a range this field doesn't offer
+        {"period_range": "custom", "period_from": "2026-02-01", "period_to": "2026-01-01"},
+        {"period_range": "custom", "period_from": "not-a-date"},
+    ],
+)
+def test_invalid_ranges_are_rejected(data):
+    valid, form = _clean(data)
 
-    def test_new_prefix_double_nested(self):
-        # Edge case: User types "new:deal" → JS submits "new:new:deal" → backend strips one prefix
-        qs = LLOEntity.objects.all()
-        result = tomselect_resolve_creatable_value("new:new:deal", qs)
-        assert result == "new:deal"
-
-    def test_existing_pk_returns_instance(self):
-        entity = LLOEntity.objects.create(name="Existing Entity")
-        qs = LLOEntity.objects.all()
-        result = tomselect_resolve_creatable_value(str(entity.pk), qs)
-        assert result == entity
-
-    def test_invalid_pk_raises_validation_error(self):
-        qs = LLOEntity.objects.all()
-        with pytest.raises(forms.ValidationError) as exc_info:
-            tomselect_resolve_creatable_value("99999", qs)
-        assert exc_info.value.code == "invalid_choice"
-
-    def test_plain_string_raises_validation_error(self):
-        # No "new:" prefix and not a valid PK → must raise, not silently return
-        qs = LLOEntity.objects.all()
-        with pytest.raises(forms.ValidationError) as exc_info:
-            tomselect_resolve_creatable_value("SomeName", qs)
-        assert exc_info.value.code == "invalid_choice"
-
-    def test_custom_field_name(self):
-        entity = LLOEntity.objects.create(name="Named Entity")
-        qs = LLOEntity.objects.all()
-        result = tomselect_resolve_creatable_value("Named Entity", qs, field_name="name")
-        assert result == entity
+    assert not valid
+    assert "period" in form.errors
 
 
-@pytest.mark.django_db
-class TestCreatableModelChoiceField:
-    def test_new_prefix_creates_unsaved_instance(self):
-        form = LLOEntityForm(data={"entity": "new:Brand New"})
-        assert form.is_valid(), form.errors
-        result = form.cleaned_data["entity"]
-        assert isinstance(result, LLOEntity)
-        assert result.pk is None
-        assert result.name == "Brand New"
+def test_only_the_given_presets_are_offered_with_any_time_and_custom():
+    choices = [value for value, _label in RangeForm().fields["period"].fields[0].choices]
 
-    def test_new_prefix_strips_correctly_leaving_no_prefix(self):
-        form = LLOEntityForm(data={"entity": "new:Foo"})
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["entity"].name == "Foo"
-
-    def test_existing_pk_returns_existing_instance(self):
-        entity = LLOEntity.objects.create(name="Existing")
-        form = LLOEntityForm(data={"entity": str(entity.pk)})
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["entity"] == entity
-
-    def test_invalid_pk_makes_form_invalid(self):
-        form = LLOEntityForm(data={"entity": "99999"})
-        assert not form.is_valid()
-        assert "entity" in form.errors
-
-    def test_plain_string_makes_form_invalid(self):
-        form = LLOEntityForm(data={"entity": "Foo"})
-        assert not form.is_valid()
-        assert "entity" in form.errors
-
-    def test_new_prefix_with_existing_name_raises_error(self):
-        LLOEntity.objects.create(name="Already Exists")
-        form = LLOEntityForm(data={"entity": TOMSELECT_NEW_ENTRY_PREFIX + "Already Exists"})
-        assert not form.is_valid()
-        assert "entity" in form.errors
-
-    def test_to_field_name_respected(self):
-        # Ensure to_field_name is passed through to tomselect_resolve_creatable_value
-        entity = LLOEntity.objects.create(name="ByName")
-
-        class LLOEntityByNameForm(forms.Form):
-            entity = CreatableModelChoiceField(
-                queryset=LLOEntity.objects.all(),
-                create_key_name="name",
-                to_field_name="name",
-                required=False,
-            )
-
-        form = LLOEntityByNameForm(data={"entity": "ByName"})
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["entity"] == entity
+    assert choices == ["", "last_30_days", "last_3_months", "next_30_days", "custom"]
 
 
-class OrgDynamicForm(forms.Form):
-    org = DynamicCreatableChoiceField(
-        queryset=Organization.objects.all(),
-        create_key_name="name",
-        required=False,
-    )
+def test_the_widget_keeps_the_submitted_values_and_shows_custom_dates_only_for_custom():
+    html = RangeForm(data={"period_range": "custom", "period_from": "2026-01-01"})["period"].as_widget()
+
+    assert 'name="period_range"' in html
+    assert '<option value="custom" selected>' in html
+    assert 'name="period_from" value="2026-01-01"' in html
+    assert "x-show=\"preset === 'custom'\"" in html
 
 
-@pytest.mark.django_db
-class TestDynamicCreatableChoiceField:
-    def test_new_prefix_creates_unsaved_instance(self):
-        form = OrgDynamicForm(data={"org": "new:My Org"})
-        assert form.is_valid(), form.errors
-        result = form.cleaned_data["org"]
-        assert isinstance(result, Organization)
-        assert result.pk is None
-        assert result.name == "My Org"
+def test_the_to_date_cannot_be_picked_before_the_from_date():
+    html = RangeForm(data={"period_range": "custom", "period_from": "2026-01-01"})["period"].as_widget()
 
-    def test_existing_pk_returns_existing_instance(self):
-        org = OrganizationFactory()
-        form = OrgDynamicForm(data={"org": str(org.pk)})
-        assert form.is_valid(), form.errors
-        assert form.cleaned_data["org"] == org
-
-    def test_invalid_pk_makes_form_invalid(self):
-        form = OrgDynamicForm(data={"org": "99999"})
-        assert not form.is_valid()
-        assert "org" in form.errors
-
-    def test_new_prefix_with_existing_name_raises_error(self):
-        # When "new:Name" is submitted but an org with that name already exists,
-        # a ValidationError should be raised — user intended creation, not selection.
-        OrganizationFactory(name="Already Exists")
-        form = OrgDynamicForm(data={"org": TOMSELECT_NEW_ENTRY_PREFIX + "Already Exists"})
-        assert not form.is_valid()
-        assert "org" in form.errors
-
-    def test_required_field_rejects_empty_value(self):
-        class RequiredOrgForm(forms.Form):
-            org = DynamicCreatableChoiceField(
-                queryset=Organization.objects.all(),
-                create_key_name="name",
-            )
-
-        form = RequiredOrgForm(data={"org": ""})
-        assert not form.is_valid()
-        assert "org" in form.errors
+    assert re.search(r'<input[^>]*name="period_from"[^>]*x-model="dateFrom"', html)
+    assert re.search(r'<input[^>]*name="period_to"[^>]*x-bind:min="dateFrom"', html)

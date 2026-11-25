@@ -1,25 +1,35 @@
+import copy
 import csv
+import io
+import logging
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
+from functools import partial
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import storages
+from django.db import transaction
 from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
 from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import GenericAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.versioning import AcceptHeaderVersioning
 from rest_framework.views import APIView
+from waffle import flag_is_active
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.data_export.const import (
     APP_TYPE_BOTH,
     APP_TYPE_DELIVER,
     APP_TYPE_LEARN,
+    ATTACHMENT_FIELDS,
     DELIVER_APP_KEY,
     LEARN_APP_KEY,
     VALID_APP_TYPES,
@@ -27,14 +37,17 @@ from commcare_connect.data_export.const import (
 from commcare_connect.data_export.pagination import IdKeysetPagination
 from commcare_connect.data_export.serializer import (
     AssessmentDataSerializer,
+    AssignedTaskCreateSerializer,
     AssignedTaskDataSerializer,
     AuditReportDataSerializer,
     AuditReportEntryDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
+    ImplementationAreaDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
     LLOEntityDataSerializer,
+    OpportunityAccessCheckSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
@@ -43,14 +56,20 @@ from commcare_connect.data_export.serializer import (
     ProgramDataExportSerializer,
     TaskTypeDataSerializer,
     UserVisitDataSerializer,
-    UserVisitDataWithImagesSerializer,
+    UserVisitDataWithAttachmentsSerializer,
+    WorkAreaBulkUpdateSerializer,
     WorkAreaDataSerializer,
     WorkAreaGroupDataSerializer,
+    WorkAreaGroupWriteSerializer,
 )
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.tasks import ImplementationAreaCSVImporter, WorkAreaCSVImporter
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
+    AudioAttachment,
     BlobMeta,
     CompletedModule,
     CompletedWork,
@@ -62,14 +81,21 @@ from commcare_connect.opportunity.models import (
     TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import Program
+from commcare_connect.program.utils import orgs_ids_with_admin_access_to_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 from commcare_connect.utils.file import EchoWriter
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.itertools import batched
+from commcare_connect.utils.oauth_tokens import TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, LLO_ENTITY_INTERNAL_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
+BULK_MAX_ITEMS = 100  # JSON bulk-update: per-item FK validation + possible HQ sync/notification
+CSV_IMPORT_MAX_ROWS = 500  # CSV bulk-create: closer to raw bulk_create, cheaper per row
+logger = logging.getLogger(__name__)
 
 
 class BaseDataExportView(APIView):
@@ -77,13 +103,89 @@ class BaseDataExportView(APIView):
     required_scopes = ["export"]
 
 
-class OpportunityDataExportView(BaseDataExportView):
-    def check_opportunity_permission(self, user, opp_id):
-        self.opportunity = _get_opportunity_or_404(user, opp_id)
+class BaseDataWriteView(APIView):
+    permission_classes = [IsAuthenticated, TokenHasScope]
+    required_scopes = ["write"]
+
+
+def user_is_opportunity_admin(user, opportunity):
+    """Admin of any org that has admin access to this opportunity."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity),
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+def user_is_opportunity_pm(user, opportunity):
+    """Admin of an org that manages this opportunity."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity) - {opportunity.organization_id},
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+class OpportunityPermissionMixin:
+    opportunity_kwarg = "opp_id"
+
+    def check_opportunity_permission(self, user):
+        self.opportunity = _get_opportunity_or_404(
+            user,
+            self.kwargs[self.opportunity_kwarg],
+        )
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        self.check_opportunity_permission(request.user, self.kwargs.get("opp_id"))
+        self.check_opportunity_permission(request.user)
+
+
+class OpportunityDataExportView(OpportunityPermissionMixin, BaseDataExportView):
+    pass
+
+
+class OpportunityAdminView(OpportunityPermissionMixin, BaseDataWriteView):
+    def check_opportunity_permission(self, user):
+        super().check_opportunity_permission(user)
+        if not user_is_opportunity_admin(user, self.opportunity):
+            raise NotFound()
+
+
+class OpportunityPMView(OpportunityPermissionMixin, BaseDataWriteView):
+    def check_opportunity_permission(self, user):
+        super().check_opportunity_permission(user)
+        if not user_is_opportunity_pm(user, self.opportunity):
+            raise NotFound()
+
+
+class MicroplanningFlagRequiredMixin:
+    def check_opportunity_permission(self, user):
+        if not hasattr(super(), "check_opportunity_permission"):
+            raise ImproperlyConfigured(
+                "MicroplanningFlagRequiredMixin must be combined with OpportunityPermissionMixin "
+                "listed after it in the class bases."
+            )
+        super().check_opportunity_permission(user)
+        # flag_is_active() reads request.opportunity for opportunity-scoped flags; these
+        # API views aren't behind OrganizationMiddleware, so it's never set otherwise.
+        self.request.opportunity = self.opportunity
+        if not flag_is_active(self.request, MICROPLANNING):
+            raise NotFound("Microplanning flag is not enabled for this opportunity.")
+
+
+class BulkListMixin:
+    """Forces list input and caps batch size, so an unbounded payload can't blow up memory
+    or DB pressure. DRF's ListSerializer already supports `max_length` natively. Shared by
+    bulk-create and bulk-update views."""
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs["many"] = True
+        kwargs["max_length"] = BULK_MAX_ITEMS
+        return super().get_serializer(*args, **kwargs)
 
 
 class BaseDataExportListView(BaseDataExportView):
@@ -152,18 +254,51 @@ class BaseDataExportListViewV2(BaseDataExportListView):
     versioning_class = V2OnlyVersioning
 
 
+def _accessible_opportunities(user):
+    return Opportunity.objects.filter(
+        Q(organization__memberships__user=user)
+        | Q(supervising_organization__memberships__user=user)
+        | Q(program__organization__memberships__user=user)
+        | Q(program__funder__memberships__user=user),
+    ).distinct()
+
+
 def _get_opportunity_or_404(user, opp_id):
     try:
-        return (
-            Opportunity.objects.filter(
-                Q(organization__memberships__user=user) | Q(program__organization__memberships__user=user),
-                id=opp_id,
-            )
-            .distinct()
-            .get()
-        )
+        return _accessible_opportunities(user).get(id=opp_id)
     except Opportunity.DoesNotExist:
         raise NotFound()
+
+
+@dataclass(frozen=True)
+class ScopedAttachment:
+    """A stored attachment the caller is allowed to read, from either attachment model."""
+
+    blob_id: str
+    name: str
+    content_type: str | None
+
+
+def _get_scoped_attachment(request, opportunity):
+    """Resolve the ``blob_id`` query param to an attachment of a visit in ``opportunity``.
+
+    Attachments live in one of two models: images and other form attachments are ``BlobMeta``
+    rows keyed by the form they came from, while audio is an ``AudioAttachment`` row keyed by
+    the visit (see ``_save_attachment`` in ``opportunity.tasks``). ``blob_id`` is unique across
+    both, so the caller needs to know only the id, not which model holds it.
+    """
+    blob_id = request.query_params["blob_id"]
+    blob_meta = BlobMeta.objects.filter(blob_id=blob_id).first()
+    if blob_meta is not None:
+        # A form with several deliver units creates one UserVisit per unit, all sharing the xform_id.
+        if not UserVisit.objects.filter(xform_id=blob_meta.parent_id, opportunity=opportunity).exists():
+            raise NotFound()
+        return ScopedAttachment(blob_meta.blob_id, blob_meta.name, blob_meta.content_type)
+
+    audio = AudioAttachment.objects.filter(blob_id=blob_id, user_visit__opportunity=opportunity).first()
+    if audio is None:
+        raise NotFound()
+    return ScopedAttachment(audio.blob_id, audio.name, audio.content_type)
 
 
 def _get_program_or_404(user, program_id):
@@ -227,6 +362,27 @@ class SingleOpportunityDataView(RetrieveAPIView, BaseDataExportView):
         return _get_opportunity_or_404(self.request.user, self.kwargs.get("opp_id"))
 
 
+class OpportunityAccessCheckView(BaseDataExportView):
+    """Batch form of the access check behind ``SingleOpportunityDataView``. An id the user can't
+    access maps to ``false`` whether or not it exists, matching that view's 404."""
+
+    @extend_schema(
+        request=OpportunityAccessCheckSerializer,
+        responses=inline_serializer(
+            "OpportunityAccessCheckResponseSerializer",
+            {"opportunities": serializers.DictField(child=serializers.BooleanField())},
+        ),
+    )
+    def post(self, request):
+        serializer = OpportunityAccessCheckSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_ids = serializer.validated_data["opportunity_ids"]
+        accessible_ids = set(
+            _accessible_opportunities(request.user).filter(id__in=requested_ids).values_list("id", flat=True)
+        )
+        return Response({"opportunities": {str(opp_id): opp_id in accessible_ids for opp_id in requested_ids}})
+
+
 class OpportunityScopedDataView(OpportunityDataExportView, BaseDataExportListView):
     pass
 
@@ -247,13 +403,17 @@ class OpportunityUserDataView(OpportunityScopedDataView):
 class UserVisitDataView(OpportunityScopedDataView):
     serializer_class = UserVisitDataSerializer
 
-    def _include_images(self):
-        return self.request.query_params.get("images", "").lower() == "true"
+    def _requested_attachments(self):
+        """The attachment lists the caller opted into, as ``?images=true`` / ``?audio=true``."""
+        return [field for field in ATTACHMENT_FIELDS if self.request.query_params.get(field, "").lower() == "true"]
 
     def get_serializer_class(self, *args, **kwargs):
-        if self._include_images():
-            return UserVisitDataWithImagesSerializer
-        return UserVisitDataSerializer
+        attachments = self._requested_attachments()
+        if not attachments:
+            return UserVisitDataSerializer
+        # The view instantiates serializers itself (with and without many=True), so the
+        # requested fields are bound here rather than passed through serializer context.
+        return partial(UserVisitDataWithAttachmentsSerializer, include=attachments)
 
     def get_queryset(self, request, opp_id):
         return (
@@ -263,34 +423,37 @@ class UserVisitDataView(OpportunityScopedDataView):
         )
 
     def post_paginate(self, page):
-        if self._include_images():
-            self._prefetch_images(page)
+        self._prefetch_attachments(page, self._requested_attachments())
 
     def get_data_generator(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
-        fieldnames = serializer_class().get_fields().keys()
+        # .fields, not .get_fields(): the serializer drops the attachment fields the caller
+        # did not ask for, and only the bound .fields reflects that.
+        fieldnames = serializer_class().fields.keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
         yield writer.writeheader()
 
         queryset = self.get_queryset(*args, **kwargs)
-        include_images = self._include_images()
+        attachments = self._requested_attachments()
+        visits = queryset.iterator(chunk_size=STREAM_CHUNK_SIZE)
 
-        if not include_images:
-            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
-                yield writer.writerow(serializer_class(obj).data)
-        else:
-            batch = []
-            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
-                batch.append(obj)
-                if len(batch) >= STREAM_CHUNK_SIZE:
-                    self._prefetch_images(batch)
-                    for visit in batch:
-                        yield writer.writerow(serializer_class(visit).data)
-                    batch = []
-            if batch:
-                self._prefetch_images(batch)
-                for visit in batch:
-                    yield writer.writerow(serializer_class(visit).data)
+        if not attachments:
+            for visit in visits:
+                yield writer.writerow(serializer_class(visit).data)
+            return
+
+        # Attachments are fetched a batch at a time so each batch costs one query per
+        # attachment type instead of one per row.
+        for batch in batched(visits, STREAM_CHUNK_SIZE):
+            self._prefetch_attachments(batch, attachments)
+            for visit in batch:
+                yield writer.writerow(serializer_class(visit).data)
+
+    def _prefetch_attachments(self, visits, attachments):
+        if "images" in attachments:
+            self._prefetch_images(visits)
+        if "audio" in attachments:
+            self._prefetch_audio(visits)
 
     def _prefetch_images(self, visits):
         xform_ids = [v.xform_id for v in visits]
@@ -299,6 +462,15 @@ class UserVisitDataView(OpportunityScopedDataView):
             blobs_by_parent[blob.parent_id].append(blob)
         for visit in visits:
             visit._prefetched_images = blobs_by_parent.get(visit.xform_id, [])
+
+    def _prefetch_audio(self, visits):
+        # Audio hangs off the visit, not the form, so it is grouped by visit id rather than
+        # by xform_id the way images are.
+        audio_by_visit = defaultdict(list)
+        for attachment in AudioAttachment.objects.filter(user_visit_id__in=[v.pk for v in visits]):
+            audio_by_visit[attachment.user_visit_id].append(attachment)
+        for visit in visits:
+            visit._prefetched_audio = audio_by_visit.get(visit.pk, [])
 
 
 class CompletedWorkDataView(OpportunityScopedDataView):
@@ -473,14 +645,51 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
         return Response(status=status.HTTP_200_OK)
 
 
-class ImageView(OpportunityDataExportView):
+class AttachmentView(OpportunityDataExportView):
+    """Streams one attachment of a visit in this opportunity — image, audio or any other
+    attachment the form carried — identified by the ``blob_id`` the visit export reports."""
+
     def get(self, request, *args, **kwargs):
-        blob_id = request.query_params["blob_id"]
-        blob_meta = BlobMeta.objects.get(blob_id=blob_id)
-        form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
-        _get_opportunity_or_404(request.user, form.opportunity_id)
-        attachment = storages["default"].open(blob_id)
-        return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+        scoped = _get_scoped_attachment(request, self.opportunity)
+        attachment = storages["default"].open(scoped.blob_id)
+        return FileResponse(attachment, filename=scoped.name, content_type=scoped.content_type)
+
+
+# Signed URLs are consumed by a follow-up request made immediately after issuance.
+ATTACHMENT_SIGNED_URL_EXPIRY = 60 * 10  # seconds (10 minutes)
+
+
+def _default_storage_supports_signed_urls():
+    """True when the default storage is S3-backed and can produce a portable signed URL.
+
+    django-storages is a production-only dependency, so it may be absent entirely; when it
+    is, there is no S3 backend and therefore no portable URL.
+    """
+    try:
+        from storages.backends.s3boto3 import S3Boto3Storage
+    except ImportError:
+        return False
+    return isinstance(storages["default"], S3Boto3Storage)
+
+
+def _get_attachment_signed_url(blob_id, expire=ATTACHMENT_SIGNED_URL_EXPIRY):
+    """Return a pre-signed GET URL for ``blob_id`` in the default (S3) storage.
+
+    Caller must guard with ``_default_storage_supports_signed_urls()`` first.
+    """
+    # Create a storage handler which allows pre-authed url's, retaining the existing
+    # config of the default handler.
+    signed_storage = copy.copy(storages["default"])
+    signed_storage.querystring_auth = True
+    return signed_storage.url(blob_id, expire=expire, http_method="GET")
+
+
+class AttachmentSignedUrlView(OpportunityDataExportView):
+    def get(self, request, *args, **kwargs):
+        scoped = _get_scoped_attachment(request, self.opportunity)
+        if not _default_storage_supports_signed_urls():
+            return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
+        return Response({"attachment_signed_url": _get_attachment_signed_url(scoped.blob_id)})
 
 
 class AppStructureView(OpportunityDataExportView):
@@ -537,7 +746,9 @@ class TaskTypeDataView(OpportunityDataExportView, BaseDataExportListViewV2):
     serializer_class = TaskTypeDataSerializer
 
     def get_queryset(self, *args, **kwargs):
-        return TaskType.objects.filter(opportunity=self.opportunity)
+        # Same set the create-task UI offers. Task types made before TaskType.opportunity
+        # existed have it NULL, so filtering on it would hide them.
+        return TaskType.objects.filter(app=self.opportunity.deliver_app)
 
 
 class AuditReportDataView(OpportunityDataExportView, BaseDataExportListViewV2):
@@ -574,6 +785,42 @@ class AssignedTaskDataView(OpportunityDataExportView, BaseDataExportListViewV2):
         )
 
 
+class AssignedTaskCreateView(OpportunityPMView, GenericAPIView):
+    """Assigns a task to a worker, as the Create Task button does. PM admins only, like that button."""
+
+    serializer_class = AssignedTaskCreateSerializer
+
+    @extend_schema(responses={201: AssignedTaskDataSerializer})
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            assigned_task = serializer.save()
+        except TaskAlreadyAssignedError:
+            return Response(
+                {"error": _("This task type is already assigned to this worker.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except TokenRefreshError:
+            return Response(
+                {"error": _("Your Open Chat Studio connection has expired. Reconnect it in Connect and try again.")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except CommCareHQAPIException:
+            logger.exception("HQ update failed assigning a task on opportunity %s", self.opportunity.id)
+            return Response(
+                {"error": _("Task creation failed: could not update CommCare HQ. Please try again.")},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except OcsApiError:
+            logger.exception("Failed to start the OCS session for a task on opportunity %s", self.opportunity.id)
+            return Response(
+                {"error": _("Task creation failed: could not start the chatbot session. Please try again.")},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(AssignedTaskDataSerializer(assigned_task).data, status=status.HTTP_201_CREATED)
+
+
 class WorkAreaGroupDataView(OpportunityDataExportView, BaseDataExportListViewV2):
     serializer_class = WorkAreaGroupDataSerializer
 
@@ -588,13 +835,172 @@ class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
         return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
 
 
+class ImplementationAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = ImplementationAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return ImplementationArea.objects.filter(opportunity=self.opportunity)
+
+
 class LLOEntityDataView(BaseDataExportListViewV2):
+    """Exports organization profiles. Kept under the `llo_entity` name for existing consumers."""
+
     serializer_class = LLOEntityDataSerializer
 
     def check_permissions(self, request):
         super().check_permissions(request)
-        if not request.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+        if not request.user.has_perm(LLO_ENTITY_INTERNAL_ACCESS):
             raise NotFound
 
     def get_queryset(self, *args, **kwargs):
-        return LLOEntity.objects.all()
+        return Organization.objects.prefetch_related("countries", "primary_sectors", "members")
+
+
+class WorkAreaGroupWriteView(MicroplanningFlagRequiredMixin, OpportunityAdminView, APIView):
+    """Upsert: creates a WorkAreaGroup when the payload has no `id`, updates the matching
+    one (scoped to this opportunity)"""
+
+    def post(self, request, *args, **kwargs):
+        pk = request.data.get("id")
+        instance = None
+        if pk:
+            try:
+                instance = WorkAreaGroup.objects.get(pk=pk, opportunity=self.opportunity)
+            except WorkAreaGroup.DoesNotExist:
+                raise NotFound()
+
+        serializer = WorkAreaGroupWriteSerializer(
+            instance, data=request.data, partial=bool(instance), context={"view": self}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkUpdateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, BulkListMixin, GenericAPIView):
+    http_method_names = ["patch", "options"]
+    serializer_class = WorkAreaBulkUpdateSerializer
+
+    def patch(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        assigning_access = any("opportunity_access" in item for item in serializer.validated_data)
+        if assigning_access and not user_is_opportunity_pm(request.user, self.opportunity):
+            raise NotFound()
+
+        try:
+            serializer.save()
+        except CommCareHQAPIException:
+            transaction.set_rollback(True)
+            logger.exception("Failed to bulk sync work areas to HQ for opportunity %s", self.opportunity.id)
+            return Response(
+                {
+                    "error": _(
+                        "Failed to sync with CommCare HQ. Please try again, and if the issue persists, contact us."
+                    )
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        assign_result = getattr(serializer, "assign_result", None)
+        if assign_result and assign_result["failed_ids"]:
+            return Response(
+                {
+                    "error": _("Failed to sync %(count)d work area(s) with CommCare HQ. Please try again.")
+                    % {"count": len(assign_result["failed_ids"])}
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        unassign_result = getattr(serializer, "unassign_result", None)
+        if unassign_result:
+            return Response(
+                {
+                    "results": serializer.data,
+                    "unassign_skipped": unassign_result["skipped"],
+                    "unassign_failed_ids": unassign_result["failed_ids"],
+                }
+            )
+        return Response(serializer.data)
+
+
+class CSVImporterBulkCreateView(APIView):
+    csv_importer_class = None
+    item_name = "items"
+
+    def get_fieldnames(self):
+        return list(self.csv_importer_class.HEADERS.values())
+
+    def row_from_item(self, item):
+        raise NotImplementedError
+
+    def items_to_csv(self, items):
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=self.get_fieldnames())
+        writer.writeheader()
+        for item in items:
+            writer.writerow(self.row_from_item(item))
+        buffer.seek(0)
+        return buffer
+
+    def post(self, request, *args, **kwargs):
+        items = request.data
+        if not isinstance(items, list):
+            return Response(
+                {"error": _("Expected a list of %(name)s.") % {"name": self.item_name}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(items) > CSV_IMPORT_MAX_ROWS:
+            return Response(
+                {"error": _("Ensure this list has no more than %(max)d elements.") % {"max": CSV_IMPORT_MAX_ROWS}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        csv_source = self.items_to_csv(items)
+        result = self.csv_importer_class(self.opportunity.id, csv_source).run()
+
+        if "errors" in result:
+            return Response({"errors": list(result["errors"].keys())}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class WorkAreaBulkCreateView(MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView):
+    csv_importer_class = WorkAreaCSVImporter
+    item_name = "Work Areas"
+
+    def get_fieldnames(self):
+        return [
+            *WorkAreaCSVImporter.HEADERS.values(),
+            WorkAreaCSVImporter.GROUP_NAME_HEADER,
+            WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+        ]
+
+    def row_from_item(self, item):
+        return {
+            "Area Slug": item.get("slug", ""),
+            "Ward": item.get("ward", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
+            "Building Count": item.get("building_count", 0),
+            "Expected Visit Count": item.get("expected_visit_count", 0),
+            "Target Population": item.get("target_population", 0),
+            "LGA": item.get("lga", ""),
+            "State": item.get("state", ""),
+            "Work Area Group Name": item.get("work_area_group_name", ""),
+            "Implementation Area": item.get("implementation_area_name", ""),
+        }
+
+
+class ImplementationAreaBulkCreateView(
+    MicroplanningFlagRequiredMixin, OpportunityAdminView, CSVImporterBulkCreateView
+):
+    csv_importer_class = ImplementationAreaCSVImporter
+    item_name = "Implementation Areas"
+
+    def row_from_item(self, item):
+        return {
+            "Implementation Area Name": item.get("name", ""),
+            "Centroid": item.get("centroid", ""),
+            "Boundary": item.get("boundary", ""),
+        }

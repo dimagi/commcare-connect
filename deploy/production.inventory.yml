@@ -4,19 +4,27 @@ webservers:
       ansible_host: i-0061917b7240cfaef
     web1:
       ansible_host: i-0006273d9b40ce3e0
+    export1:
+      ansible_host: i-028041b238ae4e183
     celery0:
       ansible_host: i-0517c5593d6eb861e
+    celery2:
+      ansible_host: i-0abc62500bf452840
   vars:
     secrets_file: 'Ansible Secrets - Production'
     commcare_hq_url: 'https://www.commcarehq.org'
     deploy_environment: 'production'
     env_file: 'connect.docker.env.j2'
+    hubspot_api_id: '503070'
+    marketing_site_enabled: True
     aws_region: 'eu-west-1'
+    # CloudFront, then the load balancer, then Traefik
+    allauth_trusted_proxy_count: 3
 
 connectid:
   hosts:
-    connectid_web0:
-      ansible_host: i-01d4755cad044dcae
+    connectid_web1:
+      ansible_host: i-053c44cb9426822d0
     connectid_celery0:
       ansible_host: i-090b0c432298694c5
   vars:

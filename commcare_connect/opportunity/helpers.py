@@ -1,6 +1,9 @@
 from collections import namedtuple
+from dataclasses import dataclass, field
 from datetime import timedelta
+from uuid import UUID
 
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.db.models import (
     Case,
     CharField,
@@ -25,7 +28,9 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce, Round
 from django.utils.timezone import now
+from django.utils.translation import ngettext
 
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -37,6 +42,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityStatus,
     Payment,
     UserInvite,
     UserInviteStatus,
@@ -44,6 +50,9 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.utils import opportunities_accessible_to_org, programs_administered_by
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 
 def inactive_workers_subquery(days_ago):
@@ -61,21 +70,22 @@ def inactive_workers_subquery(days_ago):
     return Coalesce(Subquery(subquery, output_field=IntegerField()), Value(0))
 
 
-def get_deliveries_count_subquery(status=None):
-    filters = {"opportunity_access__opportunity_id": OuterRef("pk")}
-    if status is not None:
-        filters["status"] = status
-
+def get_deliveries_count_subquery(sum_field=None):
+    agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
     return Coalesce(
         Subquery(
-            CompletedWork.objects.filter(**filters)
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
             .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
+            .annotate(count=agg)
+            .values("count")[:1],
             output_field=IntegerField(),
         ),
         0,
     )
+
+
+def amount_with_currency(amount, currency_code):
+    return f"{currency_code + ' ' if currency_code else ''}{intcomma(int(amount or 0))}"
 
 
 def total_accrued_sq():
@@ -84,6 +94,21 @@ def total_accrued_sq():
             OpportunityAccess.objects.filter(opportunity_id=OuterRef("pk"))
             .values("opportunity_id")
             .annotate(total=Sum("payment_accrued"))
+            .values("total"),
+            output_field=IntegerField(),
+        ),
+        0,
+    )
+
+
+def total_org_accrued_sq():
+    return Coalesce(
+        Subquery(
+            CompletedWork.objects.filter(
+                opportunity_access__opportunity_id=OuterRef("pk"), status=CompletedWorkStatus.approved
+            )
+            .values("opportunity_access__opportunity_id")
+            .annotate(total=Sum("saved_org_payment_accrued"))
             .values("total"),
             output_field=IntegerField(),
         ),
@@ -206,7 +231,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, filters: dict):
     filters = filters or {}
     access_objects = []
-    for payment_unit in opportunity.paymentunit_set.all():
+    for payment_unit in opportunity.paymentunit_set.order_by("pk"):
         queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         if last_active_days := filters.get("last_active"):
             last_active_date = now() - timedelta(days=int(last_active_days))
@@ -259,16 +284,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
                 output_field=IntegerField(),
             )
 
-        def completed_work_status_total_subquery(status_value, sum_field=None):
-            agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
-            return Subquery(
-                CompletedWork.objects.filter(opportunity_access_id=OuterRef("pk"), status=status_value)
-                .values("opportunity_access_id")
-                .annotate(status_count=agg)
-                .values("status_count")[:1],
-                output_field=IntegerField(),
-            )
-
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
         approved_count_sq = completed_work_status_subquery(
             CompletedWorkStatus.approved, sum_field="saved_approved_count"
@@ -276,13 +291,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
-
-        total_pending_for_user = completed_work_status_total_subquery(CompletedWorkStatus.pending)
-        total_approved_for_user = completed_work_status_total_subquery(
-            CompletedWorkStatus.approved, sum_field="saved_approved_count"
-        )
-        total_rejected_for_user = completed_work_status_total_subquery(CompletedWorkStatus.rejected)
-        total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = queryset.annotate(
             status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
@@ -298,19 +306,10 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
             duplicate=Coalesce(duplicate_sq, Value(0)),
             over_limit=Coalesce(over_limit_count_sq, Value(0)),
             incomplete=Coalesce(incomplete_count_sq, Value(0)),
-            total_pending=Coalesce(total_pending_for_user, Value(0)),
-            total_approved=Coalesce(total_approved_for_user, Value(0)),
-            total_rejected=Coalesce(total_rejected_for_user, Value(0)),
-            total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
         )
 
         queryset = (
-            queryset.annotate(
-                completed=(F("pending") + F("approved") + F("rejected") + F("over_limit")),
-                total_completed=(
-                    F("total_pending") + F("total_approved") + F("total_rejected") + F("total_over_limit")
-                ),
-            )
+            queryset.annotate(delivered=(F("pending") + F("approved") + F("rejected") + F("over_limit")))
             .select_related("user")
             .order_by("user__name")
         )
@@ -343,6 +342,86 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         access_objects += queryset
     access_objects.sort(key=lambda a: a.user.name)
     return access_objects
+
+
+COUNT_FIELDS = ("pending", "approved", "rejected", "over_limit", "incomplete")
+
+
+@dataclass
+class WorkerDelivery:
+    """A row on the Deliver tab: one payment unit, or a worker's summary row totalling `sub_rows`."""
+
+    opportunity_access: OpportunityAccess
+    payment_unit_label: str
+    payment_unit_ids: list[UUID]
+    allocation: int | None
+    pending: int
+    approved: int
+    rejected: int
+    over_limit: int
+    incomplete: int
+    sub_rows: list["WorkerDelivery"] = field(default_factory=list)
+
+    @property
+    def status(self):
+        return self.opportunity_access.status
+
+    @property
+    def delivered(self):
+        return self.pending + self.approved + self.rejected + self.over_limit
+
+    @property
+    def progress(self):
+        return self.pending + self.approved
+
+    @property
+    def has_allocation_or_work(self):
+        return self.allocation is not None or self.delivered > 0 or self.incomplete > 0
+
+
+def get_worker_deliveries(opportunity: Opportunity, filters: dict):
+    """One `WorkerDelivery` per worker, built from the per-payment-unit rows of
+    `get_annotated_opportunity_access_deliver_status`.
+
+    That query returns a row for every payment unit in the opportunity, so units the worker has
+    neither an allocation for nor any work in are dropped. A worker with nothing anywhere keeps
+    them all, since they could deliver in any of them. Sub-rows and `payment_unit_ids` follow the
+    payment units' creation order.
+    """
+    rows_by_access = {}
+    for row in get_annotated_opportunity_access_deliver_status(opportunity, filters):
+        rows_by_access.setdefault(row.pk, []).append(row)
+
+    deliveries = []
+    for rows in rows_by_access.values():
+        units = [_unit_row(row) for row in rows]
+        deliveries.append(_worker_row([unit for unit in units if unit.has_allocation_or_work] or units))
+    return deliveries
+
+
+def _unit_row(row):
+    return WorkerDelivery(
+        opportunity_access=row,
+        payment_unit_label=row.payment_unit,
+        payment_unit_ids=[row.payment_unit_payment_unit_id],
+        allocation=row.total_visits,
+        **{name: getattr(row, name) for name in COUNT_FIELDS},
+    )
+
+
+def _worker_row(units):
+    if len(units) == 1:
+        return units[0]
+    count = len(units)
+    allocations = [unit.allocation for unit in units if unit.allocation is not None]
+    return WorkerDelivery(
+        opportunity_access=units[0].opportunity_access,
+        payment_unit_label=ngettext("%(count)d payment unit", "%(count)d payment units", count) % {"count": count},
+        payment_unit_ids=[unit_id for unit in units for unit_id in unit.payment_unit_ids],
+        allocation=sum(allocations) if allocations else None,
+        sub_rows=units,
+        **{name: sum(getattr(unit, name) for unit in units) for name in COUNT_FIELDS},
+    )
 
 
 def get_payment_report_data(opportunity: Opportunity, usd=False):
@@ -423,40 +502,45 @@ class TieredQueryset:
 
 
 class OpportunityData:
-    def __init__(self, org, is_program_manager, filters):
+    def __init__(self, org, can_act_as_program_manager, filters, search_term=None):
         self.org = org
-        self.is_program_manager = is_program_manager
+        self.can_act_as_program_manager = can_act_as_program_manager
         self.filters = filters
+        self.search_term = search_term
 
     def get_data(self):
-        base_qs = self.get_base_qs(self.org, self.filters, self.is_program_manager)
+        base_qs = self.get_base_qs(self.org, self.filters, self.search_term)
 
         def data_qs(ids):
-            return self.get_data_qs(ids, self.is_program_manager)
+            return self.get_data_qs(self.org, ids, self.can_act_as_program_manager)
 
         return TieredQueryset(base_qs, data_qs)
 
     @staticmethod
-    def get_base_qs(organization, filters, program_manager=False):
+    def get_base_qs(organization, filters, search_term=None):
         today = now().date()
-        base_filter = Q(organization=organization)
-        if program_manager:
-            base_filter |= Q(program__organization=organization)
-        base_filter &= Q(archived=False)
+        base_filter = Q(archived=False)
         is_test = filters.get("is_test", None)
         if is_test not in ["", None]:
             base_filter &= Q(is_test=is_test)
         programs = filters.get("program", [])
         if programs:
             base_filter &= Q(program__slug__in=programs)
-        queryset = Opportunity.objects.filter(base_filter).annotate(
-            program_name=F("program__name"),
-            status=Case(
-                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                default=Value(2),  # Inactive
-                output_field=IntegerField(),
-            ),
+        delivery_types = filters.get("delivery_type", [])
+        if delivery_types:
+            base_filter &= Q(delivery_type_id__in=delivery_types)
+        base_filter &= _date_range_filter("start_date", filters.get("start_date"))
+        base_filter &= _date_range_filter("end_date", filters.get("end_date"))
+        if search_term:
+            base_filter &= Q(name__icontains=search_term)
+        queryset = (
+            opportunities_accessible_to_org(organization)
+            .filter(base_filter)
+            .annotate(
+                program_name=F("program__name"),
+                delivery_type_name=F("delivery_type__name"),
+                status=_opportunity_status(today),
+            )
         )
         status = filters.get("status", [])
         if status:
@@ -464,7 +548,7 @@ class OpportunityData:
         return queryset
 
     @staticmethod
-    def get_data_qs(opp_ids, program_manager=False):
+    def get_data_qs(organization, opp_ids, can_act_as_program_manager=False):
         # Meant to be used with a small page of opp_ids (10/20)
         today = now().date()
         three_days_ago = now() - timedelta(days=3)
@@ -485,32 +569,37 @@ class OpportunityData:
             output_field=IntegerField(),
         )
 
-        queryset = Opportunity.objects.filter(id__in=opp_ids).annotate(
-            program_name=F("program__name"),
-            pending_invites=pending_invites_subquery(),
-            pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
-            total_accrued=total_accrued_sq(),
-            total_paid=total_paid_sq(),
-            payments_due=ExpressionWrapper(
-                F("total_accrued") - F("total_paid"),
-                output_field=DecimalField(),
-            ),
-            inactive_workers=inactive_workers_subquery(three_days_ago),
-            status=Case(
-                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                default=Value(2),  # Inactive
-                output_field=IntegerField(),
-            ),
+        queryset = (
+            opportunities_accessible_to_org(organization)
+            .filter(id__in=opp_ids)
+            .select_related("program")
+            .prefetch_related("program__watchers")
+            .annotate(
+                program_name=F("program__name"),
+                delivery_type_name=F("delivery_type__name"),
+                pending_invites=pending_invites_subquery(),
+                pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
+                total_accrued=total_accrued_sq(),
+                total_paid=total_paid_sq(),
+                payments_due=ExpressionWrapper(
+                    F("total_accrued") - F("total_paid"),
+                    output_field=DecimalField(),
+                ),
+                inactive_workers=inactive_workers_subquery(three_days_ago),
+                status=_opportunity_status(today),
+            )
         )
 
-        if program_manager:
+        # Show additional details for any org that can act as program manager
+        if can_act_as_program_manager:
             deliveries_agg = (
                 CompletedWork.objects.filter(opportunity_access__opportunity_id__in=opp_ids)
                 .values("opportunity_access__opportunity_id")
                 .annotate(
-                    total_deliveries=Count("id", distinct=True),
-                    verified_deliveries=Count("id", filter=Q(status=CompletedWorkStatus.approved), distinct=True),
+                    total_deliveries=Coalesce(Sum("saved_completed_count"), Value(0)),
+                    verified_deliveries=Coalesce(
+                        Sum("saved_approved_count", filter=Q(status=CompletedWorkStatus.approved)), Value(0)
+                    ),
                 )
             )
             deliveries_by_opp = {
@@ -549,6 +638,26 @@ class OpportunityData:
         # preserve the order of opp_ids argument
         qs_by_id = {opp.id: opp for opp in queryset}
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
+
+
+def _opportunity_status(today):
+    return Case(
+        When(Q(active=True) & Q(end_date__gte=today), then=Value(OpportunityStatus.ACTIVE)),
+        When(Q(active=True) & Q(end_date__lt=today), then=Value(OpportunityStatus.ENDED)),
+        default=Value(OpportunityStatus.INACTIVE),
+        output_field=IntegerField(),
+    )
+
+
+def _date_range_filter(field, date_range):
+    q = Q()
+    if not date_range:
+        return q
+    if date_range.start:
+        q &= Q(**{f"{field}__gte": date_range.start})
+    if date_range.stop:
+        q &= Q(**{f"{field}__lte": date_range.stop})
+    return q
 
 
 def get_worker_table_data(opportunity, search_term=None):
@@ -613,8 +722,7 @@ def get_worker_tasks_base_queryset(opportunity):
     """Return the annotated queryset for the worker tasks table.
 
     One row per (worker, active task) pair. Only workers with active tasks
-    are included. Ordered by user name then task creation date, as required
-    by `GroupedByWorkerMixin` for correct row grouping.
+    are included. Ordered by user name then task creation date.
     """
     return (
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
@@ -634,9 +742,10 @@ def get_worker_tasks_base_queryset(opportunity):
 
 
 def get_worker_work_area_table_data(opportunity):
+    workarea_qs = WorkArea.objects.filter(opportunity_access=OuterRef("pk")).values("opportunity_access")
+
     visits_done_subquery = (
         UserVisit.objects.filter(
-            opportunity=opportunity,
             opportunity_access=OuterRef("pk"),
             work_area__isnull=False,
         )
@@ -649,10 +758,19 @@ def get_worker_work_area_table_data(opportunity):
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         .select_related("user")
         .annotate(
-            assigned_buildings=Coalesce(Sum("workarea__building_count"), Value(0)),
-            assigned_visits=Coalesce(Sum("workarea__expected_visit_count"), Value(0)),
-            assigned_work_areas=Count("workarea"),
-            assigned_work_area_groups=Count("workarea__work_area_group", distinct=True),
+            assigned_buildings=Coalesce(
+                Subquery(workarea_qs.annotate(total=Sum("building_count")).values("total")[:1]), Value(0)
+            ),
+            assigned_visits=Coalesce(
+                Subquery(workarea_qs.annotate(total=Sum("expected_visit_count")).values("total")[:1]), Value(0)
+            ),
+            assigned_work_areas=Coalesce(
+                Subquery(workarea_qs.annotate(total=Count("id")).values("total")[:1]), Value(0)
+            ),
+            assigned_work_area_groups=Coalesce(
+                Subquery(workarea_qs.annotate(total=Count("work_area_group", distinct=True)).values("total")[:1]),
+                Value(0),
+            ),
             visits_done=Coalesce(Subquery(visits_done_subquery), Value(0), output_field=IntegerField()),
         )
     )
@@ -712,7 +830,7 @@ def get_opportunity_delivery_progress(opp_id):
         deliveries_from_yesterday=deliveries_from_yesterday_sq(),
         accrued_since_yesterday=accrued_since_yesterday_sq,
         most_recent_delivery=most_recent_delivery_sq,
-        total_deliveries=get_deliveries_count_subquery(),
+        total_deliveries=get_deliveries_count_subquery(sum_field="saved_completed_count"),
         recent_payment=recent_payment_sq,
         workers_invited=workers_invited_subquery(),
         pending_invites=pending_invites_subquery(),
@@ -723,21 +841,6 @@ def get_opportunity_delivery_progress(opp_id):
     )
 
     return annotated_opportunity.first()
-
-
-def get_opportunity_worker_progress(opp_id):
-    return (
-        Opportunity.objects.filter(id=opp_id)
-        .annotate(
-            total_deliveries=get_deliveries_count_subquery(),
-            approved_deliveries=get_deliveries_count_subquery(CompletedWorkStatus.approved),
-            rejected_deliveries=get_deliveries_count_subquery(CompletedWorkStatus.rejected),
-            total_accrued=total_accrued_sq(),
-            total_paid=total_paid_sq(),
-            visits_since_yesterday=deliveries_from_yesterday_sq(),
-        )
-        .first()
-    )
 
 
 def get_opportunity_funnel_progress(opp_id):
@@ -798,3 +901,54 @@ def get_opportunity_funnel_progress(opp_id):
         )
         .first()
     )
+
+
+def api_key_owner_has_left(opportunity: Opportunity) -> bool:
+    """True when the opportunity's API key belongs to someone who could no longer replace it.
+
+    The key's owner can replace it while they belong to an organization that may (see
+    `_opportunities_with_key_managed_by`), or hold ALL_ORG_ACCESS.
+    """
+    api_key = opportunity.api_key
+    if api_key is None:
+        return False
+    owner = api_key.user
+    owner_org_ids = UserOrganizationMembership.objects.filter(user=owner).values("organization_id")
+    if _opportunities_with_key_managed_by(owner_org_ids).filter(pk=opportunity.pk).exists():
+        return False
+    # Checked last: the owner isn't the request user, so their permission cache is cold and this costs queries.
+    return not owner.has_perm(ALL_ORG_ACCESS)
+
+
+def opportunities_orphaned_by_removal(membership: UserOrganizationMembership) -> list[Opportunity]:
+    """The opportunities whose API key would belong to someone who has left once `membership` is removed.
+
+    The rule is `api_key_owner_has_left`'s: the key's owner must stay in an organization that may replace the
+    key, or hold ALL_ORG_ACCESS. Archived opportunities are left out, since no one maintains their key.
+    """
+    user, organization = membership.user, membership.organization
+    remaining_org_ids = (
+        UserOrganizationMembership.objects.filter(user=user)
+        .exclude(organization=organization)
+        .values("organization_id")
+    )
+    opportunities = list(
+        _opportunities_with_key_managed_by([organization.id])
+        .filter(api_key__user=user, archived=False)
+        .exclude(pk__in=_opportunities_with_key_managed_by(remaining_org_ids))
+        .order_by("name")
+    )
+    # Checked last, as in api_key_owner_has_left: the user's permission cache is cold and this costs queries.
+    if opportunities and user.has_perm(ALL_ORG_ACCESS):
+        return []
+    return opportunities
+
+
+def _opportunities_with_key_managed_by(org_ids):
+    """The opportunities whose API key these orgs may replace: those in programs they own or fund.
+
+    These are the program admins `OpportunityChangeForm._can_replace_api_key` lets replace it. The orgs that run or
+    supervise an opportunity are left out: they can't replace its key, so a key owner who stays in one of them still
+    leaves the key with no one to maintain it.
+    """
+    return Opportunity.objects.filter(program__in=programs_administered_by(org_ids))

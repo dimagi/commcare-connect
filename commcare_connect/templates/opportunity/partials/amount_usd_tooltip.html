@@ -1,0 +1,15 @@
+{% load i18n %}
+{# H008: this is rendered as the value of a double-quoted x-tooltip attribute (see #}
+{# value_with_icon_tooltip in commcare_connect/opportunity/tables.py), so every #}
+{# attribute below must use single quotes instead. #}
+{# djlint:off H008 #}
+<div class='text-left text-sm leading-snug'>
+  <p class='font-semibold'>{% translate "How the USD total is calculated" %}</p>
+  <p class='mt-1 text-white/70'>
+    {% blocktranslate trimmed %}
+      Each line item is converted to USD using the exchange rate for its own month,
+      then all line items are summed.
+    {% endblocktranslate %}
+  </p>
+</div>
+{# djlint:on #}

@@ -17,11 +17,12 @@ from commcare_connect.opportunity.api.views.mobile import (
     UserLearnProgressView,
     UserVisitViewSet,
 )
+from commcare_connect.opportunity.api.views.task_completion import TaskCompletedView
 from commcare_connect.program.api.views import (
-    ManagedOpportunityCreateView,
     ProgramApplicationAcceptView,
     ProgramApplicationCreateView,
     ProgramCreateView,
+    ProgramOpportunityCreateView,
 )
 from commcare_connect.users.api.views import UserViewSet
 
@@ -38,12 +39,13 @@ app_name = "api"
 urlpatterns = [
     path("", include(router.urls)),
     path("receiver/", FormReceiver.as_view(), name="receiver"),
+    path("task_completed/", TaskCompletedView.as_view(), name="task_completed"),
     path("opportunity/<slug:pk>/learn_progress", UserLearnProgressView.as_view(), name="learn_progress"),
     path("opportunity/<slug:pk>/claim", ClaimOpportunityView.as_view()),
     path("opportunity/<slug:pk>/delivery_progress", DeliveryProgressView.as_view(), name="deliver_progress"),
     path("payment/<slug:pk>/confirm", ConfirmPaymentView.as_view(), name="confirm_payment"),
     path("payment/confirm", ConfirmPaymentsView.as_view(), name="confirm_payments"),
-    # Automation API (programs, managed opportunities, payment units, user invites)
+    # Automation API (programs, program opportunities, payment units, user invites)
     path("programs/", ProgramCreateView.as_view(), name="program_create"),
     path(
         "programs/<uuid:program_id>/applications/",
@@ -57,8 +59,8 @@ urlpatterns = [
     ),
     path(
         "programs/<uuid:program_id>/opportunities/",
-        ManagedOpportunityCreateView.as_view(),
-        name="managed_opportunity_create",
+        ProgramOpportunityCreateView.as_view(),
+        name="program_opportunity_create",
     ),
     path(
         "opportunities/<uuid:opportunity_id>/payment_units/",

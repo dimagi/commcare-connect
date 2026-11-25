@@ -10,15 +10,14 @@ from django.utils.translation import gettext_lazy as _
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.users.managers import UserManager
 from commcare_connect.utils.permission_const import (
-    ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
     INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
+    LLO_DIRECTORY_MANAGEMENT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
     ORG_MANAGEMENT_SETTINGS_ACCESS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
-    WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
 )
 
 
@@ -32,8 +31,8 @@ class User(AbstractUser):
     username_validator = UnicodeUsernameValidator()
 
     user_id = models.UUIDField(editable=False, default=uuid4, unique=True)
-    # First and last name do not cover name patterns around the globe
-    name = models.CharField(_("Name of User"), blank=True, max_length=255)
+    # First and last name do not cover name patterns around the globe.
+    name = models.TextField(_("Name of User"), blank=True)
     first_name = None  # type: ignore
     last_name = None  # type: ignore
     email = models.EmailField(_("email address"), null=True, blank=True)
@@ -79,6 +78,8 @@ class User(AbstractUser):
             ("product_features_access", "Can access and manage product features (flags and switches)"),
             ("manage_internal_permissions", "Can manage internal permissions for users"),
             ("invoice_report_access", "Access the Invoice reports dashboard"),
+            ("llo_entity_internal_access", "Can access the internal LLO organization profile export"),
+            ("llo_directory_management_access", "Can view and manage organizations in the LLO Directory"),
         ]
 
     def __str__(self):
@@ -90,14 +91,20 @@ class User(AbstractUser):
             OTP_ACCESS,
             DEMO_USER_ACCESS,
             KPI_REPORT_ACCESS,
-            ALL_ORG_ACCESS,
             PRODUCT_FEATURES_ACCESS,
             MANAGE_INTERNAL_PERMISSIONS,
-            ORG_MANAGEMENT_SETTINGS_ACCESS,
-            WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
             INVOICE_REPORT_ACCESS,
+            ORG_MANAGEMENT_SETTINGS_ACCESS,
         ]
         return any([self.has_perm(perm) for perm in internal_features])
+
+    @property
+    def can_access_organization_directory(self):
+        return self.has_perm(LLO_DIRECTORY_MANAGEMENT_ACCESS)
+
+    @property
+    def show_admin_sidenav(self):
+        return self.show_internal_features or self.can_access_organization_directory or self.is_staff
 
 
 class ConnectIDUserLink(models.Model):

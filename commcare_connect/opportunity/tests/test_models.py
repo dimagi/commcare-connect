@@ -2,27 +2,35 @@ import datetime
 from datetime import date, timedelta
 from unittest import mock
 
+import pghistory
 import pytest
+from django.db.models import ProtectedError, Sum
 from django.db.utils import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     AudioAttachment,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
+    OverLimitReasonChoices,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
     TaskTypeModeChoices,
+    UserVisit,
+    VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
+    HQApiKeyFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -35,9 +43,11 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MobileUserFactory
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.mark.django_db
@@ -110,6 +120,100 @@ class TestPaymentInvoice:
         for invoice in created_invoices:
             assert invoice.status_events.last().status == InvoiceStatus.PENDING_PM_REVIEW
 
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_before_the_transition_happens(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        assert getattr(invoice, prop) is None
+
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_uses_the_latest_transition_to_that_status(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username="first", user_email="first@example.com"):
+            invoice.status = status
+            invoice.save(update_fields=["status"])
+
+        invoice.status = InvoiceStatus.REJECTED_BY_PM
+        invoice.save(update_fields=["status"])
+
+        with pghistory.context(username="second", user_email="second@example.com"):
+            invoice.status = status
+            invoice.save(update_fields=["status"])
+
+        certification = getattr(invoice, prop)
+        latest_event = invoice.status_events.filter(status=status).latest("pgh_created_at")
+        assert certification["name"] == "second@example.com"
+        assert certification["certified_at"] == latest_event.pgh_created_at
+
+    @pytest.mark.parametrize(
+        "prop, status",
+        [
+            ("nm_certification", InvoiceStatus.PENDING_PM_REVIEW),
+            ("pm_certification", InvoiceStatus.READY_TO_PAY),
+        ],
+    )
+    def test_certification_is_none_when_the_transition_has_no_audit_context(self, prop, status):
+        invoice = PaymentInvoiceFactory()
+
+        invoice.status = status
+        invoice.save(update_fields=["status"])
+
+        assert invoice.status_events.get(status=status).pgh_context is None
+        assert getattr(invoice, prop) is None
+
+    def test_nm_and_pm_certifications_are_recorded_independently(self):
+        nm = UserFactory(name="Nadia NM", email="nadia@example.com")
+        pm = UserFactory(name="Priya PM", email="priya@example.com")
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(username=nm.username, user_email=nm.email):
+            invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+            invoice.save(update_fields=["status"])
+        with pghistory.context(username=pm.username, user_email=pm.email):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.nm_certification["name"] == "Nadia NM (nadia@example.com)"
+        assert invoice.pm_certification["name"] == "Priya PM (priya@example.com)"
+
+    @pytest.mark.parametrize(
+        "context, expected_name",
+        [
+            pytest.param(
+                {"username": "jane", "user_email": "jane@example.com"},
+                "Jane PM (jane@example.com)",
+                id="resolves-user-name",
+            ),
+            pytest.param(
+                {"username": "pm_deleted", "user_email": "deleted@example.com"},
+                "deleted@example.com",
+                id="falls-back-to-email",
+            ),
+        ],
+    )
+    def test_certifier_name_resolution(self, context, expected_name):
+        UserFactory(name="Jane PM", email="jane@example.com")
+        invoice = PaymentInvoiceFactory()
+
+        with pghistory.context(**context):
+            invoice.status = InvoiceStatus.READY_TO_PAY
+            invoice.save(update_fields=["status"])
+
+        assert invoice.pm_certification["name"] == expected_name
+
 
 @pytest.mark.django_db
 def test_learn_progress(opportunity: Opportunity):
@@ -122,7 +226,6 @@ def test_learn_progress(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=True)
 def test_opportunity_stats(opportunity: Opportunity, user: User):
     payment_unit_sub = PaymentUnitFactory.create(
         opportunity=opportunity, max_total=100, max_daily=10, amount=5, parent_payment_unit=None
@@ -147,9 +250,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     opportunity.total_budget = budget_per_user * 3
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
-    assert opportunity.budget_per_user == sum([p.amount * p.max_total for p in payment_units])
-    assert opportunity.number_of_users == 3
-    assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.number_of_users
+    assert opportunity.budget_per_user(include_org_pay=False) == sum([p.amount * p.max_total for p in payment_units])
+    assert opportunity.budgeted_workers == 3
+    assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.budgeted_workers
     assert opportunity.max_visits_per_user == sum([pu.max_total for pu in payment_units])
     assert opportunity.daily_max_visits_per_user == sum([pu.max_daily for pu in payment_units])
     assert opportunity.budget_per_visit == sum([pu.amount for pu in payment_units])
@@ -166,35 +269,288 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
+def _budget_unit(opportunity, **kwargs):
+    """A payment unit with fixed, round costs so budget assertions are exact."""
+    options = dict(amount=10, org_amount=0, max_total=10, max_daily=10, parent_payment_unit=None)
+    options.update(kwargs)
+    return PaymentUnitFactory(opportunity=opportunity, **options)
+
+
+def _claim(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    claim = OpportunityClaimFactory(opportunity_access=access)
+    OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    return claim
+
+
+def _claimed_two_unit_opportunity(opportunity, claims):
+    """A budget of 1500 with units costing 50 and 100 a worker (150 in all), and ``claims`` workers claimed."""
+    opportunity.total_budget = 1500
+    opportunity.save(update_fields=["total_budget"])
+    unit_a = _budget_unit(opportunity, amount=5, max_total=10)
+    unit_b = _budget_unit(opportunity, amount=6, org_amount=4, max_total=10)
+    for _ in range(claims):
+        _claim(opportunity)
+    return unit_a, unit_b
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "total_budget, expected",
+    [
+        # 10 workers exactly: every unit gets its full share
+        (1000, (100, 50)),
+        # The leftover 75 is short of the 100 an 11th worker needs, so it funds nothing
+        (1075, (100, 50)),
+        (None, None),
+    ],
+)
+def test_allotted_visits_by_unit(opportunity: Opportunity, total_budget, expected):
+    opportunity.total_budget = total_budget
+    unit_a = PaymentUnitFactory(opportunity=opportunity, max_total=10, amount=5, org_amount=0)
+    unit_b = PaymentUnitFactory(opportunity=opportunity, max_total=5, amount=6, org_amount=4)
+    PaymentUnitFactory(opportunity=opportunity, max_total=None)
+
+    by_unit = opportunity.allotted_visits_by_unit()
+
+    if expected is None:
+        assert by_unit == {}
+        assert opportunity.allotted_visits == 0
+    else:
+        assert by_unit == {unit_a.pk: expected[0], unit_b.pk: expected[1]}
+        assert opportunity.allotted_visits == sum(expected)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, 1075, 1030, 90])
+def test_allotted_visits_by_unit_matches_claims(opportunity: Opportunity, total_budget):
+    opportunity.total_budget = total_budget
+    opportunity.save(update_fields=["total_budget"])
+    units = [_budget_unit(opportunity, amount=5, max_total=10), _budget_unit(opportunity, amount=6, org_amount=4)]
+    allotted = opportunity.allotted_visits_by_unit()
+
+    # A full allocation costs 10 × 5 + 10 × 10 = 150. Claim as ClaimOpportunityView allows: only while
+    # the remaining budget covers a full allocation
+    while opportunity.remaining_budget >= opportunity.budget_per_user():
+        _claim(opportunity)
+
+    for unit in units:
+        claimed = OpportunityClaimLimit.objects.filter(payment_unit=unit).aggregate(total=Sum("max_visits"))["total"]
+        assert allotted[unit.pk] == (claimed or 0)
+    assert opportunity.allotted_visits_by_unit() == allotted
+
+
+def _increase_unit_a_for_one_worker(opportunity, unit_a, unit_b):
+    claim_limit = OpportunityClaimLimit.objects.filter(payment_unit=unit_a).first()
+    claim_limit.max_visits += 5
+    claim_limit.save()
+
+
+def _lower_unit_a_max_total(opportunity, unit_a, unit_b):
+    unit_a.max_total = 5
+    unit_a.save()
+
+
+def _add_unit_c(opportunity, unit_a, unit_b):
+    _budget_unit(opportunity, amount=10, max_total=10)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change, expected",
+    [
+        # 1500 - (450 claimed + 25 for the extra visits) = 1025 left: 6 more workers at 150
+        (_increase_unit_a_for_one_worker, [30 + 5 + 60, 30 + 60]),
+        # Claimants keep 10 of unit A. 1050 left at 5 × 5 + 10 × 10 = 125 a worker: 8 more workers
+        (_lower_unit_a_max_total, [30 + 40, 30 + 80]),
+        # Claimants have no unit C. 1050 left at 150 + 100 = 250 a worker: 4 more workers
+        (_add_unit_c, [30 + 40, 30 + 40, 40]),
+    ],
+)
+def test_allotted_visits_by_unit_follows_claim_limits(opportunity: Opportunity, change, expected):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
+
+    change(opportunity, unit_a, unit_b)
+
+    units = opportunity.paymentunit_set.order_by("pk")
+    assert opportunity.allotted_visits_by_unit() == {unit.pk: limit for unit, limit in zip(units, expected)}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "end_date, visits, workers",
+    [
+        # 1500 - 450 claimed = 1050 left: 7 more workers at 150
+        (date.today(), 30 + 70, 3 + 7),
+        (None, 30 + 70, 3 + 7),
+        # No one can claim once it has ended, so only the claimants count, unlike in budgeted_workers
+        (date.today() - timedelta(days=1), 30, 3),
+    ],
+)
+def test_projection_stops_once_ended(opportunity: Opportunity, end_date, visits, workers):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=3)
+    opportunity.end_date = end_date
+
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: visits, unit_b.pk: visits}
+    assert opportunity.max_workers == workers
+    assert opportunity.budgeted_workers == 10
+
+
+@pytest.mark.django_db
+def test_allotted_visits_by_unit_keeps_claim_limits_when_unit_loses_max_total(opportunity: Opportunity):
+    unit_a, unit_b = _claimed_two_unit_opportunity(opportunity, claims=1)
+    unit_a.max_total = None
+    unit_a.save()
+
+    # 1500 - 150 claimed = 1350 left at 100 a worker (unit B only): 13 more workers
+    assert opportunity.allotted_visits_by_unit() == {unit_a.pk: 10, unit_b.pk: 10 + 130}
+
+
+@pytest.mark.django_db
+def test_max_workers_counts_claimants_at_their_claimed_cost(opportunity: Opportunity):
+    unit_a, _ = _claimed_two_unit_opportunity(opportunity, claims=3)
+    unit_a.max_total = 20
+    unit_a.save()
+
+    # 1050 left at 20 × 5 + 10 × 10 = 200 a worker: 5 more. budgeted_workers prices all 7 at 200.
+    assert opportunity.max_workers == 3 + 5
+    assert opportunity.budgeted_workers == 7
+
+
+@pytest.mark.django_db
+def test_budgeted_workers_when_units_cost_nothing(opportunity: Opportunity):
+    opportunity.total_budget = 1000
+    _budget_unit(opportunity, amount=0)
+
+    # The finalize form prefills Max Connect Workers from this, so it must not raise
+    assert opportunity.budgeted_workers is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("total_budget", [1000, 0])
+@pytest.mark.parametrize(
+    "end_date, workers, visits",
+    [
+        # ClaimOpportunityView lets anyone claim while the units cost nothing
+        (None, None, None),
+        (date.today() - timedelta(days=1), 2, 20),
+    ],
+)
+def test_units_that_cost_nothing_put_no_limit_on_claims(
+    opportunity: Opportunity, total_budget, end_date, workers, visits
+):
+    # The finalize form sets a budget of 0 when the units cost nothing
+    opportunity.total_budget = total_budget
+    opportunity.save(update_fields=["total_budget"])
+    unit = _budget_unit(opportunity, amount=0)
+    for _ in range(2):
+        _claim(opportunity)
+    opportunity.end_date = end_date
+
+    assert opportunity.max_workers == workers
+    assert opportunity.allotted_visits == visits
+    assert opportunity.allotted_visits_by_unit() == ({unit.pk: visits} if visits else {})
+
+
+@pytest.mark.django_db
+def test_budget_capacity_reads_units_and_claims_once(opportunity: Opportunity, django_assert_num_queries):
+    _claimed_two_unit_opportunity(opportunity, claims=3)
+
+    # Payment units, claim limits by unit, claim count: shared by both figures
+    with django_assert_num_queries(3):
+        workers, visits = opportunity.max_workers, opportunity.allotted_visits
+
+    assert (workers, visits) == (3 + 7, 30 + 70 + 30 + 70)
+
+
+@pytest.mark.django_db
+def test_units_without_max_total_cost_nothing_per_worker(opportunity: Opportunity):
+    unit = _budget_unit(opportunity)
+    _budget_unit(opportunity, max_total=None)
+    opportunity.total_budget = 1000
+    opportunity.save(update_fields=["total_budget"])
+
+    # ClaimOpportunityView compares the remaining budget with this, so it must agree with the projection
+    assert opportunity.budget_per_user() == 100
+    assert opportunity.budgeted_workers == 10
+    assert opportunity.max_workers == 10
+    assert opportunity.allotted_visits_by_unit() == {unit.pk: 100}
+
+
 @pytest.mark.django_db
 def test_claim_limits(opportunity: Opportunity):
-    payment_unit_sub = PaymentUnitFactory(opportunity=opportunity, parent_payment_unit=None, org_amount=0)
-    payment_units = PaymentUnitFactory.create_batch(
-        2, opportunity=opportunity, parent_payment_unit=None, org_amount=0
-    ) + [payment_unit_sub]
-    payment_unit_sub.parent_payment_unit = payment_units[0]
-    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
-    # budget not enough for more than 2 users
-    opportunity.total_budget = budget_per_user * 1.5
-    mobile_users = MobileUserFactory.create_batch(3)
-    for mobile_user in mobile_users:
-        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
-        claim = OpportunityClaimFactory(opportunity_access=access)
-        OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    for _ in range(3):
+        _budget_unit(opportunity)
+    opportunity.total_budget = 450  # 1.5 full claims of 300
+    opportunity.save(update_fields=["total_budget"])
 
-    assert opportunity.claimed_budget <= int(opportunity.total_budget)
-    assert opportunity.claimed_visits <= int(opportunity.allotted_visits)
-    assert opportunity.remaining_budget < payment_units[0].amount + payment_units[1].amount
+    claims = [_claim(opportunity) for _ in range(3)]
 
-    def limit_count(user):
-        return OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__user=user).count()
+    # The budget is spent to the last unit and never past it. claimed_visits is not compared
+    # against allotted_visits: that figure assumes every worker takes a full allocation of
+    # every unit, which is the even split the allocator deliberately no longer follows.
+    assert opportunity.claimed_budget == opportunity.total_budget
+    assert opportunity.remaining_budget == 0
 
     # enough for 1st user
-    assert limit_count(mobile_users[0]) == 3
-    # partially enough for 2nd user, depending on paymentunit.amount
-    assert limit_count(mobile_users[1]) in [2, 3]
+    assert claims[0].opportunityclaimlimit_set.count() == 3
+    # budget covers two of the three units for the 2nd user
+    assert claims[1].opportunityclaimlimit_set.count() == 2
     # Not enough for 3rd user at all
-    assert limit_count(mobile_users[2]) == 0
+    assert claims[2].opportunityclaimlimit_set.count() == 0
+
+
+@pytest.mark.django_db
+def test_claim_limits_never_exceed_total_budget(opportunity: Opportunity):
+    _budget_unit(opportunity)
+    opportunity.total_budget = 1000  # funds 10 workers on unit A alone
+    opportunity.save(update_fields=["total_budget"])
+    for _ in range(8):
+        _claim(opportunity)
+
+    # A second unit doubles the cost of a full claim to 200. The 200 left funds one more
+    # worker, not the 5 x unit B visits an even split per unit would hand out (1300 total).
+    _budget_unit(opportunity)
+    claims = [_claim(opportunity) for _ in range(5)]
+
+    assert opportunity.claimed_budget == opportunity.total_budget
+    assert claims[0].opportunityclaimlimit_set.count() == 2
+    assert not OpportunityClaimLimit.objects.filter(opportunity_claim__in=claims[1:]).exists()
+
+
+@pytest.mark.django_db
+def test_claim_limits_allocates_partial_visits_from_remaining_budget(opportunity: Opportunity):
+    unit = _budget_unit(opportunity, amount=10, org_amount=5)  # 15 per visit, 150 for a full claim
+    opportunity.total_budget = 200
+    opportunity.save(update_fields=["total_budget"])
+    _claim(opportunity)
+
+    claim = _claim(opportunity)
+
+    # 50 left funds 3 of the 10 visits
+    assert OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=unit).max_visits == 3
+    assert opportunity.remaining_budget == 5
+
+
+@pytest.mark.django_db
+def test_claim_limits_funds_cheaper_unit_after_unaffordable_one(opportunity: Opportunity):
+    _budget_unit(opportunity, amount=15)  # funded first, 150 for a claim
+    cheap_pu = _budget_unit(opportunity, amount=10)  # 100 for a claim
+    opportunity.total_budget = 262
+    opportunity.save(update_fields=["total_budget"])
+    _claim(opportunity)  # cost 250 for the full claim
+
+    claim = _claim(opportunity)  # 262 - 250 = 12 left over to claim
+
+    # 12 left cannot pay for a visit of the expensive unit, but still pays for one of the cheap_pu
+    claim_limits = claim.opportunityclaimlimit_set.all()
+    assert claim_limits.count() == 1
+    limit = claim_limits.first()
+
+    # can only afford 1 visit of the cheap_pu
+    assert limit.payment_unit == cheap_pu
+    assert limit.max_visits == 1
+    assert opportunity.remaining_budget == 2
 
 
 @pytest.mark.django_db
@@ -210,6 +566,14 @@ def test_access_visit_count(opportunity: Opportunity):
     )
     update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1
+
+
+@pytest.mark.django_db
+def test_completed_work_sets_status_modified_date_on_creation():
+    before_create = now()
+    completed_work = CompletedWorkFactory.create()
+    assert completed_work.status_modified_date is not None
+    assert completed_work.status_modified_date >= before_create
 
 
 @pytest.mark.django_db
@@ -305,6 +669,178 @@ class TestAssignedTaskAssign:
                 )
 
         assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+
+    def test_triggers_ocs_bot_and_persists_session_for_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+        )
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch(
+            "commcare_connect.utils.ocs_api.trigger_bot",
+            return_value=("sess-1", "chan-1"),
+        ) as mock_trigger:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=assigner,
+            )
+
+        mock_trigger.assert_called_once_with(
+            assigner,
+            identifier=access.user.username,
+            experiment="exp-uuid",
+            participant_data={"connectTaskId": str(assigned.assigned_task_id)},
+        )
+        assigned.refresh_from_db()
+        assert assigned.ocs_session_id == "sess-1"
+        assert assigned.connect_channel_id == "chan-1"
+
+    def test_does_not_trigger_ocs_bot_for_non_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, mode=TaskTypeModeChoices.RELEARN)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.utils.ocs_api.trigger_bot") as mock_trigger:
+            AssignedTask.assign(task_type=task_type, opportunity_access=access, due_date=due_date)
+
+        mock_trigger.assert_not_called()
+
+    def test_does_not_create_row_when_ocs_trigger_fails(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                side_effect=OcsApiError("boom"),
+            ),
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update,
+        ):
+            with pytest.raises(OcsApiError):
+                AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                    assigned_by=access.user,
+                )
+
+        assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+        mock_update.assert_not_called()
+
+    def test_ocs_mode_skips_hq_even_with_case_property(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                return_value=("s", "c"),
+            ) as mock_trigger,
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
+        ):
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=access.user,
+            )
+
+        mock_trigger.assert_called_once()
+        mock_hq.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestAssignedTaskMarkCompleted:
+    def test_transitions_to_completed_and_notifies(self, django_capture_on_commit_callbacks):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        completed_at = now()
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=completed_at)
+
+        task.refresh_from_db()
+        assert task.status == AssignedTaskStatus.COMPLETED
+        assert task.completed_at == completed_at
+        notify.delay.assert_called_once_with(task.pk)
+
+    def test_defaults_completed_at_to_now(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED, completed_at=None)
+        before = now()
+
+        task.mark_completed()
+
+        task.refresh_from_db()
+        assert task.completed_at >= before
+
+    def test_stores_optional_form_fields(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+
+        task.mark_completed(
+            completed_at=now(),
+            xform_id="form-1",
+            duration=timedelta(minutes=3),
+            app_build_id="build-1",
+            app_build_version=7,
+        )
+
+        task.refresh_from_db()
+        assert task.xform_id == "form-1"
+        assert task.duration == timedelta(minutes=3)
+        assert task.app_build_id == "build-1"
+        assert task.app_build_version == 7
+
+    def test_bumps_last_active_when_newer(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        access = task.opportunity_access
+        access.last_active = now() - timedelta(days=2)
+        access.save(update_fields=["last_active"])
+        completed_at = now()
+
+        task.mark_completed(completed_at=completed_at)
+
+        access.refresh_from_db()
+        assert access.last_active == completed_at
+
+    def test_is_idempotent_when_already_completed(self, django_capture_on_commit_callbacks):
+        original = now() - timedelta(days=1)
+        task = AssignedTaskFactory(status=AssignedTaskStatus.COMPLETED, completed_at=original)
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=now())
+
+        task.refresh_from_db()
+        assert task.completed_at == original
+        notify.delay.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -440,6 +976,40 @@ class TestAssignedTaskDeleteAndResetHQ:
 
 
 @pytest.mark.django_db
+class TestSupervisingOrganizationDefault:
+    """Until the UI allows setting it, new opportunities default their supervising organization."""
+
+    def test_defaults_to_program_organization(self):
+        program = ProgramFactory()
+        opp = Opportunity(organization=OrganizationFactory(), program=program, name="opp", description="desc")
+        opp.save()
+        opp.refresh_from_db()
+        assert opp.supervising_organization == program.organization
+
+    def test_does_not_override_explicit_supervisor(self):
+        supervisor = OrganizationFactory()
+        opp = Opportunity(
+            organization=OrganizationFactory(),
+            program=ProgramFactory(),
+            supervising_organization=supervisor,
+            name="opp",
+            description="desc",
+        )
+        opp.save()
+        opp.refresh_from_db()
+        assert opp.supervising_organization == supervisor
+
+
+@pytest.mark.django_db
+def test_flags_property_resolves_legacy_catchment_flag_reason():
+    # Simulates a UserVisit flagged before the Catchment Areas feature was removed.
+    visit = UserVisitFactory.create(
+        flagged=True, flag_reason={"flags": [["catchment", "Visit outside worker catchment areas"]]}
+    )
+    assert visit.flags == ["Catchment"]
+
+
+@pytest.mark.django_db
 def test_audio_attachment_unique_per_visit_and_name():
     visit = UserVisitFactory.create()
     AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
@@ -479,3 +1049,93 @@ class TestTaskFields:
             task.save()
         task.refresh_from_db()
         assert task.date_modified == updated_at
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "max_daily, max_total, expected",
+    [
+        pytest.param(2, 5, True, id="both_limits"),
+        pytest.param(None, 5, True, id="no_daily_limit"),
+        pytest.param(2, None, False, id="no_total_limit"),
+    ],
+)
+def test_is_setup_complete_payment_unit_limits(opportunity, max_daily, max_total, expected):
+    PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.is_setup_complete is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "limits, expected_v1, expected_v2",
+    [
+        pytest.param([(5, 20), (3, 10)], 8, 8, id="all_units_capped"),
+        pytest.param([(5, 20), (None, 1)], 6, None, id="mixed_units"),
+        pytest.param([(None, 4), (None, 6)], 10, None, id="no_units_capped"),
+        pytest.param([], 0, None, id="no_payment_units"),
+    ],
+)
+def test_daily_max_visits_per_user(opportunity, limits, expected_v1, expected_v2):
+    for max_daily, max_total in limits:
+        PaymentUnitFactory(opportunity=opportunity, max_daily=max_daily, max_total=max_total)
+
+    assert opportunity.daily_max_visits_per_user == expected_v1
+    assert opportunity.daily_max_visits_per_user_v2 == expected_v2
+
+
+@pytest.mark.parametrize(
+    "status, reasons, expected",
+    [
+        (VisitValidationStatus.approved, [], []),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+        (
+            VisitValidationStatus.over_limit,
+            [OverLimitReasonChoices.claim_ended, OverLimitReasonChoices.max_visits],
+            [OverLimitReasonChoices.claim_ended.label, OverLimitReasonChoices.max_visits.label],
+        ),
+        (VisitValidationStatus.over_limit, [], ["Not recorded (visit predates over-limit reason tracking)"]),
+        # Reasons outlive a later manual review
+        (
+            VisitValidationStatus.rejected,
+            [OverLimitReasonChoices.max_daily],
+            [OverLimitReasonChoices.max_daily.label],
+        ),
+    ],
+)
+def test_user_visit_over_limit_reasons_display(status, reasons, expected):
+    visit = UserVisit(status=status, over_limit_reasons=reasons)
+    assert visit.get_over_limit_reasons_display() == expected
+
+
+@pytest.mark.django_db
+class TestOpportunityApiKey:
+    def test_deleting_key_owner_is_blocked(self, opportunity):
+        with pytest.raises(ProtectedError):
+            opportunity.api_key.user.delete()
+
+    def test_api_key_change_is_audited(self, opportunity):
+        new_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
+        with pghistory.context(username="admin", user_email="admin@example.com"):
+            opportunity.api_key = new_key
+            opportunity.save()
+        event = opportunity.api_key_events.latest("pgh_id")
+        assert event.pgh_label == "api_key_update"
+        assert event.api_key_id == new_key.id
+        assert event.pgh_context.metadata["user_email"] == "admin@example.com"
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("abcdef1234567890wxyz", "abcd...wxyz"),
+            ("abcdefghijklm", "abcd...jklm"),
+            ("abc12345", "****"),
+            ("", "****"),
+        ],
+    )
+    def test_masked_never_shows_a_short_key_in_full(self, value, expected):
+        assert HQApiKey(api_key=value).masked == expected

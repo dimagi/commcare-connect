@@ -111,7 +111,7 @@ class Command(BaseCommand):
         processed = 0
 
         for start in range(0, total, chunk_size):
-            batch_ids = visit_ids[start : start + chunk_size]  # noqa: E203
+            batch_ids = visit_ids[start : start + chunk_size]
             for visit_id in batch_ids:
                 processed += 1
                 error = self._download_visit_with_retries(visit_id, processed, total, max_retries, delay)
@@ -127,7 +127,7 @@ class Command(BaseCommand):
         for attempt in range(1, max_retries + 1):
             try:
                 download_user_visit_attachments.run(visit_id)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if attempt >= max_retries:
                     self.stderr.write(
                         self.style.ERROR(

@@ -1,11 +1,10 @@
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from rest_framework import serializers
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
-    CatchmentArea,
     CommCareApp,
     CompletedModule,
     CompletedWork,
@@ -61,7 +60,22 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
+        fields = ["id", "payment_unit_id", "name", "display_name", "max_total", "max_daily", "amount", "end_date"]
+
+
+def _is_api_v2(context):
+    return getattr(context.get("request"), "version", None) == "2.0"
+
+
+class MobilePaymentUnitSerializer(PaymentUnitSerializer):
+    max_daily = serializers.SerializerMethodField()
+
+    def get_max_daily(self, obj):
+        if obj.max_daily is not None or _is_api_v2(self.context):
+            return obj.max_daily
+        # Apps before API 2.0 can't parse a null max_daily and hide the whole opportunity.
+        # A daily cap of max_total never triggers before the total limit
+        return obj.max_total
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
@@ -93,12 +107,6 @@ class OpportunityClaimSerializer(serializers.ModelSerializer):
         ).data
 
 
-class CatchmentAreaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CatchmentArea
-        fields = ["id", "name", "latitude", "longitude", "radius", "active"]
-
-
 class OpportunityVerificationFlagsSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpportunityVerificationFlags
@@ -119,7 +127,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
     budget_per_user = serializers.SerializerMethodField()
     payment_units = serializers.SerializerMethodField()
     is_user_suspended = serializers.SerializerMethodField()
-    catchment_areas = serializers.SerializerMethodField()
     verification_flags = OpportunityVerificationFlagsSerializer(source="opportunityverificationflags", read_only=True)
 
     class Meta:
@@ -149,7 +156,6 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "budget_per_user",
             "payment_units",
             "is_user_suspended",
-            "catchment_areas",
             "verification_flags",
         ]
 
@@ -175,26 +181,23 @@ class OpportunitySerializer(serializers.ModelSerializer):
         return obj.max_visits_per_user or -1
 
     def get_daily_max_visits_per_user(self, obj):
+        if _is_api_v2(self.context):
+            return obj.daily_max_visits_per_user_v2 or -1
         return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):
         return obj.budget_per_visit or -1
 
     def get_budget_per_user(self, obj):
-        return obj.budget_per_user
+        return obj.budget_per_user(include_org_pay=False)
 
     def get_payment_units(self, obj):
         payment_units = PaymentUnit.objects.filter(opportunity=obj).order_by("pk")
-        return PaymentUnitSerializer(payment_units, many=True).data
+        return MobilePaymentUnitSerializer(payment_units, many=True, context=self.context).data
 
     def get_is_user_suspended(self, obj):
         opp_access = _get_opp_access(self.context.get("request").user, obj)
         return opp_access.suspended
-
-    def get_catchment_areas(self, obj):
-        opp_access = _get_opp_access(self.context.get("request").user, obj)
-        catchments = CatchmentArea.objects.filter(opportunity_access=opp_access)
-        return CatchmentAreaSerializer(catchments, many=True).data
 
 
 @quickcache(vary_on=["user.pk", "opportunity.pk"], timeout=60 * 60)
@@ -314,6 +317,7 @@ class AssignedTaskSerializer(serializers.ModelSerializer):
             "due_date",
             "date_created",
             "date_modified",
+            "connect_channel_id",
         ]
 
 
@@ -339,6 +343,10 @@ class DeliveryProgressSerializer(serializers.Serializer):
             CompletedWork.objects.filter(opportunity_access=obj)
             .exclude(status=CompletedWorkStatus.over_limit)
             .exclude(status=CompletedWorkStatus.incomplete)
+            # Work moves to pending on its first visit, before every required and optional deliver unit
+            # has one. Hide it until a full set is done or mobile shows it as pending indefinitely.
+            # Rejected work stays visible so the worker sees the rejection.
+            .filter(Q(saved_completed_count__gt=0) | Q(status=CompletedWorkStatus.rejected))
             .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data

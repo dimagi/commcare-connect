@@ -7,14 +7,16 @@ from django.utils.timezone import now
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.filters import TasksFilterSet
 from commcare_connect.opportunity.helpers import (
+    api_key_owner_has_left,
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_worker_progress,
+    get_worker_deliveries,
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
     get_worker_work_area_table_data,
+    opportunities_orphaned_by_removal,
 )
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -32,20 +34,28 @@ from commcare_connect.opportunity.tests.factories import (
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
+    OpportunityFactory,
     PaymentFactory,
     PaymentUnitFactory,
     TaskTypeFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.users.tests.factories import MobileUserFactory
+from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
+from commcare_connect.utils.test_utils import grant_all_org_access
 
 
 @pytest.mark.django_db
-def test_deliver_status_query_no_visits(opportunity: Opportunity):
+@pytest.mark.parametrize("visits_elsewhere", [False, True], ids=["no_visits", "visits_another_opportunity"])
+def test_deliver_status_query_no_visits(opportunity: Opportunity, visits_elsewhere):
+    # Visits for another opportunity must not count towards this one.
     mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
+        if visits_elsewhere:
+            CompletedWorkFactory.create_batch(5)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
 
     usernames = {user.username for user in mobile_users}
@@ -54,7 +64,7 @@ def test_deliver_status_query_no_visits(opportunity: Opportunity):
         assert access.approved == 0
         assert access.rejected == 0
         assert access.pending == 0
-        assert access.completed == 0
+        assert access.delivered == 0
 
 
 @pytest.mark.django_db
@@ -65,11 +75,11 @@ def test_deliver_status_query(opportunity: Opportunity):
     for mobile_user in mobile_users:
         access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         for pu in payment_units:
-            count_by_status = dict(approved=0, pending=0, rejected=0, completed=0, over_limit=0, incomplete=0)
+            count_by_status = dict(approved=0, pending=0, rejected=0, delivered=0, over_limit=0, incomplete=0)
             completed_works = CompletedWorkFactory.create_batch(20, opportunity_access=access, payment_unit=pu)
             for cw in completed_works:
                 count_by_status[cw.status.value] += 1
-            count_by_status["completed"] = len(completed_works) - count_by_status["incomplete"]
+            count_by_status["delivered"] = len(completed_works) - count_by_status["incomplete"]
             completed_work_counts[(mobile_user.username, pu.name)] = count_by_status
 
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
@@ -79,27 +89,101 @@ def test_deliver_status_query(opportunity: Opportunity):
         assert completed_work_counts[(username, access.payment_unit)]["approved"] == access.approved
         assert completed_work_counts[(username, access.payment_unit)]["rejected"] == access.rejected
         assert completed_work_counts[(username, access.payment_unit)]["pending"] == access.pending
-        assert completed_work_counts[(username, access.payment_unit)]["completed"] == access.completed
+        assert completed_work_counts[(username, access.payment_unit)]["delivered"] == access.delivered
         assert completed_work_counts[(username, access.payment_unit)]["over_limit"] == access.over_limit
         assert completed_work_counts[(username, access.payment_unit)]["incomplete"] == access.incomplete
 
 
 @pytest.mark.django_db
-def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunity):
-    # Test user visit counts when visits are for another opportunity. Should return 0 for all counts as the user has
-    # done no visits in the current opportunity.
-    mobile_users = MobileUserFactory.create_batch(5)
-    for mobile_user in mobile_users:
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-        CompletedWorkFactory.create_batch(5)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
-    usernames = {user.username for user in mobile_users}
-    for access in access_objects:
-        assert access.user.username in usernames
-        assert access.approved == 0
-        assert access.rejected == 0
-        assert access.pending == 0
-        assert access.completed == 0
+def test_get_worker_deliveries(opportunity: Opportunity):
+    payment_units = PaymentUnitFactory.create_batch(3, opportunity=opportunity)
+    no_work_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    one_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    CompletedWorkFactory(
+        opportunity_access=one_unit_access, payment_unit=payment_units[0], status=CompletedWorkStatus.pending
+    )
+    two_unit_access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    for payment_unit in payment_units[:2]:
+        CompletedWorkFactory(
+            opportunity_access=two_unit_access, payment_unit=payment_unit, status=CompletedWorkStatus.over_limit
+        )
+
+    deliveries = {delivery.opportunity_access.pk: delivery for delivery in get_worker_deliveries(opportunity, {})}
+
+    assert len(deliveries) == 3
+    assert deliveries[no_work_access.pk].payment_unit_label == "3 payment units"
+    one_unit = deliveries[one_unit_access.pk]
+    assert one_unit.payment_unit_label == payment_units[0].name
+    assert one_unit.payment_unit_ids == [payment_units[0].payment_unit_id]
+    assert one_unit.sub_rows == []
+    two_units = deliveries[two_unit_access.pk]
+    assert two_units.payment_unit_label == "2 payment units"
+    assert two_units.payment_unit_ids == [unit.payment_unit_id for unit in payment_units[:2]]
+    assert [row.payment_unit_label for row in two_units.sub_rows] == [unit.name for unit in payment_units[:2]]
+    assert two_units.over_limit == 2
+    assert two_units.delivered == 2
+
+
+@pytest.mark.django_db
+def test_get_worker_deliveries_lists_payment_units_in_creation_order(opportunity: Opportunity):
+    first, second = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+    # Changing an indexed column makes Postgres write the row as a new version that an unordered query returns last.
+    first.payment_unit_id = uuid.uuid4()
+    first.save()
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    for payment_unit in (first, second):
+        CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, status=CompletedWorkStatus.pending)
+
+    (delivery,) = get_worker_deliveries(opportunity, {})
+
+    assert delivery.payment_unit_ids == [first.payment_unit_id, second.payment_unit_id]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "filters,expected_units",
+    [
+        ({}, ["flagged", "clean"]),
+        ({"last_active": 5}, ["flagged", "clean"]),
+        ({"has_duplicates": True}, ["flagged"]),
+        ({"has_duplicates": False}, ["clean"]),
+        ({"has_overlimit": True}, ["flagged"]),
+        ({"has_overlimit": False}, ["clean"]),
+        ({"review_pending": True}, ["flagged"]),
+        ({"review_pending": False}, ["clean"]),
+        ({"has_flags": True}, ["flagged"]),
+        ({"has_flags": False}, ["clean"]),
+        ({"has_overlimit": True, "review_pending": False}, []),
+    ],
+)
+def test_get_worker_deliveries_with_filters(opportunity: Opportunity, filters, expected_units):
+    # Filters apply per payment unit, so a worker's row covers only the units that match.
+    flagged = PaymentUnitFactory(opportunity=opportunity, name="flagged")
+    clean = PaymentUnitFactory(opportunity=opportunity, name="clean")
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, last_active=now() - timedelta(days=10))
+    duplicate = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=flagged,
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=2,
+    )
+    UserVisitFactory(
+        opportunity_access=access, deliver_unit__payment_unit=flagged, completed_work=duplicate, flagged=True
+    )
+    CompletedWorkFactory(opportunity_access=access, payment_unit=flagged, status=CompletedWorkStatus.over_limit)
+    CompletedWorkFactory(
+        opportunity_access=access, payment_unit=clean, status=CompletedWorkStatus.approved, saved_approved_count=1
+    )
+    units = {"flagged": flagged, "clean": clean}
+
+    deliveries = get_worker_deliveries(opportunity, filters)
+
+    if not expected_units:
+        assert deliveries == []
+        return
+    (delivery,) = deliveries
+    assert delivery.payment_unit_ids == [units[name].payment_unit_id for name in expected_units]
+    assert delivery.over_limit == (1 if "flagged" in expected_units else 0)
 
 
 @pytest.mark.django_db
@@ -289,13 +373,6 @@ def test_get_worker_learn_table_data_all_fields(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
 def test_opportunity_delivery_stats(opportunity):
     today = now()
     yesterday = today - timedelta(days=1)
@@ -327,7 +404,12 @@ def test_opportunity_delivery_stats(opportunity):
     payment_due = total_accrued - total_paid
 
     # total deliveries=4 deliveries_from_yesterday=3
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa1,
@@ -342,6 +424,8 @@ def test_opportunity_delivery_stats(opportunity):
         status_modified_date=now(),
         status=CompletedWorkStatus.approved,
         saved_payment_accrued=10,
+        saved_completed_count=1,
+        saved_approved_count=1,
     )
     UserVisitFactory.create(
         opportunity=opportunity,
@@ -362,7 +446,12 @@ def test_opportunity_delivery_stats(opportunity):
         visit_date=today,
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -372,7 +461,12 @@ def test_opportunity_delivery_stats(opportunity):
         review_created_on=now() - timedelta(days=2),
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -383,7 +477,12 @@ def test_opportunity_delivery_stats(opportunity):
     )
 
     # case nm approved first but rejected later so review_created_on will not be null in this case.
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+        saved_completed_count=1,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
         opportunity_access=oa2,
@@ -391,6 +490,15 @@ def test_opportunity_delivery_stats(opportunity):
         completed_work=cw,
         visit_date=day_before_yesterday,
         review_created_on=now(),
+    )
+
+    # a CompletedWork with 2 duplicate approved visits should add 2 to total_deliveries, not 1
+    CompletedWorkFactory(
+        opportunity_access=oa1,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.approved,
+        saved_completed_count=2,
+        saved_approved_count=2,
     )
 
     # recent date paid will be today total paid should be 150
@@ -413,7 +521,7 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.deliveries_from_yesterday == 3
     assert result.accrued_since_yesterday == 10
     assert result.most_recent_delivery == today
-    assert result.total_deliveries == 5
+    assert result.total_deliveries == 7
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1
@@ -421,63 +529,6 @@ def test_opportunity_delivery_stats(opportunity):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
-def test_opportunity_worker_progress_stats(opportunity):
-    today = now()
-    yesterday = today - timedelta(days=1)
-
-    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=300)
-
-    # Total paid = 100
-    PaymentFactory(opportunity_access=access, date_paid=today, amount=100)
-
-    # Total deliveries = 4
-    CompletedWorkFactory.create_batch(2, opportunity_access=access, status=CompletedWorkStatus.pending)
-    CompletedWorkFactory.create_batch(1, opportunity_access=access, status=CompletedWorkStatus.approved)
-    CompletedWorkFactory.create_batch(1, opportunity_access=access, status=CompletedWorkStatus.rejected)
-
-    # Visits since yesterday = 2
-    cw = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
-    UserVisitFactory(
-        opportunity=opportunity,
-        opportunity_access=access,
-        completed_work=cw,
-        status=VisitValidationStatus.pending,
-        visit_date=yesterday,
-    )
-    UserVisitFactory(
-        opportunity=opportunity,
-        opportunity_access=access,
-        completed_work=cw,
-        status=VisitValidationStatus.approved,
-        visit_date=yesterday,
-    )
-
-    result = get_opportunity_worker_progress(opportunity.id)
-
-    assert result.id == opportunity.id
-    assert result.total_deliveries == 5
-    assert result.approved_deliveries == 1
-    assert result.rejected_deliveries == 1
-    assert result.total_accrued == 300
-    assert result.total_paid == 100
-    assert result.visits_since_yesterday == 2
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "opportunity",
-    [
-        {"opp_options": {"managed": True}},
-    ],
-    indirect=True,
-)
 def test_get_opportunity_funnel_progress(opportunity):
     today = now()
     user1 = OpportunityAccessFactory(
@@ -811,3 +862,74 @@ def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity
     assert row2.assigned_work_areas == 4
     assert row2.assigned_work_area_groups == 2
     assert row2.visits_done == 1
+
+
+@pytest.mark.parametrize(
+    "owner_member_of, expected",
+    [
+        ("program", False),
+        ("funder", False),
+        ("running", True),
+        ("supervising", True),
+        ("owner_has_all_org_access", False),
+        ("owner_not_member", True),
+        ("no_api_key", False),
+    ],
+)
+def test_api_key_owner_has_left(owner_member_of, expected):
+    opportunity = _opportunity_in_funded_program()
+    owner = opportunity.api_key.user
+    if owner_member_of in ORG_OF:
+        UserOrganizationMembership.objects.create(user=owner, organization=ORG_OF[owner_member_of](opportunity))
+    elif owner_member_of == "owner_has_all_org_access":
+        opportunity.api_key.user = grant_all_org_access(owner)
+    elif owner_member_of == "no_api_key":
+        opportunity.api_key = None
+    assert api_key_owner_has_left(opportunity) is expected
+
+
+@pytest.mark.parametrize(
+    "removed_from, still_member_of, owns_key, all_org_access, archived, orphaned",
+    [
+        pytest.param("program", None, True, False, False, True, id="program_org"),
+        pytest.param("funder", None, True, False, False, True, id="funder_org"),
+        pytest.param("running", None, True, False, False, False, id="running_org"),
+        pytest.param("supervising", None, True, False, False, False, id="supervising_org"),
+        pytest.param("program", "funder", True, False, False, False, id="still_in_funder_org"),
+        pytest.param("funder", "program", True, False, False, False, id="still_in_program_org"),
+        pytest.param("program", "running", True, False, False, True, id="still_in_running_org"),
+        pytest.param("program", "supervising", True, False, False, True, id="still_in_supervising_org"),
+        pytest.param("program", None, True, True, False, False, id="all_org_access"),
+        pytest.param("program", None, True, False, True, False, id="archived"),
+        pytest.param(None, None, True, False, False, False, id="unrelated_org"),
+        pytest.param("program", None, False, False, False, False, id="key_owned_by_someone_else"),
+    ],
+)
+def test_opportunities_orphaned_by_removal(
+    removed_from, still_member_of, owns_key, all_org_access, archived, orphaned
+):
+    opportunity = _opportunity_in_funded_program(archived=archived)
+    user = opportunity.api_key.user if owns_key else MobileUserFactory()
+    if all_org_access:
+        user = grant_all_org_access(user)
+    if still_member_of:
+        UserOrganizationMembership.objects.create(user=user, organization=ORG_OF[still_member_of](opportunity))
+    organization = ORG_OF[removed_from](opportunity) if removed_from else OrganizationFactory()
+    membership = UserOrganizationMembership.objects.create(user=user, organization=organization)
+
+    assert opportunities_orphaned_by_removal(membership) == ([opportunity] if orphaned else [])
+
+
+# The four organizations with ADMIN access to an opportunity from `_opportunity_in_funded_program`, all distinct.
+ORG_OF = {
+    "program": lambda opportunity: opportunity.program.organization,
+    "funder": lambda opportunity: opportunity.program.funder,
+    "running": lambda opportunity: opportunity.organization,
+    "supervising": lambda opportunity: opportunity.supervising_organization,
+}
+
+
+def _opportunity_in_funded_program(**kwargs):
+    return OpportunityFactory(
+        program=ProgramFactory(funder=OrganizationFactory()), supervising_organization=OrganizationFactory(), **kwargs
+    )

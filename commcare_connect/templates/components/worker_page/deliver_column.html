@@ -1,10 +1,17 @@
 {% load i18n %}
 {% load static %}
 {% load crispy_forms_tags %}
-<div class="relative underline"
+<div class="relative"
      x-data="{ isOpen: false, positionMenu() { const rect = this.$el.getBoundingClientRect(); const menu = this.$refs.menu;  const left = rect.left + rect.width/2 - menu.offsetWidth/2; menu.style.left = left + 'px'; let top = rect.bottom + 5; if (window.innerHeight - rect.bottom < rect.height + menu.clientHeight) { top = rect.bottom - rect.height - menu.clientHeight; } menu.style.top = top + 'px'; } }"
      x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })">
-  <span class="rounded-lg cursor-pointer hover:bg-slate-200 underline">{{ value }}</span>
+  <span class="ml-1 rounded-lg cursor-pointer hover:bg-slate-200 underline">{{ value }}</span>
+  {% if over_limit %}
+    <i class="fa-solid fa-triangle-exclamation text-brand-marigold"
+       x-data
+       x-tooltip.raw="{% translate "Delivery limit exceeded" %}"
+       aria-hidden="true"></i>
+    <span class="sr-only">{% translate "Delivery limit exceeded" %}</span>
+  {% endif %}
   <div x-ref="menu"
        x-show="isOpen"
        x-on:click.outside="isOpen = false"

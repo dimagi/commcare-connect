@@ -1,0 +1,24 @@
+{% comment %}
+  Single "in the news" card. Reuses the .os-press-card component (see the
+  Origins-of-Connect band on /the-opportunity and the KMC further-reading
+  band on /portfolio/kangaroo-mother-care) rather than a new component.
+  .os-press-label and .os-press-summary are the only additive pieces, for
+  entries that carry a framing label (e.g. "Opinion · Sponsored by …") and
+  an original one-sentence summary. Expects `entry` (see
+  commcare_connect/prelogin/external_coverage.py for the schema).
+{% endcomment %}
+<aside class="os-press-card news-card"
+       aria-label="External coverage: {{ entry.title }}">
+  <a class="os-press-link"
+     href="{{ entry.url }}"
+     target="_blank"
+     rel="noopener noreferrer">
+    <span class="os-press-kicker">Published in</span>
+    <span class="os-press-source">{{ entry.outlet }}</span>
+    {% if entry.label %}<span class="os-press-label">{{ entry.label }}</span>{% endif %}
+    <p class="os-press-headline">&#x201C;{{ entry.title }}&#x201D;</p>
+    {% if entry.summary %}<p class="os-press-summary">{{ entry.summary }}</p>{% endif %}
+    <span class="os-press-meta">{{ entry.authors }} &middot; {{ entry.date_display }}</span>
+    <span class="os-press-cta">Read the article &#x2197;</span>
+  </a>
+</aside>

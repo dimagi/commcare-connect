@@ -11,6 +11,12 @@
 {% block content %}
   {% load crispy_forms_tags %}
   {% include 'components/breadcrumbs.html' with path=path %}
+  <div id="payment-import-modal-container"></div>
+  {% if payment_import_task_id %}
+    <div hx-get="{% url 'opportunity:payment_import_status' request.org.slug payment_import_task_id %}"
+         hx-trigger="load"
+         hx-target="#payment-import-modal-container"></div>
+  {% endif %}
   <div id="loadingIndicator" class="loading-indicator htmx-indicator">
     <div class="loading-content">
       <div class="loading-spinner"></div>

@@ -18,23 +18,22 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, ngettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
-from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
+from commcare_connect.connect_id_client import fetch_users, queue_message_bulk, send_message
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.jira_service_desk import JiraServiceDeskNotConfigured, attach_temporary_file, create_request
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
-    export_catchment_area_table,
     export_deliver_status_table,
     export_empty_payment_table,
     export_user_status_table,
     export_user_visit_review_data,
-    export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -44,6 +43,8 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     DeliverUnit,
     ExchangeRate,
+    InvoiceFinanceRequest,
+    InvoiceFinanceRequestStatus,
     InvoiceStatus,
     LearnModule,
     Opportunity,
@@ -57,16 +58,20 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import (
-    get_uninvoiced_visit_items,
-    link_invoice_to_completed_works,
-    update_status,
-)
+from commcare_connect.opportunity.utils import finance_request as finance_request_utils
+from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
+from commcare_connect.opportunity.utils.invoice_export import (
+    build_invoice_pdf_zip,
+    build_invoice_summary_dataset,
+    invoice_pdf_filename,
+    render_invoice_pdf,
+)
+from commcare_connect.opportunity.utils.invoice_line_items import bill_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
-from commcare_connect.utils.celery import set_task_progress
+from commcare_connect.utils.celery import get_export_storage, set_task_progress
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
@@ -75,6 +80,7 @@ logger = logging.getLogger(__name__)
 
 OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
 OPPORTUNITY_AUTO_ARCHIVE_DAYS = 30
+OPPORTUNITY_AUTO_INVOICE_START_DATE = datetime.date(2026, 1, 1)
 SYSTEM = "system"
 
 
@@ -97,7 +103,7 @@ def sync_learn_modules_and_deliver_units(opportunity):
         )
 
     for block in deliver_app_connect_blocks:
-        DeliverUnit.objects.get_or_create(app=deliver_app, slug=block.id, defaults=dict(name=block.name))
+        DeliverUnit.objects.get_or_create_for_opportunity(opportunity, block.id, defaults={"name": block.name})
 
 
 @celery_app.task()
@@ -111,6 +117,11 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
     opportunity = Opportunity.objects.get(pk=opportunity_id)
     if opportunity.has_ended:
         logger.warning("Skipping invite for ended opportunity %s (%d users)", opportunity_id, len(user_list))
+        return
+    if not opportunity.is_setup_complete:
+        logger.warning(
+            "Skipping invite for opportunity %s with incomplete setup (%d users)", opportunity_id, len(user_list)
+        )
         return
     found_users = fetch_users(user_list)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
@@ -245,13 +256,163 @@ def generate_deliver_status_export(opportunity_id: int, export_format: str):
     return save_export(dataset, export_tmp_name, export_format)
 
 
-def save_export(dataset: Dataset, file_name: str, export_format: str):
-    from commcare_connect.utils.storages import ExportS3Boto3Storage
+@celery_app.task(bind=True)
+def generate_invoice_pdf_zip_export(self, opportunity_id: int, invoice_ids: list[int]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    invoices = _invoices_for_export(opportunity, invoice_ids)
 
+    def report_progress(done, total):
+        set_task_progress(self, gettext("Rendered %(done)s of %(total)s invoices.") % {"done": done, "total": total})
+
+    content = build_invoice_pdf_zip(invoices, on_progress=report_progress)
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_invoice_pdfs.zip"
+    return save_export_file(export_tmp_name, content)
+
+
+@celery_app.task()
+def generate_invoice_summary_export(opportunity_id: int, invoice_ids: list[int]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    dataset = build_invoice_summary_dataset(_invoices_for_export(opportunity, invoice_ids))
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_invoice_summary.csv"
+    return save_export(dataset, export_tmp_name, "csv")
+
+
+FINANCE_REQUEST_MAX_RETRIES = 3
+
+
+@celery_app.task(bind=True, max_retries=FINANCE_REQUEST_MAX_RETRIES)
+def submit_invoice_finance_request(self, finance_request_id: int):
+    """Raise the Finance payment request for an invoice on the Jira service desk and link it from the invoice."""
+    finance_request = InvoiceFinanceRequest.objects.select_related(
+        "invoice__opportunity__organization", "invoice__exchange_rate", "invoice__payment", "submitted_by"
+    ).get(id=finance_request_id)
+    if finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+        return
+    invoice = finance_request.invoice
+
+    try:
+        request_fields = finance_request_utils.build_request_fields(finance_request)
+        attachment_id = attach_temporary_file(
+            finance_request_utils.SERVICE_DESK_ID,
+            invoice_pdf_filename(invoice),
+            render_invoice_pdf(invoice),
+            "application/pdf",
+        )
+        form_answers = finance_request_utils.build_form_answers(finance_request, attachment_id)
+    except JiraServiceDeskNotConfigured:
+        logger.info("Jira service desk is not configured; finance request %s not submitted", finance_request_id)
+        _fail_finance_request(finance_request, gettext("Submitting to Finance is not configured."))
+        return
+    except httpx.HTTPError as exc:
+        _retry_or_fail_finance_request(self, finance_request, exc, safe_to_resend=True)
+        return
+    except Exception:
+        # Anything else would leave the request pending, and the invoice page polling it, forever.
+        logger.exception("Finance request %s failed before reaching Jira", finance_request_id)
+        _fail_finance_request(finance_request, gettext("The request could not be prepared. Try again later."))
+        return
+
+    _create_jira_request(self, finance_request, request_fields, form_answers)
+
+
+def _create_jira_request(task, finance_request, request_fields: dict, form_answers: dict):
+    """Create the Jira request while holding the invoice lock, the one the view takes to resend a request.
+
+    The lock keeps a task that was delayed past the stuck-request timeout from raising a second ticket
+    alongside the resend's. The request and invoice are read under it, since either may have changed while
+    this task prepared the PDF.
+    """
+    with transaction.atomic():
+        invoice = PaymentInvoice.objects.select_for_update().get(pk=finance_request.invoice_id)
+        finance_request.refresh_from_db()
+        if finance_request.status != InvoiceFinanceRequestStatus.PENDING:
+            return
+        if invoice.status != InvoiceStatus.READY_TO_PAY or invoice.invoice_ticket_link:
+            _fail_finance_request(finance_request, gettext("The invoice changed, so it was not sent to Finance."))
+            return
+        try:
+            customer_request = create_request(
+                finance_request_utils.SERVICE_DESK_ID,
+                finance_request_utils.REQUEST_TYPE_ID,
+                request_fields,
+                form_answers,
+            )
+        except httpx.HTTPError as exc:
+            # Unlike the upload, a create that may have reached Jira must not be sent again: it would
+            # raise a second ticket for the same invoice.
+            _retry_or_fail_finance_request(task, finance_request, exc, safe_to_resend=False)
+            return
+        except Exception:
+            logger.exception("Finance request %s failed while creating the Jira request", finance_request.id)
+            _fail_finance_request(finance_request, str(finance_request_utils.UNCONFIRMED_FINANCE_REQUEST_ERROR))
+            return
+
+        finance_request.status = InvoiceFinanceRequestStatus.SUBMITTED
+        finance_request.issue_key = customer_request.key
+        finance_request.error = ""
+        finance_request.save(update_fields=["status", "issue_key", "error", "date_modified"])
+        invoice.invoice_ticket_link = customer_request.url
+        invoice.save(update_fields=["invoice_ticket_link"])
+
+
+def _retry_or_fail_finance_request(task, finance_request, exc: httpx.HTTPError, safe_to_resend: bool):
+    # A task run inline (local development) can't wait out a retry countdown; it would only raise
+    # Celery's Retry into the request that queued it.
+    can_retry = not task.request.is_eager and task.request.retries < task.max_retries
+    if can_retry and _finance_request_error_is_retryable(exc, safe_to_resend):
+        raise task.retry(exc=exc, countdown=60 * 2**task.request.retries)
+    logger.error("Finance request %s failed: %r", finance_request.id, exc)
+    _fail_finance_request(finance_request, _describe_finance_request_error(exc, safe_to_resend))
+
+
+def _finance_request_error_is_retryable(exc: httpx.HTTPError, safe_to_resend: bool) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        # Jira rejects a rate-limited call before acting on it; a server error may come after.
+        return status_code == httpx.codes.TOO_MANY_REQUESTS or (safe_to_resend and status_code >= 500)
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return True  # the call never reached Jira
+    return safe_to_resend and isinstance(exc, httpx.TransportError)
+
+
+def _describe_finance_request_error(exc: httpx.HTTPError, safe_to_resend: bool) -> str:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
+        try:
+            jira_message = exc.response.json().get("errorMessage")
+        except ValueError:
+            jira_message = None
+        if jira_message:
+            return gettext("Jira rejected the request: %(message)s") % {"message": jira_message}
+        return gettext("Jira rejected the request (HTTP %(status)s).") % {"status": exc.response.status_code}
+    if not safe_to_resend and not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return str(finance_request_utils.UNCONFIRMED_FINANCE_REQUEST_ERROR)
+    return gettext("Jira could not be reached. Try again later.")
+
+
+def _fail_finance_request(finance_request, error: str):
+    finance_request.status = InvoiceFinanceRequestStatus.FAILED
+    finance_request.error = error
+    finance_request.save(update_fields=["status", "error", "date_modified"])
+
+
+def _invoices_for_export(opportunity, invoice_ids):
+    # Rendering a PDF reads the opportunity, its rate and any payment, so pull them in one query.
+    return (
+        PaymentInvoice.objects.filter(opportunity=opportunity, id__in=invoice_ids)
+        .select_related("opportunity", "exchange_rate", "payment")
+        .order_by("date", "invoice_number")
+    )
+
+
+def save_export(dataset: Dataset, file_name: str, export_format: str):
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
-    return ExportS3Boto3Storage().save(file_name, ContentFile(content))
+    return save_export_file(file_name, content)
+
+
+def save_export_file(file_name: str, content: bytes):
+    return get_export_storage().save(file_name, ContentFile(content))
 
 
 @celery_app.task()
@@ -265,7 +426,7 @@ def send_notification_inactive_users():
         message = _get_inactive_message(access)
         if message:
             messages.append(message)
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()
@@ -289,28 +450,32 @@ def _get_inactive_message(access: OpportunityAccess):
     if has_claimed_opportunity:
         message = _check_deliver_inactive(access)
     else:
-        # Send notification if user has completed learn modules and has not claimed the opportunity
-        if access.learn_progress == 100:
-            message = _get_deliver_message(access)
-        else:
-            message = _get_learn_message(access)
+        message = _get_learn_message(access)
     return message
 
 
 def _get_learn_message(access: OpportunityAccess):
     last_user_learn_module = access.completedmodule_set.order_by("date").last()
     if last_user_learn_module and is_date_before(last_user_learn_module.date, days=3):
+        title = gettext(f"Resume your learning journey for {access.opportunity.name}")
+        body = gettext(
+            f"You have not completed your learning for {access.opportunity.name}. "
+            "Please complete the learning modules to start delivering visits."
+        )
+        if access.learn_progress == 100:
+            title = gettext(f"Claim your job for {access.opportunity.name}")
+            body = gettext(
+                f"You have completed your learning for {access.opportunity.name}. "
+                "Please claim the opportunity to start delivering visits."
+            )
         return Message(
             usernames=[access.user.username],
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
                 "opportunity_uuid": str(access.opportunity.opportunity_id),
-                "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
-                "body": gettext(
-                    f"You have not completed your learning for {access.opportunity.name}. "
-                    "Please complete the learning modules to start delivering visits."
-                ),
+                "title": title,
+                "body": body,
             },
         )
 
@@ -356,7 +521,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 },
             )
         )
-    send_message_bulk(messages)
+    queue_message_bulk(messages)
 
 
 @celery_app.task()
@@ -449,14 +614,6 @@ def download_inaccessibility_request_attachments(self, xform_id: str, attachment
 
 
 @celery_app.task()
-def generate_work_status_export(opportunity_id: int, export_format: str):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
-    return save_export(dataset, export_tmp_name, export_format)
-
-
-@celery_app.task()
 def bulk_approve_completed_work():
     access_objects = OpportunityAccess.objects.filter(
         opportunity__active=True,
@@ -469,16 +626,24 @@ def bulk_approve_completed_work():
         update_status(completed_works, access, compute_payment=True)
 
 
-@celery_app.task()
-def generate_catchment_area_export(opportunity_id: int, export_format: str):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
-    return save_export(dataset, export_tmp_name, export_format)
-
-
 def get_payment_upload_key(opp_id):
     return f"bulk_update_payments_opportunity_{opp_id}"
+
+
+def get_payment_import_result_message(status):
+    """Build the (message, is_error) banner shown after an import that produced no row errors.
+
+    No payments uploaded is treated as an error so it surfaces as a red banner.
+    """
+    count = len(status)
+    if not count:
+        return "No payments were uploaded.", True
+    message = ngettext(
+        "Payment status uploaded successfully for %(count)d user.",
+        "Payment status uploaded successfully for %(count)d users.",
+        count,
+    ) % {"count": count}
+    return message, False
 
 
 @celery_app.task(bind=True)
@@ -487,6 +652,7 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
 
     with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
         set_task_progress(self, "Payment Record Import is in progress.")
+        errors = {}
         try:
             with default_storage.open(file_path, "rb") as f:
                 dataset = get_imported_dataset(f, file_format)
@@ -494,18 +660,20 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
                 rows = list(dataset)
 
             status = bulk_update_payments(opportunity_id, headers, rows)
-            messages = [f"Payment status updated successfully for {len(status)} users."]
-            if status.missing_users:
-                messages.append(status.get_missing_message())
-
+            message, is_error = get_payment_import_result_message(status)
         except ImportException as e:
-            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
-        except Exception as e:
-            messages = [f"Unexpected error during payment import: {e}"]
+            message = f"Payment Import failed: {e.message}"
+            errors = e.errors
+            is_error = True
+        except Exception:
+            # The detail goes to the log rather than the banner, which is read by org members.
+            logger.exception("Payment import failed for opportunity %s", opportunity_id)
+            message = "Unexpected error during payment import. Please try again."
+            is_error = True
         finally:
             default_storage.delete(file_path)
 
-        set_task_progress(self, "<br>".join(messages), is_complete=True)
+        set_task_progress(self, message, is_complete=True, is_error=is_error, errors=errors)
 
 
 @celery_app.task(bind=True)
@@ -652,61 +820,51 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
 @celery_app.task()
 def generate_automated_service_delivery_invoice():
     CHUNK_SIZE = 100
-    invoices_chunk = []
     end_date_prev_month = get_end_date_previous_month()
 
-    opp_start_date = datetime.date(2026, 1, 1)
     created_invoices_ids = []
 
-    for opportunity in Opportunity.objects.filter(active=True, is_test=False, start_date__gte=opp_start_date).iterator(
-        chunk_size=CHUNK_SIZE
-    ):
-        start_date = get_start_date_for_invoice(opportunity)
-        # Below indicates there are no uninvoiced completed works to invoice in previous month or earlier
-        if start_date > end_date_prev_month:
+    for opportunity in Opportunity.objects.filter(
+        active=True, is_test=False, start_date__gte=OPPORTUNITY_AUTO_INVOICE_START_DATE
+    ).iterator(chunk_size=CHUNK_SIZE):
+        try:
+            window_start = get_start_date_for_invoice(opportunity)
+            # Below indicates there are no unbilled completed works to invoice in previous month or earlier
+            if window_start > end_date_prev_month:
+                continue
+
+            invoice_id = _bill_opportunity(opportunity, window_start, end_date_prev_month)
+            if invoice_id:
+                created_invoices_ids.append(invoice_id)
+        except Exception:
+            logger.exception(
+                "Automated invoicing failed for Opportunity %s (%s)", opportunity.name, opportunity.opportunity_id
+            )
             continue
-
-        invoice_number = generate_invoice_number()
-        line_items = get_uninvoiced_visit_items(opportunity, start_date, end_date_prev_month)
-        if not line_items:
-            continue
-
-        total_local_amount = sum(item["total_amount_local"] for item in line_items)
-        total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
-        exchange_rate = ExchangeRate.latest_exchange_rate(line_items[-1]["currency"], line_items[-1]["month"])
-
-        payment_invoice = PaymentInvoice(
-            opportunity=opportunity,
-            amount=total_local_amount,
-            amount_usd=total_usd_amount,
-            date=datetime.datetime.utcnow(),
-            start_date=start_date,
-            end_date=end_date_prev_month,
-            status=InvoiceStatus.PENDING_NM_REVIEW,
-            invoice_number=invoice_number,
-            service_delivery=True,
-            exchange_rate=exchange_rate,
-        )
-        invoices_chunk.append(payment_invoice)
-
-        if len(invoices_chunk) == CHUNK_SIZE:
-            created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
-            invoices_chunk = []
-
-    if invoices_chunk:
-        created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
 
     _send_auto_invoice_created_notification(created_invoices_ids)
 
 
-def _bulk_create_and_link_invoices(invoices_chunk):
-    invoice_ids = []
+def _bill_opportunity(opportunity, window_start, end_date):
+    """Bill one opportunity for this window: create its service delivery invoice and freeze its
+    line items in a single transaction. Returns the invoice id, or None if nothing was billable.
+
+    Scoped to one opportunity so the FOR UPDATE locks are released as soon as that opportunity is
+    done, instead of being held across a whole batch.
+    """
+    invoice = PaymentInvoice(
+        opportunity=opportunity,
+        date=datetime.datetime.utcnow(),
+        start_date=window_start,
+        end_date=end_date,
+        status=InvoiceStatus.PENDING_NM_REVIEW,
+        invoice_number=generate_invoice_number(),
+        service_delivery=True,
+    )
     with transaction.atomic():
-        invoice_objs = PaymentInvoice.objects.bulk_create(invoices_chunk)
-        for invoice in invoice_objs:
-            link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)
-            invoice_ids.append(invoice.id)
-    return invoice_ids
+        if not bill_invoice(invoice, start_date=window_start, end_date=end_date):
+            return None
+        return invoice.id
 
 
 def _send_auto_invoice_created_notification(invoice_ids):
@@ -783,6 +941,29 @@ def send_task_assignment_notification(assigned_task_id: int):
             "opportunity_uuid": str(access.opportunity.opportunity_id),
             "opportunity_status": "delivery",
             "key": "task_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
+
+
+@celery_app.task()
+def send_task_completion_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+        "task_type",
+    ).get(pk=assigned_task_id)
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "Task Completed",
+            "body": f"You have completed the task '{assigned_task.task_type.name}'.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_completion",
             "session_endpoint_id": "cc_app_home",
         },
     )

@@ -1,47 +1,86 @@
+import uuid
+from datetime import date
+from functools import partial
 from urllib.parse import urlencode
 
 from allauth.account import app_settings as allauth_account_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.utils import complete_signup, setup_user_email
+from celery.result import AsyncResult
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db import transaction
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.translation import gettext
+from django.utils.html import format_html, format_html_join
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext, gettext_lazy
 from django.views.decorators.http import require_GET
-from django_tables2 import RequestConfig
+from django.views.generic import CreateView, UpdateView, View
+from django.views.generic.detail import SingleObjectMixin
+from django_filters.views import FilterView
+from django_tables2 import RequestConfig, SingleTableMixin
 from rest_framework.decorators import api_view
 
-from commcare_connect.organization.decorators import org_admin_required
+from commcare_connect.opportunity.forms import ExportFormatForm
+from commcare_connect.opportunity.helpers import opportunities_orphaned_by_removal
+from commcare_connect.organization.decorators import org_admin_access_required, org_profile_edit_access_required
+from commcare_connect.organization.filters import ContactFilterSet, OrganizationFilterSet
 from commcare_connect.organization.forms import (
+    ContactForm,
+    ContactPocChangeForm,
     InviteAcceptForm,
     OrganizationChangeForm,
+    OrganizationCreateForm,
+    OrganizationDirectoryForm,
     OrganizationInviteForm,
-    OrganizationSelectOrCreateForm,
 )
-from commcare_connect.organization.models import Organization, OrganizationInvite, UserOrganizationMembership
-from commcare_connect.organization.tables import OrgMemberTable, PendingInviteTable
-from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.organization.models import Contact, Organization, OrganizationInvite, UserOrganizationMembership
+from commcare_connect.organization.tables import (
+    ContactDirectoryTable,
+    OrganizationDirectoryTable,
+    OrgMemberTable,
+    PendingInviteTable,
+)
+from commcare_connect.organization.tasks import export_contacts, send_org_invite
+from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.tables import get_validated_page_size
+
+MANAGING_API_KEYS_URL = (
+    "https://dimagi.atlassian.net/wiki/spaces/connectpublic/pages/4522541061/Managing+API+keys+for+an+Opportunity"
+)
 
 
 @login_required
-@permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
-    form = OrganizationSelectOrCreateForm(data=request.POST or None)
+    form = OrganizationCreateForm(data=request.POST or None, user=request.user)
 
     if form.is_valid():
-        org, is_new_org = form.save()
-        if is_new_org:
-            org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        form.instance.created_by = request.user.email
+        org = form.save()
+        if form.cleaned_data.get("skip_membership"):
+            return redirect("organization:home", org.slug)
+        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})
 
 
-@org_admin_required
+@login_required
+def no_organization(request):
+    """Landing page for users who don't belong to any organization yet."""
+    if request.user.memberships.exists():
+        return redirect("users:redirect")
+
+    return render(request, "organization/no_organization.html")
+
+
+@org_profile_edit_access_required
 def organization_home(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
 
@@ -50,7 +89,7 @@ def organization_home(request, org_slug):
     if request.method == "POST":
         form = OrganizationChangeForm(request.POST, instance=org, user=request.user)
         if form.is_valid():
-            messages.success(request, gettext("Workspace details saved!"))
+            messages.success(request, gettext("Organization details saved!"))
             form.save()
             return redirect("organization:home", org_slug)
 
@@ -64,12 +103,15 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "invite_form": invite_form,
+            "member_count": org.memberships.count(),
+            # Org settings managers reach this page without admin access to the member endpoints.
+            "can_manage_members": org_access_level_from_request(request) >= AccessLevel.ADMIN,
         },
     )
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_admin_access_required
 def add_members_form(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
     form = OrganizationInviteForm(request.POST or None, organization=org)
@@ -81,8 +123,16 @@ def add_members_form(request, org_slug):
             role=form.cleaned_data["role"],
             invited_by=request.user,
         )
-        send_org_invite(invite_id=invite.pk)
-        messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
+        if invite is None:
+            messages.warning(
+                request,
+                gettext("An invite was just sent to {email}. Try again in a few minutes.").format(
+                    email=form.cleaned_data["email"]
+                ),
+            )
+        else:
+            send_org_invite(invite_id=invite.pk)
+            messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
     else:
         error = next(iter(form.errors.values()))[0] if form.errors else gettext("Unable to send invite.")
         messages.error(request, error)
@@ -91,7 +141,7 @@ def add_members_form(request, org_slug):
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_admin_access_required
 def remove_members(request, org_slug):
     membership_ids = request.POST.getlist("membership_ids")
     base_url = reverse("organization:home", args=(org_slug,))
@@ -99,14 +149,59 @@ def remove_members(request, org_slug):
     redirect_url = f"{base_url}?{query_params}"
 
     if str(request.org_membership.id) in membership_ids:
-        messages.error(request, message=gettext("You cannot remove yourself from the workspace."))
+        messages.error(request, message=gettext("You cannot remove yourself from the organization."))
+        return redirect(redirect_url)
+
+    memberships = UserOrganizationMembership.objects.filter(
+        pk__in=membership_ids, organization__slug=org_slug
+    ).select_related("user", "organization")
+    blocking_messages = api_key_removal_blocks(memberships)
+    for message in blocking_messages:
+        messages.error(request, message=message)
+    if blocking_messages:
         return redirect(redirect_url)
 
     if membership_ids:
-        UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
-        messages.success(request, message=gettext("Selected members have been removed from the workspace."))
+        memberships.delete()
+        messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
     return redirect(redirect_url)
+
+
+def api_key_removal_blocks(memberships):
+    """One message per member whose removal would leave opportunities with an API key no one here manages."""
+    blocks = []
+    for membership in memberships:
+        opportunities = opportunities_orphaned_by_removal(membership)
+        if opportunities:
+            blocks.append(
+                format_html(
+                    gettext(
+                        "{name} can't be removed because their HQ API key is used by these opportunities: "
+                        "{opportunities}. Replace the API key on each one first. "
+                        "{link_start}Learn how to replace an API key{link_end}."
+                    ),
+                    name=membership.user.name or str(membership.user),
+                    opportunities=_opportunity_edit_links(membership.organization.slug, opportunities),
+                    link_start=format_html(
+                        '<a href="{}" target="_blank" rel="noopener" class="underline">', MANAGING_API_KEYS_URL
+                    ),
+                    link_end=mark_safe("</a>"),
+                )
+            )
+    return blocks
+
+
+def _opportunity_edit_links(org_slug, opportunities):
+    """Each opportunity's name, linked to the Edit page where its API key is replaced."""
+    return format_html_join(
+        ", ",
+        '<a href="{}" class="underline">{}</a>',
+        (
+            (reverse("opportunity:edit", args=(org_slug, opportunity.opportunity_id)), opportunity.name)
+            for opportunity in opportunities
+        ),
+    )
 
 
 def accept_invite(request, org_slug, token):
@@ -130,7 +225,9 @@ def _reject_invalid_invite(request, invite):
             request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
         )
     elif invite.status == OrganizationInvite.Status.ACCEPTED:
-        messages.error(request, gettext("This invitation has already been accepted. Log in to access the workspace."))
+        messages.error(
+            request, gettext("This invitation has already been accepted. Log in to access the organization.")
+        )
     else:
         messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
     return redirect("account_login")
@@ -181,7 +278,30 @@ def _accept_invite_for_new_user(request, invite, org_slug):
 
 
 @api_view(["POST"])
-@org_admin_required
+@org_admin_access_required
+def reinvite(request, org_slug, invite_id):
+    invite = get_object_or_404(
+        OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
+    )
+    new_invite = OrganizationInvite.send_invite(
+        organization=invite.organization,
+        email=invite.email,
+        role=invite.role,
+        invited_by=request.user,
+    )
+    if new_invite is None:
+        messages.warning(
+            request,
+            gettext("An invite was just sent to {email}. Try again in a few minutes.").format(email=invite.email),
+        )
+    else:
+        send_org_invite(invite_id=new_invite.pk)
+        messages.success(request, gettext("New invite sent to {email}.").format(email=new_invite.email))
+    return _render_pending_invites(request)
+
+
+@api_view(["POST"])
+@org_admin_access_required
 def revoke_invite(request, org_slug, invite_id):
     invite = get_object_or_404(
         OrganizationInvite, pk=invite_id, organization__slug=org_slug, status=OrganizationInvite.Status.INVITED
@@ -189,11 +309,12 @@ def revoke_invite(request, org_slug, invite_id):
     invite.status = OrganizationInvite.Status.REVOKED
     invite.modified_by = request.user.email
     invite.save(update_fields=["status", "modified_by", "date_modified"])
+    messages.success(request, gettext("Invite to {email} revoked.").format(email=invite.email))
     return _render_pending_invites(request)
 
 
 @require_GET
-@org_admin_required
+@org_admin_access_required
 def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
     table = OrgMemberTable(members)
@@ -202,7 +323,7 @@ def org_member_table(request, org_slug=None):
 
 
 @require_GET
-@org_admin_required
+@org_admin_access_required
 def org_pending_invites_table(request, org_slug=None):
     return _render_pending_invites(request)
 
@@ -218,3 +339,223 @@ def _render_pending_invites(request):
     table = PendingInviteTable(invites)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "organization/pending_invites_table.html", {"table": table})
+
+
+class LLODirectoryAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    raise_exception = True
+
+    def test_func(self):
+        return self.request.user.can_access_organization_directory
+
+
+class LLODirectoryListView(LLODirectoryAccessMixin, SingleTableMixin, FilterView):
+    """A filtered, paginated directory table under the directory's tab bar."""
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "organizations_count": OrganizationFilterSet(queryset=Organization.objects.all()).qs.count(),
+                "contacts_count": ContactFilterSet(queryset=Contact.objects.all()).qs.count(),
+                "result_count": context["table"].paginator.count,
+            }
+        )
+        return context
+
+
+class OrganizationListView(LLODirectoryListView):
+    table_class = OrganizationDirectoryTable
+    filterset_class = OrganizationFilterSet
+    template_name = "organization/directory/organization_list.html"
+
+    def get_queryset(self):
+        return Organization.objects.prefetch_related("countries", "primary_sectors").order_by("-date_created")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Organizations"), "url": reverse("organization_directory:list")},
+        ]
+        return context
+
+
+class ContactListView(LLODirectoryListView):
+    table_class = ContactDirectoryTable
+    filterset_class = ContactFilterSet
+    template_name = "organization/directory/contact_list.html"
+
+    def get_queryset(self):
+        return Contact.objects.select_related("organization").order_by("name")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = [
+            {"title": gettext("Admin"), "url": reverse("users:internal_features")},
+            {"title": gettext("Contacts"), "url": reverse("organization_directory:contacts")},
+        ]
+        context["export_task_id"] = self.request.GET.get("export_task_id")
+        context["export_form"] = ExportFormatForm()
+        return context
+
+
+class LLODirectoryFormMixin(LLODirectoryAccessMixin):
+    """Serves an add/edit form as a modal fragment to htmx; other requests are sent to `list_url_name`."""
+
+    list_url_name = None
+    success_message = None
+
+    def get(self, request, *args, **kwargs):
+        if not request.htmx:
+            return redirect(self.get_return_url())
+        return super().get(request, *args, **kwargs)
+
+    def get_return_url(self):
+        """The `next` URL when it is a directory URL on this host, otherwise the `list_url_name` listing."""
+        next_url = self.request.GET.get("next", "")
+        if next_url.startswith(reverse("organization_directory:list")) and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={self.request.get_host()}
+        ):
+            return next_url
+        return reverse(self.list_url_name)
+
+    def form_valid(self, form):
+        if not form.instance.pk:
+            form.instance.created_by = self.request.user.email
+        form.instance.modified_by = self.request.user.email
+        self.object = form.save()
+        messages.success(self.request, self.success_message.format(name=self.object.name))
+        return HttpResponse(headers={"HX-Redirect": self.get_return_url()})
+
+
+class OrganizationDirectoryFormMixin(LLODirectoryFormMixin):
+    model = Organization
+    form_class = OrganizationDirectoryForm
+    template_name = "organization/directory/organization_form.html"
+    slug_field = "slug"
+    list_url_name = "organization_directory:list"
+
+
+class OrganizationCreateView(OrganizationDirectoryFormMixin, CreateView):
+    # Does not make the requesting user a member of the new organization.
+    success_message = gettext_lazy("Organization {name} added.")
+
+
+class OrganizationUpdateView(OrganizationDirectoryFormMixin, UpdateView):
+    success_message = gettext_lazy("Organization {name} updated.")
+
+
+class ContactFormMixin(LLODirectoryFormMixin):
+    model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
+    form_class = ContactForm
+    template_name = "organization/directory/contact_form.html"
+    list_url_name = "organization_directory:contacts"
+
+
+class ContactCreateView(ContactFormMixin, CreateView):
+    success_message = gettext_lazy("Contact {name} added.")
+
+
+class ContactUpdateView(ContactFormMixin, UpdateView):
+    success_message = gettext_lazy("Contact {name} updated.")
+
+
+class ContactPocWarningView(LLODirectoryAccessMixin, View):
+    """Warns, as a contact form fragment, which main point of contact the form's choices would replace."""
+
+    http_method_names = ["get"]
+
+    def get(self, request):
+        form = ContactPocChangeForm(request.GET)
+        main_poc_to_replace = form.main_poc_to_replace()
+        context = {"main_poc_to_replace": main_poc_to_replace, "name": form.cleaned_data.get("name", "")}
+        return render(request, "organization/directory/poc_change_warning.html", context)
+
+
+class ContactArchiveView(LLODirectoryAccessMixin, SingleObjectMixin, View):
+    model = Contact
+    slug_field = "contact_id"
+    slug_url_kwarg = "contact_id"
+    http_method_names = ["post"]
+    is_archived = True
+    success_message = gettext_lazy("Contact {name} archived.")
+
+    def post(self, request, *args, **kwargs):
+        contact = self.get_object()
+        contact.is_archived = self.is_archived
+        if contact.is_archived:
+            # An archived contact can't be the point of contact, so the organization is left without one.
+            contact.is_main_poc = False
+        contact.modified_by = request.user.email
+        contact.save(update_fields=["is_archived", "is_main_poc", "modified_by", "date_modified"])
+        messages.success(request, self.success_message.format(name=contact.name))
+        return redirect(f"{reverse('organization_directory:contacts')}?{request.GET.urlencode()}")
+
+
+class ContactRestoreView(ContactArchiveView):
+    is_archived = False
+    success_message = gettext_lazy("Contact {name} restored.")
+
+
+class ContactExportView(LLODirectoryAccessMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        form = ExportFormatForm(data=request.POST)
+        if not form.is_valid():
+            return HttpResponseBadRequest(gettext("Unsupported export format."))
+        export_format = form.cleaned_data["format"]
+        task_id = str(uuid.uuid4())
+        transaction.on_commit(
+            partial(
+                export_contacts.apply_async,
+                args=(request.GET.urlencode(), request.user.pk, export_format),
+                task_id=task_id,
+            )
+        )
+        filters = request.GET.copy()
+        filters["export_task_id"] = task_id
+        return redirect(f"{reverse('organization_directory:contacts')}?{filters.urlencode()}")
+
+
+class ContactExportStatusView(LLODirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        try:
+            return render_export_status(
+                request,
+                task_id=task_id,
+                download_url=reverse("organization_directory:contact_export_download", args=(task_id,)),
+                export_status_url=reverse("organization_directory:contact_export_status", args=(task_id,)),
+                ownership_check=lambda request, task_meta: _check_export_requester(
+                    request, task_meta.get("args") or []
+                ),
+            )
+        except Http404:
+            # htmx doesn't swap in an error response, so a 404 would leave the listing's loading
+            # spinner in place for good. Someone else's export is answered with a notice instead.
+            return render(
+                request,
+                "organization/directory/export_unavailable.html",
+                {"contacts_url": reverse("organization_directory:contacts")},
+            )
+
+
+class ContactExportDownloadView(LLODirectoryAccessMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, task_id):
+        _check_export_requester(request, AsyncResult(task_id).args or [])
+        return download_export_file(task_id=task_id, filename_without_ext=f"contacts_{date.today().isoformat()}")
+
+
+def _check_export_requester(request, task_args):
+    """Raises 404 unless the export task's arguments name the requesting user."""
+    if len(task_args) < 2 or task_args[1] != request.user.pk:
+        raise Http404()

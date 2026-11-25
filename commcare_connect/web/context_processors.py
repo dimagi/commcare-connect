@@ -44,6 +44,10 @@ def session_tracking_context(request):
     }
 
 
+def hubspot_context(request):
+    return {"HUBSPOT_API_ID": settings.HUBSPOT_API_ID}
+
+
 def _get_additional_tracking_context(request):
     opportunity = getattr(request, "opportunity", None)
 

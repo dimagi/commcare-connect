@@ -2,6 +2,11 @@ logging:
   options:
     awslogs-region: 'eu-west-1'
 
+# The image defaults to config.settings.staging (Dockerfile); merged into every role's env.
+env:
+  clear:
+    DJANGO_SETTINGS_MODULE: config.settings.production
+
 traefik:
   options:
     log-driver: awslogs
@@ -14,6 +19,7 @@ servers:
     hosts:
       - i-0061917b7240cfaef
       - i-0006273d9b40ce3e0
+      - i-028041b238ae4e183
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
@@ -28,6 +34,23 @@ servers:
   celery:
     hosts:
       - i-0517c5593d6eb861e
+    options:
+      # create by ansible
+      env-file: '/home/connect/www/commcare-connect/docker.env'
+    cmd: /start_celery
+    env:
+      clear:
+        CELERY_WORKER_BEAT: 'true'
+    labels:
+      traefik.enable: false
+    logging:
+      options:
+        awslogs-group: 'commcare-connect-celery'
+        tag: 'celery-{{.ID}}'
+
+  celery-workers:
+    hosts:
+      - i-0abc62500bf452840
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'

@@ -1,5 +1,4 @@
 import datetime
-import logging
 
 import waffle
 from django.db import transaction
@@ -27,12 +26,10 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
 )
-from commcare_connect.users.helpers import create_hq_user_and_link
+from commcare_connect.users.helpers import hq_user_error_response
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
-
-logger = logging.getLogger(__name__)
 
 
 class OpportunityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -94,11 +91,14 @@ class ClaimOpportunityView(APIView):
             uuid_field="opportunity__opportunity_id",
             int_field="opportunity_id",
         )
-        opportunity = opportunity_access.opportunity
 
         if OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists():
             return Response(status=200, data="Opportunity is already claimed")
-        if opportunity.remaining_budget < opportunity.minimum_budget_per_visit:
+
+        # Lock the opportunity so concurrent claims can't both pass the budget check before either
+        # has saved its claim limits.
+        opportunity = Opportunity.objects.select_for_update().get(pk=opportunity_access.opportunity_id)
+        if opportunity.remaining_budget < opportunity.budget_per_user():
             return Response({"error_code": ErrorCodes.OPPORTUNITY_FULL}, status=400)
         if opportunity.end_date < datetime.date.today():
             return Response({"error_code": ErrorCodes.OPPORTUNITY_ENDED}, status=400)
@@ -117,9 +117,8 @@ class ClaimOpportunityView(APIView):
             OpportunityClaimLimit.create_claim_limits(opportunity, claim)
 
         domain = opportunity.deliver_app.cc_domain
-        user_created = create_hq_user_and_link(self.request.user, domain, opportunity)
-        if not user_created:
-            return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
+        if error_response := hq_user_error_response(self.request.user, domain, opportunity):
+            return error_response
         return Response(status=201)
 
 

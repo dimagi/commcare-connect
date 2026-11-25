@@ -1,10 +1,16 @@
-from datetime import date, timedelta, timezone
+from datetime import UTC, date, timedelta
 
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import AssignedTaskStatus, Country, Currency, VisitValidationStatus
+from commcare_connect.opportunity.models import (
+    AssignedTaskStatus,
+    Country,
+    Currency,
+    Opportunity,
+    VisitValidationStatus,
+)
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
@@ -62,6 +68,7 @@ class OpportunityFactory(DjangoModelFactory):
     country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
     program = SubFactory("commcare_connect.program.tests.factories.ProgramFactory")
+    supervising_organization = LazyAttribute(lambda o: o.program.organization)
 
     class Meta:
         model = "opportunity.Opportunity"
@@ -111,11 +118,26 @@ class PaymentUnitFactory(DjangoModelFactory):
         model = "opportunity.PaymentUnit"
 
 
+def _deliver_unit_opportunity(unit):
+    """The opportunity a unit created without one most likely belongs to.
+
+    The payment unit's opportunity if it uses the unit's app, else the latest opportunity on the app,
+    else the payment unit's opportunity, else a new opportunity on the app.
+    """
+    payment_unit_opportunity = unit.payment_unit.opportunity if unit.payment_unit else None
+    if payment_unit_opportunity and payment_unit_opportunity.deliver_app_id == unit.app.id:
+        return payment_unit_opportunity
+    latest_using_app = Opportunity.objects.filter(deliver_app=unit.app).order_by("-id").first()
+    # Last resort, as a SubFactory default would be: DeliverUnit.opportunity is required
+    return latest_using_app or payment_unit_opportunity or OpportunityFactory(deliver_app=unit.app)
+
+
 class DeliverUnitFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("pystr")
     name = Faker("name")
     payment_unit = SubFactory(PaymentUnitFactory)
+    opportunity = LazyAttribute(_deliver_unit_opportunity)
 
     class Meta:
         model = "opportunity.DeliverUnit"
@@ -137,8 +159,8 @@ class UserVisitFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
-    visit_date = Faker("date_time", tzinfo=timezone.utc)
-    date_created = Faker("date_time", tzinfo=timezone.utc)
+    visit_date = Faker("date_time", tzinfo=UTC)
+    date_created = Faker("date_time", tzinfo=UTC)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
     completed_work = SubFactory(CompletedWorkFactory)
@@ -179,7 +201,7 @@ class CompletedModuleFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
     opportunity_access = SubFactory(OpportunityAccessFactory)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
     module = SubFactory(LearnModuleFactory, app=SelfAttribute("..opportunity.learn_app"))
     duration = Faker("time_delta")
 
@@ -195,7 +217,7 @@ class AssessmentFactory(DjangoModelFactory):
     passed = True
     score = Faker("pyint", min_value=75, max_value=100)
     passing_score = Faker("pyint", min_value=1, max_value=50)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.Assessment"
@@ -227,20 +249,6 @@ class FormJsonValidationRulesFactory(DjangoModelFactory):
         model = "opportunity.FormJsonValidationRules"
 
 
-class CatchmentAreaFactory(DjangoModelFactory):
-    opportunity = SubFactory(OpportunityFactory)
-    opportunity_access = SubFactory(OpportunityAccessFactory)
-    latitude = Faker("latitude")
-    longitude = Faker("longitude")
-    radius = Faker("random_int", min=500, max=2000)
-    active = Faker("boolean")
-    name = Faker("city")
-    site_code = Faker("pystr")
-
-    class Meta:
-        model = "opportunity.CatchmentArea"
-
-
 class DeliveryTypeFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text", max_nb_chars=200)
@@ -252,7 +260,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 class PaymentFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     amount = Faker("pydecimal", min_value=1, max_value=10000)
-    date_paid = Faker("date_time", tzinfo=timezone.utc)
+    date_paid = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.Payment"
@@ -261,11 +269,22 @@ class PaymentFactory(DjangoModelFactory):
 class PaymentInvoiceFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     amount = Faker("pydecimal", min_value=0, max_value=1000)
-    date = Faker("date_time", tzinfo=timezone.utc)
+    date = Faker("date_time", tzinfo=UTC)
     invoice_number = Faker("pystr")
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class InvoiceFinanceRequestFactory(DjangoModelFactory):
+    invoice = SubFactory(PaymentInvoiceFactory)
+    contracted_entity = "1"
+    gl_account = "66"
+    project_name = "Connect Delivery 2026"
+    new_vendor = False
+
+    class Meta:
+        model = "opportunity.InvoiceFinanceRequest"
 
 
 class TaskTypeFactory(DjangoModelFactory):
@@ -281,7 +300,7 @@ class TaskTypeFactory(DjangoModelFactory):
 class AssignedTaskFactory(DjangoModelFactory):
     task_type = SubFactory(TaskTypeFactory)
     opportunity_access = SubFactory(OpportunityAccessFactory)
-    completed_at = Faker("date_time", tzinfo=timezone.utc)
+    completed_at = Faker("date_time", tzinfo=UTC)
     duration = LazyFunction(lambda: timedelta(hours=1))
     status = AssignedTaskStatus.ASSIGNED
     due_date = LazyFunction(lambda: date.today() + timedelta(days=7))
@@ -294,10 +313,28 @@ class AssignedTaskFactory(DjangoModelFactory):
 class ExchangeRateFactory(DjangoModelFactory):
     currency_code = "USD"
     rate = 1.0
-    rate_date = Faker("date_time", tzinfo=timezone.utc)
+    rate_date = Faker("date_time", tzinfo=UTC)
 
     class Meta:
         model = "opportunity.ExchangeRate"
+
+
+class CompletedWorkInvoiceFactory(DjangoModelFactory):
+    invoice = SubFactory(PaymentInvoiceFactory)
+    completed_work = SubFactory(
+        CompletedWorkFactory,
+        opportunity_access__opportunity=SelfAttribute("...invoice.opportunity"),
+    )
+    month = LazyFunction(lambda: date.today().replace(day=1))
+    billed_count = 1
+    flw_amount_local = 0
+    flw_amount_usd = 0
+    org_amount_local = 0
+    org_amount_usd = 0
+    exchange_rate = SubFactory(ExchangeRateFactory)
+
+    class Meta:
+        model = "opportunity.CompletedWorkInvoice"
 
 
 class CredentialConfigurationFactory(DjangoModelFactory):

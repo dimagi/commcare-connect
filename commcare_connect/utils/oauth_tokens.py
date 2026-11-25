@@ -5,6 +5,8 @@ from allauth.socialaccount.models import SocialAccount, SocialToken
 from django.db import transaction
 from django.utils import timezone
 
+DEFAULT_ACCESS_TOKEN_TTL = datetime.timedelta(seconds=900)
+
 
 class TokenRefreshError(Exception):
     """Raised when an OAuth2 access token could not be refreshed."""
@@ -69,6 +71,9 @@ def _refresh(token, token_url):
     if data.get("refresh_token"):
         token.token_secret = data["refresh_token"]
 
-    if data.get("expires_in") is not None:
-        token.expires_at = timezone.now() + datetime.timedelta(seconds=int(data["expires_in"]))
+    expires_in = data.get("expires_in")
+    if expires_in is not None:
+        token.expires_at = timezone.now() + datetime.timedelta(seconds=int(expires_in))
+    else:
+        token.expires_at = timezone.now() + DEFAULT_ACCESS_TOKEN_TTL
     token.save()

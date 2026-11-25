@@ -1,35 +1,231 @@
 import csv
 import io
 import logging
+import math
 from collections import defaultdict
+from typing import NamedTuple
 
+import httpx
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_create_or_update_cases
 from commcare_connect.connect_id_client import send_message
 from commcare_connect.connect_id_client.models import Message
-from commcare_connect.opportunity.models import OpportunityAccess
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.itertools import batched
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .const import DEFAULT_BUILDING_COUNT
-from .models import SRID, WorkArea
+from .const import DEFAULT_BUILDING_COUNT, WORK_AREA_OVERLAP_ERROR_LIMIT, WORK_AREA_OVERLAP_RATIO_TOLERANCE
+from .exceptions import ImportRejected
+from .models import SRID, ImplementationArea, OvertureRelease, WorkArea, WorkAreaGroup
+from .overlap import Overlap, find_overlapping_work_areas
+from .serializers import group_centroid_property
 
 logger = logging.getLogger(__name__)
+
+# Overture's catalog, whose "latest" member names the newest release. Kept here beside its only
+# reader rather than in const.py, which is for constants more than one module shares.
+OVERTURE_CATALOG_URL = "https://stac.overturemaps.org/catalog.json"
+OVERTURE_CATALOG_TIMEOUT = 10
 
 
 def get_import_area_cache_key(opp_id: int):
     return f"work_area_import_lock_{opp_id}"
 
 
+def get_implementation_area_import_cache_key(opp_id: int):
+    return f"implementation_area_import_lock_{opp_id}"
+
+
 def get_cluster_area_cache_lock_key(opp_id: int):
     return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
-class WorkAreaCSVImporter:
+def _overlap_percent(ratio):
+    """The overlap as a percentage, rounded up to one decimal so a pair just over the limit never
+    reads as exactly at it (5.04% shows as 5.1%, not 5.0%). Floating-point noise in an exact ratio
+    (0.06000000000002) is ignored with the same tolerance as the limit, so it doesn't round up a
+    whole step, and every rejected pair reads as more than the limit."""
+    return f"{math.ceil((ratio - WORK_AREA_OVERLAP_RATIO_TOLERANCE) * 1000) / 10:.1f}"
+
+
+class RowWard(NamedTuple):
+    line_num: int
+    ward: str
+
+
+def parse_lon_lat_centroid(value):
+    """Parse a "lon lat" string into a centroid Point."""
+    lon, lat = value.strip().split()
+    return GEOSGeometry(f"POINT({lon} {lat})", srid=SRID)
+
+
+class BaseAreaCSVImporter:
+    model = None
+    HEADERS = {}
+
+    def __init__(self, opp_id, csv_source):
+        self.opp_id = opp_id
+        self.csv_source = csv_source
+        self.errors = defaultdict(list)
+        self.created_count = 0
+        self.total_rows = 0
+        # pk -> (CSV line number, saved instance) for every row this import inserted.
+        self.inserted = {}
+
+    def run(self):
+        # Inserts happen in one transaction, so a rejected file saves nothing. Under the API's
+        # ATOMIC_REQUESTS this is a savepoint, and only the importer's work is undone.
+        try:
+            self._validate_all_rows(self.csv_source)
+            with transaction.atomic():
+                self._lock()
+                self._validate_against_existing()
+                if self.errors:
+                    raise ImportRejected
+                self._stream_and_insert(self.csv_source)
+                self._validate_inserted()
+                if self.errors:
+                    raise ImportRejected
+                self._after_insert()
+        except ImportRejected:
+            pass
+        return self._result()
+
+    def _result(self):
+        if self.errors:
+            return {"errors": self.errors}
+        return {"created": self.created_count}
+
+    def _validate_all_rows(self, f):
+        """Raises ImportRejected if the headers have errors."""
+        f.seek(0)
+        reader = csv.DictReader(f)
+        self._normalize_headers(reader)
+        if not self._validate_headers(reader):
+            raise ImportRejected
+        for line_num, row in enumerate(reader, start=2):
+            self._process_row(line_num, row)
+        if not self.total_rows:
+            self._add_error(1, _("The file has no data rows. Add at least one row below the header."))
+        self._after_rows()
+
+    def _stream_and_insert(self, f):
+        f.seek(0)
+        reader = csv.DictReader(f)
+        self._normalize_headers(reader)
+        self._prepare_insert()
+        batch = []
+        batch_size = 5000
+        for line_num, row in enumerate(reader, start=2):
+            batch.append((line_num, self.build_instance(row)))
+            if len(batch) >= batch_size:
+                self._insert_batch(batch)
+                batch = []
+        if batch:
+            self._insert_batch(batch)
+
+    def _insert_batch(self, batch):
+        line_nums, instances = zip(*batch)
+        # On PostgreSQL bulk_create sets the primary keys on the instances it returns.
+        created = self.model.objects.bulk_create(instances)
+        self.inserted.update((instance.pk, (line_num, instance)) for line_num, instance in zip(line_nums, created))
+        self.created_count += len(created)
+
+    def _canonical_headers(self):
+        return list(self.HEADERS.values())
+
+    def _normalize_headers(self, reader):
+        canonical_by_lower = {header.lower(): header for header in self._canonical_headers()}
+        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
+
+    def _validate_headers(self, reader):
+        headers = set(reader.fieldnames or [])
+        missing = set(self.HEADERS.values()) - headers
+        if missing:
+            self._add_error(1, _("Missing columns: ") + ", ".join(sorted(missing)))
+            return False
+        return True
+
+    def _process_row(self, line_num, row):
+        self.total_rows += 1
+        for processor in self.get_processors():
+            processor(row, line_num)
+
+    # --- hooks for subclasses ---
+    def _lock(self):
+        pass
+
+    def _after_rows(self):
+        pass
+
+    def _validate_against_existing(self):
+        """Checks against saved rows, run under the lock so they can't change before the insert."""
+        pass
+
+    def _prepare_insert(self):
+        pass
+
+    def _validate_inserted(self):
+        """Checks that need the rows saved. Errors added here undo the insert."""
+        pass
+
+    def _after_insert(self):
+        pass
+
+    def get_processors(self):
+        raise NotImplementedError
+
+    def build_instance(self, row):
+        raise NotImplementedError
+
+    # --- shared geometry parsing/validation ---
+    def get_boundary(self, row):
+        boundary_wkt = row.get(self.HEADERS.get("boundary"), "").strip()
+        return GEOSGeometry(boundary_wkt, srid=SRID)
+
+    def get_centroid(self, row):
+        return parse_lon_lat_centroid(row.get(self.HEADERS.get("centroid")))
+
+    def _validate_centroid(self, row, line_num):
+        invalid = True
+        if row:
+            try:
+                self.get_centroid(row)
+                invalid = False
+            except (ValueError, GEOSException, TypeError, AttributeError):
+                pass
+        if invalid:
+            self._add_error(line_num, _("Centroid must be in 'lon lat' format"))
+        return invalid
+
+    def _validate_boundary(self, row, line_num):
+        invalid = True
+        if row:
+            try:
+                geom = self.get_boundary(row)
+                if geom.geom_type == "Polygon":
+                    invalid = False
+            except (GEOSException, ValueError, TypeError, AttributeError):
+                pass
+        if invalid:
+            self._add_error(line_num, _("Invalid WKT format for Boundary(Polygon)."))
+        return invalid
+
+    def _add_error(self, line, message):
+        self.errors[message].append(line)
+
+
+class WorkAreaCSVImporter(BaseAreaCSVImporter):
+    model = WorkArea
     HEADERS = {
         "slug": "Area Slug",
         "ward": "Ward",
@@ -41,97 +237,166 @@ class WorkAreaCSVImporter:
         "lga": "LGA",
         "state": "State",
     }
+    OPTIONAL_HEADERS = {"implementation_area": "Implementation Area"}
+
+    # Optional column, not part of HEADERS: only "Work Area Group Name" is exempt from
+    # the required-columns check, since a sheet is allowed to omit it entirely.
+    GROUP_NAME_HEADER = "Work Area Group Name"
 
     def __init__(self, opp_id, csv_source):
-        self.opp_id = opp_id
-        self.csv_source = csv_source
-        self.errors = defaultdict(list)
-        self.seen_slugs = set()
-        self.created_count = 0
-        self.existing_slugs = set()
+        super().__init__(opp_id, csv_source)
+        # Slug -> line number of every row with a valid slug.
+        self.seen_slugs = {}
+        self.implementation_area_map = {}
+        self.has_group_names = False
+        # Group name -> (line number, ward) of each of its rows.
+        self.group_rows = defaultdict(list)
+        self.existing_groups = {}
+        self.group_cache = {}
+        self.rows_with_group = 0
 
-    def _validate_all_rows(self, f):
-        f.seek(0)
-        reader = csv.DictReader(f)
-        self._normalize_headers(reader)
-        if not self._validate_headers(reader):
-            return False
+    def _canonical_headers(self):
+        return [*super()._canonical_headers(), self.GROUP_NAME_HEADER]
 
-        self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
-        for line_num, row in enumerate(reader, start=2):
-            self._process_row(line_num, row)
+    def _lock(self):
+        Opportunity.objects.select_for_update(no_key=True).get(pk=self.opp_id)
 
-        self.existing_slugs.clear()
-        return len(self.errors) == 0
-
-    def _stream_and_insert(self, f):
-        f.seek(0)
-        reader = csv.DictReader(f)
-        self._normalize_headers(reader)
-        batch = []
-        batch_size = 5000
-
-        for row in reader:
-            buildings, visits = self.get_building_and_visit(row)
-            extra_props = self.get_extra_properties(row)
-            batch.append(
-                WorkArea(
-                    opportunity_id=self.opp_id,
-                    slug=self.get_slug(row),
-                    ward=self.get_ward(row),
-                    centroid=self.get_centroid(row),
-                    boundary=self.get_boundary(row),
-                    building_count=buildings,
-                    expected_visit_count=visits,
-                    target_population=self.get_target_population(row),
-                    case_properties={
-                        "lga": extra_props.get("lga"),
-                        "state": extra_props.get("state"),
-                    },
-                )
-            )
-
-            if len(batch) >= batch_size:
-                WorkArea.objects.bulk_create(batch)
-                self.created_count += batch_size
-                batch = []
-
-        if batch:
-            WorkArea.objects.bulk_create(batch)
-            self.created_count += len(batch)
-
-    def run(self):
-        # --- First pass: validation only ---
-        if not self._validate_all_rows(self.csv_source):
-            return self._result()  # abort if any row is invalid
-
-        # --- Second pass: streaming batch insert ---
-        self._stream_and_insert(self.csv_source)
-
-        return self._result()
-
-    def _result(self):
-        if self.errors:
-            return {"errors": self.errors}
-        return {"created": self.created_count}
-
-    def _normalize_headers(self, reader):
-        canonical_by_lower = {header.lower(): header for header in self.HEADERS.values()}
-        reader.fieldnames = [canonical_by_lower.get((h or "").lower(), h) for h in (reader.fieldnames or [])]
-
-    def _validate_headers(self, reader):
-        headers = set(reader.fieldnames or [])
-        missing = set(self.HEADERS.values()) - headers
-        if missing:
-            self._add_error(
-                1,
-                f"Missing columns: {', '.join(sorted(missing))}",
-            )
-            return False
-        return True
+    def _validate_against_existing(self):
+        existing = WorkArea.objects.filter(opportunity_id=self.opp_id, slug__in=self.seen_slugs)
+        for line_num in sorted(self.seen_slugs[slug] for slug in existing.values_list("slug", flat=True)):
+            self._add_error(line_num, _("Area slug already exists for this opportunity"))
+        self._validate_group_wards()
 
     def _process_row(self, line_num, row):
-        processors = [
+        super()._process_row(line_num, row)
+        group_name = self.get_group_name(row)
+        if group_name:
+            self.rows_with_group += 1
+            ward = self.get_ward(row)
+            # A missing ward is already its own row error.
+            if ward:
+                self.group_rows[group_name].append(RowWard(line_num, ward))
+
+    def _after_rows(self):
+        self.has_group_names = self.total_rows > 0 and self.rows_with_group == self.total_rows
+        if 0 < self.rows_with_group < self.total_rows:
+            self._add_error(
+                1,
+                _("Work Area Group Name is required for all Work Areas, or must be omitted for all."),
+            )
+
+    def _validate_group_wards(self):
+        """Every row of a group must give the group's ward: its saved ward, or for a new group the
+        ward of its first row, spelled the same way."""
+        if not self.group_rows:
+            return
+        self.existing_groups = {
+            group.name: group
+            for group in WorkAreaGroup.objects.filter(opportunity_id=self.opp_id, name__in=self.group_rows)
+        }
+        for group_name, rows in self.group_rows.items():
+            group = self.existing_groups.get(group_name)
+            group_ward = group.ward if group else rows[0].ward
+            for line_num, ward in rows:
+                if ward != group_ward:
+                    message = _(
+                        "Work Area Group %(group)s is in ward %(group_ward)s, but these rows give ward %(ward)s. "
+                        "Correct the ward, or use a different group name."
+                    ) % {"group": group_name, "group_ward": group_ward, "ward": ward}
+                    self._add_error(line_num, message)
+
+    def _prepare_insert(self):
+        self.implementation_area_map = dict(
+            ImplementationArea.objects.filter(opportunity_id=self.opp_id).values_list("name", "id")
+        )
+        self.group_cache = self._resolve_work_area_groups() if self.has_group_names else {}
+
+    def _resolve_work_area_groups(self):
+        group_cache = dict(self.existing_groups)
+        missing = [name for name in self.group_rows if name not in group_cache]
+        if missing:
+            # A new group takes the ward of its first row, as that row spelled it.
+            created = WorkAreaGroup.objects.bulk_create(
+                [
+                    WorkAreaGroup(opportunity_id=self.opp_id, name=name, ward=self.group_rows[name][0].ward)
+                    for name in missing
+                ]
+            )
+            group_cache.update({group.name: group for group in created})
+        return group_cache
+
+    def _validate_inserted(self):
+        if not self.inserted:
+            return
+        overlaps = find_overlapping_work_areas(list(self.inserted))
+        # One extra row tells whether there are more than the limit, without counting every pair.
+        listed = list(overlaps[: WORK_AREA_OVERLAP_ERROR_LIMIT + 1])
+        for overlap in listed[:WORK_AREA_OVERLAP_ERROR_LIMIT]:
+            self._add_overlap_error(overlap)
+        if len(listed) > WORK_AREA_OVERLAP_ERROR_LIMIT:
+            hidden = overlaps.count() - WORK_AREA_OVERLAP_ERROR_LIMIT
+            self._add_error(1, _("%(count)d more overlaps not shown.") % {"count": hidden})
+
+    def _add_overlap_error(self, overlap: Overlap):
+        # Messages name work areas by slug: API callers get only the message, and their "rows" are
+        # lines of a CSV built from the JSON list. The upload page shows the rows beside it.
+        line_num, work_area = self.inserted[overlap["pk"]]
+        values = {
+            "slug": work_area.slug,
+            "other_slug": overlap["other_slug"],
+            "percent": _overlap_percent(overlap["ratio"]),
+        }
+        other = self.inserted.get(overlap["other_id"])
+        if other is None:
+            message = _(
+                "Work Area %(slug)s overlaps existing Work Area %(other_slug)s by %(percent)s%%. "
+                "Correct the boundary or remove the work area, then upload again."
+            )
+            line_nums = [line_num]
+        else:
+            message = _(
+                "Work Areas %(slug)s and %(other_slug)s overlap each other by %(percent)s%%. "
+                "Correct one boundary or remove one work area, then upload again."
+            )
+            line_nums = [line_num, other[0]]
+        for line in line_nums:
+            self._add_error(line, message % values)
+
+    def _after_insert(self):
+        if not self.group_cache:
+            return
+        moved_ids = self._update_group_centroids()
+        if moved_ids:
+            # After commit, so the task reads the new centre points; a rollback discards it. Robust, so
+            # a broker error is logged instead of failing an upload that is already saved. A lambda
+            # rather than partial: Django names a failed robust callback by its __qualname__.
+            opp_id = self.opp_id
+            transaction.on_commit(
+                lambda: sync_work_area_group_cases.delay(opportunity_id=opp_id, work_area_group_ids=moved_ids),
+                robust=True,
+            )
+
+    def _update_group_centroids(self):
+        """Recompute the centre points of the groups the file names, and return the IDs of the
+        existing ones that moved."""
+        # Compared as the "wag_centroid" string HQ gets, so a move too small to show in it needs no sync.
+        before = {group.pk: group_centroid_property(group) for group in self.existing_groups.values()}
+        for work_area_group in self.group_cache.values():
+            work_area_group.update_centroid(commit=False)
+        WorkAreaGroup.objects.bulk_update(self.group_cache.values(), ["centroid"])
+        return sorted(
+            group.pk for group in self.existing_groups.values() if group_centroid_property(group) != before[group.pk]
+        )
+
+    def get_implementation_area_name(self, row):
+        header = self.OPTIONAL_HEADERS["implementation_area"]
+        return (row.get(header) or "").strip()
+
+    def get_implementation_area_id(self, row):
+        return self.implementation_area_map.get(self.get_implementation_area_name(row))
+
+    def get_processors(self):
+        return [
             self._validate_slug,
             self._validate_ward,
             self._validate_centroid,
@@ -139,20 +404,27 @@ class WorkAreaCSVImporter:
             self._validate_numbers,
             self._validate_extra_properties,
         ]
-        for processor in processors:
-            processor(
-                row,
-                line_num,
-            )
 
-    def get_boundary(self, row):
-        boundary_wkt = row.get(self.HEADERS.get("boundary"), "").strip()
-        return GEOSGeometry(boundary_wkt, srid=SRID)
-
-    def get_centroid(self, row):
-        lon, lat = row.get(self.HEADERS.get("centroid")).strip().split()
-        wkt = f"POINT({lon} {lat})"
-        return GEOSGeometry(wkt, srid=SRID)
+    def build_instance(self, row):
+        buildings, visits = self.get_building_and_visit(row)
+        extra_props = self.get_extra_properties(row)
+        return WorkArea(
+            opportunity_id=self.opp_id,
+            slug=self.get_slug(row),
+            ward=self.get_ward(row),
+            centroid=self.get_centroid(row),
+            boundary=self.get_boundary(row),
+            building_count=buildings,
+            expected_visit_count=visits,
+            target_population=self.get_target_population(row),
+            work_area_group=self.group_cache.get(self.get_group_name(row)),
+            implementation_area_id=self.get_implementation_area_id(row),
+            implementation_area_name=self.get_implementation_area_name(row),
+            case_properties={
+                "lga": extra_props.get("lga"),
+                "state": extra_props.get("state"),
+            },
+        )
 
     def get_ward(self, row):
         ward = (row.get(self.HEADERS.get("ward")) or "").strip()
@@ -161,6 +433,10 @@ class WorkAreaCSVImporter:
     def get_slug(self, row):
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         return strip_tags(slug)
+
+    def get_group_name(self, row):
+        group_name = (row.get(self.GROUP_NAME_HEADER) or "").strip()
+        return strip_tags(group_name)
 
     def _get_int(self, row, key):
         raw = row.get(self.HEADERS.get(key))
@@ -173,11 +449,9 @@ class WorkAreaCSVImporter:
         return self._get_int(row, "target_population")
 
     def get_extra_properties(self, row):
-        lga = row.get(self.HEADERS.get("lga"))
-        state = row.get(self.HEADERS.get("state"))
         return {
-            "lga": lga,
-            "state": state,
+            "lga": row.get(self.HEADERS.get("lga")),
+            "state": row.get(self.HEADERS.get("state")),
         }
 
     def _validate_slug(self, row, line_num):
@@ -187,11 +461,21 @@ class WorkAreaCSVImporter:
             self._add_error(line_num, _("Area slug is required and it should be unique."))
         elif slug in self.seen_slugs:
             self._add_error(line_num, _("Duplicate Area slug in file"))
-        elif slug in self.existing_slugs:
-            self._add_error(line_num, _("Area slug already exists for this opportunity"))
         else:
-            self.seen_slugs.add(slug)
+            self.seen_slugs[slug] = line_num
             invalid = False
+        return invalid
+
+    def _validate_boundary(self, row, line_num):
+        invalid = super()._validate_boundary(row, line_num)
+        # A ring that crosses itself still parses as a Polygon, but PostGIS can't measure it: its
+        # area reads as 0 and intersecting it raises, which would abort the import.
+        if not invalid and not self.get_boundary(row).valid:
+            self._add_error(
+                line_num,
+                _("Boundary is not a valid polygon, e.g. its edges cross. Fix the boundary, then upload again."),
+            )
+            invalid = True
         return invalid
 
     def _validate_ward(self, row, line_num):
@@ -200,33 +484,6 @@ class WorkAreaCSVImporter:
             invalid = False
         else:
             self._add_error(line_num, _("Ward is required."))
-        return invalid
-
-    def _validate_centroid(self, row, line_num):
-        invalid = True
-        if row:
-            try:
-                self.get_centroid(row)
-                invalid = False
-            except (ValueError, GEOSException, TypeError, AttributeError):
-                pass
-
-        if invalid:
-            self._add_error(line_num, _("Centroid must be in 'lon lat' format"))
-        return invalid
-
-    def _validate_boundary(self, row, line_num):
-        invalid = True
-        if row:
-            try:
-                geom = self.get_boundary(row)
-                if geom.geom_type == "Polygon":
-                    invalid = False
-            except (GEOSException, ValueError, TypeError):
-                pass
-        if invalid:
-            self._add_error(line_num, _("Invalid WKT format for Boundary(Polygon)."))
-
         return invalid
 
     def _validate_numbers(self, row, line_num):
@@ -238,7 +495,6 @@ class WorkAreaCSVImporter:
                 invalid = False
         except ValueError:
             pass
-
         if invalid:
             self._add_error(
                 line_num, _("Building count, Expected visit count, and Target population must be positive integers")
@@ -252,17 +508,11 @@ class WorkAreaCSVImporter:
             self._add_error(line_num, _("Missing values for properties: ") + ", ".join(missing_values))
         return bool(missing_values)
 
-    def _add_error(self, line, message):
-        self.errors[message].append(line)
-
 
 @celery_app.task(bind=True)
 def import_work_areas_task(self, opp_id, file_name):
     logger.info(f"Starting Work Area import for opportunity: {opp_id}")
     try:
-        if WorkArea.objects.filter(opportunity_id=opp_id).exists():
-            return {"errors": {_("Work Areas already exist for this opportunity"): [0]}}
-
         with default_storage.open(file_name, "rb") as f:
             content = io.StringIO(f.read().decode("utf-8-sig"))
         importer = WorkAreaCSVImporter(opp_id, content)
@@ -273,10 +523,82 @@ def import_work_areas_task(self, opp_id, file_name):
         default_storage.delete(file_name)
 
 
+class ImplementationAreaCSVImporter(BaseAreaCSVImporter):
+    model = ImplementationArea
+    HEADERS = {
+        "name": "Implementation Area Name",
+        "centroid": "Centroid",
+        "boundary": "Boundary",
+    }
+
+    def __init__(self, opp_id, csv_source):
+        super().__init__(opp_id, csv_source)
+        # Name -> line number of every row with a valid name.
+        self.seen_names = {}
+
+    def _validate_against_existing(self):
+        existing = ImplementationArea.objects.filter(opportunity_id=self.opp_id, name__in=self.seen_names)
+        for line_num in sorted(self.seen_names[name] for name in existing.values_list("name", flat=True)):
+            self._add_error(line_num, _("Implementation Area Name already exists for this opportunity"))
+
+    def get_processors(self):
+        return [self._validate_name, self._validate_centroid, self._validate_boundary]
+
+    def get_name(self, row):
+        return strip_tags((row.get(self.HEADERS.get("name")) or "").strip())
+
+    def _validate_name(self, row, line_num):
+        invalid = True
+        name = self.get_name(row)
+        if not name:
+            self._add_error(line_num, _("Implementation Area Name is required and should be unique."))
+        elif name in self.seen_names:
+            self._add_error(line_num, _("Duplicate Implementation Area Name in file"))
+        else:
+            self.seen_names[name] = line_num
+            invalid = False
+        return invalid
+
+    def build_instance(self, row):
+        return ImplementationArea(
+            opportunity_id=self.opp_id,
+            name=self.get_name(row),
+            centroid=self.get_centroid(row),
+            boundary=self.get_boundary(row),
+        )
+
+    def _after_insert(self):
+        # Link work areas that were uploaded before their implementation area existed (e.g. after
+        # the areas were cleared and re-uploaded): match each unlinked work area by stored name.
+        for area in ImplementationArea.objects.filter(opportunity_id=self.opp_id):
+            WorkArea.objects.filter(
+                opportunity_id=self.opp_id,
+                implementation_area__isnull=True,
+                implementation_area_name=area.name,
+            ).update(implementation_area=area)
+
+
+@celery_app.task(bind=True)
+def import_implementation_areas_task(self, opp_id, file_name):
+    logger.info(f"Starting Implementation Area import for opportunity: {opp_id}")
+    try:
+        if ImplementationArea.objects.filter(opportunity_id=opp_id).exists():
+            return {"errors": {_("Implementation Areas already exist for this opportunity"): [0]}}
+
+        with default_storage.open(file_name, "rb") as f:
+            content = io.StringIO(f.read().decode("utf-8-sig"))
+        importer = ImplementationAreaCSVImporter(opp_id, content)
+        return importer.run()
+    finally:
+        cache.delete(get_implementation_area_import_cache_key(opp_id))
+        default_storage.delete(file_name)
+
+
 class WorkAreaCSVExporter:
     HEADERS = {
         **WorkAreaCSVImporter.HEADERS,
-        "group_name": "Work Area Group Name",
+        "implementation_area": WorkAreaCSVImporter.OPTIONAL_HEADERS["implementation_area"],
+        "group_name": WorkAreaCSVImporter.GROUP_NAME_HEADER,
     }
 
     FIELD_MAP = {
@@ -289,6 +611,7 @@ class WorkAreaCSVExporter:
         "target_population": lambda wa: wa.target_population,
         "lga": lambda wa: (wa.case_properties or {}).get("lga", ""),
         "state": lambda wa: (wa.case_properties or {}).get("state", ""),
+        "implementation_area": lambda wa: wa.implementation_area_name,
         "group_name": lambda wa: wa.group_name or "",
     }
 
@@ -332,8 +655,133 @@ def send_work_area_assignment_notification(opportunity_access_id: int):
     send_message(message)
 
 
+@celery_app.task(
+    autoretry_for=(CommCareHQAPIException,),
+    retry_kwargs={"max_retries": 5},
+    # Retries wait a random time up to 30 s, then 1, 2, 4 and 5 minutes, to outlast an HQ deploy.
+    retry_backoff=30,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def sync_work_area_group_cases(opportunity_id: int, work_area_group_ids: list[int]):
+    """Send the groups' centre points to the HQ cases of their assigned work areas.
+
+    The centre points are read when the task runs, so a late or repeated run sends the current ones.
+    Cases go 100 per request. A request HQ rejects is logged and skipped, since sending it again
+    gets the same answer; any other HQ error retries the task, which sends every request again.
+    That is safe, because each update only sets a value.
+    """
+    work_areas = list(
+        WorkArea.objects.filter(
+            opportunity_id=opportunity_id,
+            work_area_group_id__in=work_area_group_ids,
+            opportunity_access__isnull=False,
+            case_id__isnull=False,
+        )
+        .select_related("work_area_group")
+        # Only what the payload needs, so the work area boundaries aren't loaded.
+        .only("case_id", "work_area_group__centroid")
+        .order_by("pk")
+    )
+    if not work_areas:
+        return
+
+    opportunity = Opportunity.objects.select_related("api_key__hq_server", "api_key__user", "deliver_app").get(
+        pk=opportunity_id
+    )
+    api_key = opportunity.api_key
+    if not (api_key and api_key.hq_server and opportunity.deliver_app):
+        logger.warning(
+            "Not syncing group centre points to HQ for opportunity %s: it has no HQ API key or deliver app",
+            opportunity_id,
+        )
+        return
+
+    # Only wag_centroid is sent: HQ leaves the case's other fields and properties as they are.
+    cases_data = [
+        {
+            "case_id": work_area.case_id,
+            "properties": {"wag_centroid": group_centroid_property(work_area.work_area_group)},
+        }
+        for work_area in work_areas
+    ]
+    for batch in batched(cases_data, HQ_CASE_BULK_CHUNK_SIZE):
+        try:
+            bulk_create_or_update_cases(
+                api_key=api_key, domain=opportunity.deliver_app.cc_domain, cases_data=list(batch)
+            )
+        except CommCareHQAPIException as error:
+            if not _rejected_by_hq(error):
+                raise
+            logger.error(
+                "HQ rejected group centre points for %d cases of opportunity %s (groups %s): %s",
+                len(batch),
+                opportunity_id,
+                work_area_group_ids,
+                error,
+            )
+
+
+def _rejected_by_hq(error: CommCareHQAPIException) -> bool:
+    """Whether HQ answered with a client error other than 429, so the same request would fail again."""
+    cause = error.__cause__
+    return (
+        isinstance(cause, httpx.HTTPStatusError)
+        and cause.response.is_client_error
+        and cause.response.status_code != httpx.codes.TOO_MANY_REQUESTS
+    )
+
+
 @celery_app.task()
 def cluster_work_areas_task(opp_id, max_buildings=DEFAULT_BUILDING_COUNT):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
         WorkAreaGrouper(opp_id, max_buildings=max_buildings).cluster_work_areas()
+
+
+@celery_app.task(
+    autoretry_for=(httpx.HTTPError,),
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def update_overture_release():
+    """
+    Point OvertureRelease at Overture's newest release. Runs daily.
+
+    A catalog that cannot be reached is transient, so it is retried; once the retries are spent the
+    recorded release is left alone for the next run, which costs slightly older footprints rather
+    than a map that can draw none.
+    """
+    catalog = fetch_overture_catalog()
+    if catalog is None:
+        return
+
+    release = catalog.get("latest")
+    if release is not None and release == OvertureRelease.current():
+        return
+
+    try:
+        OvertureRelease.set_current(release)
+    except ValidationError:
+        logger.error(
+            "Overture's catalog reported %r as its latest release, but it does not match the expected release format",
+            release,
+        )
+
+
+def fetch_overture_catalog():
+    response = httpx.get(OVERTURE_CATALOG_URL, timeout=OVERTURE_CATALOG_TIMEOUT)
+    response.raise_for_status()
+
+    try:
+        catalog = response.json()
+    except ValueError:
+        catalog = None
+
+    if not isinstance(catalog, dict):
+        logger.error("Overture's catalog at %s did not answer with a JSON object", OVERTURE_CATALOG_URL)
+        return None
+
+    return catalog

@@ -1,0 +1,56 @@
+{% extends "organization/directory/listing_base.html" %}
+{% load i18n %}
+{% block title %}
+  {% translate "Contacts" %}
+{% endblock title %}
+{% block heading %}
+  {% translate "Contacts" %}
+{% endblock heading %}
+{% block subheading %}
+  {% translate "Every named contact across the Connect network." %}
+{% endblock subheading %}
+{% block header_actions %}
+  {% if export_task_id %}
+    <div hx-get="{% url 'organization_directory:contact_export_status' export_task_id %}"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+      <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-brand-indigo"></div>
+      <span class="sr-only">{% translate "Loading..." %}</span>
+    </div>
+  {% else %}
+    <div x-data="{ showContactExportModal: false }">
+      <button type="button"
+              class="button-icon shadow-sm"
+              @click="showContactExportModal = true"
+              aria-label="{% translate 'Export contacts' %}">
+        <i class="fa-solid fa-download text-brand-deep-purple"
+           aria-hidden="true"></i>
+      </button>
+      {% url 'organization_directory:contact_export' as contact_export_url %}
+      {% querystring as export_qs %}
+      {% translate "Exports the contacts matching the current filters." as export_help_text %}
+      {% include "components/worker_page/export_modal.html" with modal_name="showContactExportModal" modal_title=_("Export Contacts") export_url=contact_export_url|add:export_qs export_form=export_form export_help_text=export_help_text %}
+    </div>
+  {% endif %}
+  <button type="button"
+          class="button button-md primary-dark"
+          hx-get="{% url 'organization_directory:contact_create' %}?next={{ request.get_full_path|urlencode }}"
+          hx-target="#directory-form">
+    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+    {% translate "Add Contact" %}
+  </button>
+{% endblock header_actions %}
+{% block filters %}
+  <div class="min-w-48">{{ filter.form.countries }}</div>
+  <div class="min-w-48">{{ filter.form.organization_status }}</div>
+  {% include "organization/directory/toggle_filter.html" with field=filter.form.main_poc %}
+  {% include "organization/directory/toggle_filter.html" with field=filter.form.archived %}
+  {% include "organization/directory/toggle_filter.html" with field=filter.form.organization_test %}
+{% endblock filters %}
+{% block content %}
+  {{ block.super }}
+  {% include "components/confirm_modal.html" %}
+{% endblock content %}
+{% block result_count %}
+  {% blocktranslate count counter=result_count %}{{ counter }} contact{% plural %}{{ counter }} contacts{% endblocktranslate %}
+{% endblock result_count %}

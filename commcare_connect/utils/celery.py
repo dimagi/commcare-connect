@@ -1,4 +1,7 @@
+import mimetypes
+
 from celery.result import AsyncResult
+from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from django.shortcuts import render
 from django_tables2.export import TableExport
@@ -9,13 +12,46 @@ CELERY_TASK_PENDING = "PENDING"
 CELERY_TASK_FAILURE = "FAILURE"
 
 
-def set_task_progress(task, message, is_complete=False):
-    task.update_state(state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS, meta={"message": message})
+def set_task_progress(task, message, is_complete=False, is_error=False, errors=None):
+    """`errors` is an optional {description: [row numbers]} mapping for file imports that
+    validate the whole file before writing, so callers can list what stopped the import."""
+    task.update_state(
+        state=CELERY_TASK_SUCCESS if is_complete else CELERY_TASK_IN_PROGRESS,
+        meta={"message": message, "is_error": is_error, "errors": errors or {}},
+    )
 
 
 def get_task_progress_message(task):
-    if task.info and "message" in task.info:
-        return task.info["message"]
+    # A failed task carries the exception in `info` rather than the progress meta, and testing
+    # `"message" in <exception>` raises rather than returning False.
+    info = task.info
+    if isinstance(info, dict):
+        return info.get("message")
+
+
+def get_task_progress(request, task_id, ownership_check=None):
+    """
+    Build the progress dict for a Celery task, running an optional ownership check.
+    ownership_check: callable(request, task_meta) -> None
+        Should raise 404 / PermissionDenied if the requester may not view this task.
+    """
+    task = AsyncResult(task_id)
+    task_meta = task._get_task_meta()
+    status = task_meta.get("status")
+
+    if ownership_check and status != CELERY_TASK_PENDING:
+        ownership_check(request, task_meta)
+
+    result = task_meta.get("result")
+    progress = {
+        "complete": status == CELERY_TASK_SUCCESS,
+        "message": get_task_progress_message(task),
+        # Set by imports that report per-row errors; see set_task_progress.
+        "errors": result.get("errors") or {} if isinstance(result, dict) else {},
+    }
+    if status == CELERY_TASK_FAILURE:
+        progress["error"] = result
+    return progress
 
 
 def render_export_status(
@@ -25,27 +61,8 @@ def render_export_status(
     export_status_url,
     ownership_check=None,
 ):
-    """
-    Generic export status renderer.
-    ownership_check: callable(request, task_meta) -> None
-        Should raise 404 / PermissionDenied if invalid.
-    """
-
-    task = AsyncResult(task_id)
-    task_meta = task._get_task_meta()
-    status = task_meta.get("status")
-
-    if ownership_check and status != CELERY_TASK_PENDING:
-        ownership_check(request, task_meta)
-
-    progress = {
-        "complete": status == CELERY_TASK_SUCCESS,
-        "message": get_task_progress_message(task),
-    }
-
-    if status == CELERY_TASK_FAILURE:
-        progress["error"] = task_meta.get("result")
-
+    """Generic export status renderer."""
+    progress = get_task_progress(request, task_id, ownership_check)
     return render(
         request,
         "components/upload_progress_bar.html",
@@ -75,10 +92,9 @@ def download_export_file(
         raise Http404("Export file not found")
 
     export_format = saved_filename.split(".")[-1]
-    from commcare_connect.utils.storages import ExportS3Boto3Storage
 
     try:
-        export_file = ExportS3Boto3Storage().open(saved_filename)
+        export_file = get_export_storage().open(saved_filename)
     except FileNotFoundError as e:
         raise Http404("Export file no longer available") from e
 
@@ -86,5 +102,29 @@ def download_export_file(
         export_file,
         as_attachment=True,
         filename=f"{filename_without_ext}.{export_format}",
-        content_type=TableExport.FORMATS.get(export_format),
+        content_type=export_content_type(saved_filename),
     )
+
+
+def get_export_storage():
+    """Where generated export files are written and read back from.
+
+    The S3 backend comes from django-storages, which is a production-only dependency, so local
+    and CI environments fall back to the default storage instead of failing on import. Saving and
+    downloading both go through here so they always agree on where a file lives. The import stays
+    inside the function for the same reason: at module level it would break importing this module
+    wherever the package is absent.
+    """
+    try:
+        from commcare_connect.utils.storages import ExportS3Boto3Storage
+    except ModuleNotFoundError:
+        # Only a missing package falls back. An ImportError from inside the module is a real
+        # breakage, and silently writing exports elsewhere would defeat the S3 lifecycle rule
+        # that cleans this prefix up.
+        return default_storage
+    return ExportS3Boto3Storage()
+
+
+def export_content_type(filename):
+    export_format = filename.rsplit(".", 1)[-1]
+    return TableExport.FORMATS.get(export_format) or mimetypes.guess_type(filename)[0] or "application/octet-stream"

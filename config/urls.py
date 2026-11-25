@@ -1,19 +1,22 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django.views import defaults as default_views
 from django.views.generic import TemplateView
+from django.views.i18n import JavaScriptCatalog
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
-from commcare_connect.organization.views import organization_create
+from commcare_connect.health import views as health_views
+from commcare_connect.organization.urls import directory_urlpatterns
+from commcare_connect.organization.views import no_organization, organization_create
+from commcare_connect.solicitation.urls import marketplace_urlpatterns
 
 from . import views
 
 urlpatterns = [
     path("", include("commcare_connect.prelogin.urls")),
-    path("home/", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     # Marketing robots.txt + sitemap.xml. Exported (verbatim) from
     # dimagi-internal/connect-prelogin into templates/prelogin/ by
@@ -32,6 +35,11 @@ urlpatterns = [
         name="sitemap_xml",
     ),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    # Health checks: see commcare_connect/health/README.md
+    re_path(r"^up/?$", health_views.up, name="up"),
+    re_path(r"^export/up/?$", health_views.up, name="export_up"),
+    path("status/", health_views.HealthCheck.as_view(), name="health_check"),
+    path("status/<slug:subset>/", health_views.HealthCheck.as_view(), name="health_check_subset"),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
@@ -40,9 +48,13 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     # Your stuff: custom urls includes go here
     path("register/organization/", organization_create, name="organization_create"),
+    path("no-organization/", no_organization, name="no_organization"),
+    path("organizations/", include((directory_urlpatterns, "organization_directory"))),
+    path("solicitations/", include((marketplace_urlpatterns, "marketplace"))),
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
+    path("a/<slug:org_slug>/solicitations/", include("commcare_connect.solicitation.urls", namespace="solicitation")),
     path(
         "a/<slug:org_slug>/microplanning/", include("commcare_connect.microplanning.urls", namespace="microplanning")
     ),
@@ -50,6 +62,8 @@ urlpatterns = [
     path("admin_reports/", include("commcare_connect.reports.urls")),
     path("hq/", include("commcare_connect.commcarehq.urls", namespace="commcarehq")),
     path("export/", include("commcare_connect.data_export.urls", namespace="data_export")),
+    # Translations for strings in static JS files: gettext(), interpolate() etc.
+    path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # API URLS

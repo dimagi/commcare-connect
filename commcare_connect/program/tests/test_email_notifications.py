@@ -67,11 +67,11 @@ def test_send_program_invited_notification(mock_send_mail):
 @patch("commcare_connect.program.tasks.send_mail_async.delay")
 def test_send_opportunity_created_notification(mock_send_mail):
     nm_org = ProgramManagerOrgWithUsersFactory()
-    managed_opportunity = OpportunityFactory(
+    pm_opportunity = OpportunityFactory(
         organization=nm_org,
     )
 
-    send_opportunity_created_email(managed_opportunity.id)
+    send_opportunity_created_email(pm_opportunity.id)
 
     assert mock_send_mail.called
     call_kwargs = mock_send_mail.call_args[1]
@@ -140,39 +140,24 @@ class TestMonthlyDeliveryReminderEmail:
 @pytest.mark.django_db
 @patch("commcare_connect.program.tasks.send_mail_async")
 class TestOpportunityExpiryReminderEmails:
-    def test_sends_reminder_7_days_before_end_date(self, mock_send_mail):
+    @pytest.mark.parametrize("days_left", [7, 3])
+    def test_sends_reminder_before_end_date(self, mock_send_mail, days_left):
         pm_org = ProgramManagerOrgWithUsersFactory()
         program = ProgramFactory(organization=pm_org)
         OpportunityFactory(
             program=program,
-            end_date=datetime.date.today() + datetime.timedelta(days=7),
+            end_date=datetime.date.today() + datetime.timedelta(days=days_left),
             active=True,
         )
 
-        send_opportunity_expiry_reminder_emails(7)
+        send_opportunity_expiry_reminder_emails(days_left)
 
         assert mock_send_mail.delay.called
         call_kwargs = mock_send_mail.delay.call_args[1]
-        expected_date = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%d %b %Y")
+        expected_date = (datetime.date.today() + datetime.timedelta(days=days_left)).strftime("%d %b %Y")
         assert expected_date in call_kwargs["subject"]
         for email in pm_org.get_member_emails():
             assert email in call_kwargs["recipient_list"]
-
-    def test_sends_reminder_3_days_before_end_date(self, mock_send_mail):
-        pm_org = ProgramManagerOrgWithUsersFactory()
-        program = ProgramFactory(organization=pm_org)
-        OpportunityFactory(
-            program=program,
-            end_date=datetime.date.today() + datetime.timedelta(days=3),
-            active=True,
-        )
-
-        send_opportunity_expiry_reminder_emails(3)
-
-        assert mock_send_mail.delay.called
-        call_kwargs = mock_send_mail.delay.call_args[1]
-        expected_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime("%d %b %Y")
-        assert expected_date in call_kwargs["subject"]
 
     def test_no_email_sent_for_non_expiring_opportunity(self, mock_send_mail):
         pm_org = ProgramManagerOrgWithUsersFactory()

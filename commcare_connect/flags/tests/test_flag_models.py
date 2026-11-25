@@ -1,5 +1,7 @@
 import pytest
 from django.core.cache import cache
+from django.test import RequestFactory
+from waffle import flag_is_active
 
 from commcare_connect.flags.models import Flag
 from commcare_connect.flags.tests.factories import FlagFactory
@@ -104,3 +106,44 @@ class TestFlagModel:
         active_flags = Flag.active_flags_for_user(user, include_role_flags=True)
         assert active_flags.count() == 2
         assert set(active_flags) == {staff_flag, everyone_flag}
+
+
+@pytest.mark.django_db
+class TestFlagIsActiveRequest:
+    def setup_method(self):
+        cache.clear()
+
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_flag_active_for_request_scoped_to_object(self, organization, opportunity, scope):
+        flag = FlagFactory()
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization)
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = organization
+
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+            request.opportunity = opportunity
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+            request.opportunity = opportunity
+        elif scope == "organization":
+            flag.organizations.add(organization)
+
+        assert flag_is_active(request, flag.name) is True
+
+    def test_flag_not_scoped_to_request_context_is_inactive(self, organization, opportunity):
+        flag = FlagFactory()
+        flag.organizations.add(OrganizationFactory())
+
+        request = RequestFactory().get("/")
+        request.user = UserFactory()
+        request.org = organization
+        request.opportunity = opportunity
+
+        assert flag_is_active(request, flag.name) is False

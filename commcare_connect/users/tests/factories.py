@@ -1,10 +1,10 @@
 from django.contrib.auth import get_user_model
-from factory import Faker, RelatedFactory, Sequence, SubFactory
+from factory import Faker, LazyAttribute, RelatedFactory, Sequence, SubFactory
 from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.organization.models import (
-    LLOEntity,
+    Contact,
     Organization,
     OrganizationInvite,
     UserOrganizationMembership,
@@ -13,8 +13,10 @@ from commcare_connect.users.models import ConnectIDUserLink
 
 
 class UserFactory(DjangoModelFactory):
-    username = Sequence(lambda n: "user_%d" % n)
-    email = Faker("email")
+    username = Sequence(lambda n: f"user_{n}")
+    # Derived from the unique username: a random Faker email can repeat within a run, and with
+    # get-or-create on email a repeat silently returns an existing user instead of a new one.
+    email = LazyAttribute(lambda o: f"{o.username}@example.com")
     name = Faker("name")
     password = Password(
         Faker(
@@ -34,7 +36,7 @@ class UserFactory(DjangoModelFactory):
 
 class ConnectIdUserLinkFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
-    commcare_username = Sequence(lambda n: "commcare_user_%d" % n)
+    commcare_username = Sequence(lambda n: f"commcare_user_{n}")
     hq_server = SubFactory(HQServerFactory)
 
     class Meta:
@@ -43,7 +45,7 @@ class ConnectIdUserLinkFactory(DjangoModelFactory):
 
 
 class MobileUserFactory(DjangoModelFactory):
-    username = Sequence(lambda n: "mobile_user_%d" % n)
+    username = Sequence(lambda n: f"mobile_user_{n}")
     name = Faker("name")
 
     class Meta:
@@ -51,19 +53,20 @@ class MobileUserFactory(DjangoModelFactory):
         django_get_or_create = ["username"]
 
 
-class LLOEntityFactory(DjangoModelFactory):
-    name = Faker("company")
-    short_name = Faker("company_suffix")
-
-    class Meta:
-        model = LLOEntity
-
-
 class OrganizationFactory(DjangoModelFactory):
     name = Faker("company")
 
     class Meta:
         model = Organization
+
+
+class ContactFactory(DjangoModelFactory):
+    organization = SubFactory(OrganizationFactory)
+    name = Faker("name")
+    email = Sequence(lambda n: f"contact{n}@example.com")
+
+    class Meta:
+        model = Contact
 
 
 class MembershipFactory(DjangoModelFactory):
@@ -101,9 +104,5 @@ class ProgramManagerOrganisationFactory(DjangoModelFactory):
         model = Organization
 
 
-class ProgramManagerOrgWithUsersFactory(ProgramManagerOrganisationFactory):
-    admin = RelatedFactory(MembershipFactory, "organization", role="admin")
-    member = RelatedFactory(MembershipFactory, "organization", role="member")
-
-    class Meta:
-        skip_postgeneration_save = True
+class ProgramManagerOrgWithUsersFactory(OrgWithUsersFactory):
+    program_manager = True

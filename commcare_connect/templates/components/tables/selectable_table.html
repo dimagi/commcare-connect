@@ -3,23 +3,30 @@
   window.selectableTable = (opts = {}) => {
     const selector = opts.selector || 'input[name="row_select"]';
 
+    const selectableBoxes = () => Array.from(document.querySelectorAll(selector))
+      .filter((c) => !c.disabled && (!opts.exclude || c.value !== opts.exclude));
+
     return {
       selected: [],
       selectAll: false,
 
       toggleSelectAll() {
         this.selectAll = !this.selectAll;
-        this.selected = this.selectAll
-          ? Array.from(document.querySelectorAll(selector))
-            .filter((c) => !c.disabled && (!opts.exclude || c.value !== opts.exclude))
-            .map((c) => c.value)
-          : [];
+        this.selected = this.selectAll ? selectableBoxes().map((c) => c.value) : [];
       },
 
       updateSelectAll() {
-        const total = Array.from(document.querySelectorAll(selector))
-          .filter((c) => !c.disabled && (!opts.exclude || c.value !== opts.exclude)).length;
+        const total = this.selectableRowCount();
         this.selectAll = total > 0 && this.selected.length === total;
+      },
+
+      clearSelection() {
+        this.selected = [];
+        this.selectAll = false;
+      },
+
+      selectableRowCount() {
+        return selectableBoxes().length;
       },
     };
   };

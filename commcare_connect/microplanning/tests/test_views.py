@@ -3,24 +3,49 @@ from __future__ import annotations
 import csv as csv_mod
 import io
 import json
-from datetime import date, datetime, timedelta, timezone
+import uuid
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from django import forms
+from django.contrib.gis.geos import Point, Polygon
+from django.core.cache import cache
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.db.utils import OperationalError
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
+from commcare_connect.microplanning.const import (
+    NO_CHILDREN_WORK_AREA_UNIT_SLUG,
+    SEARCH_KIND_FILTERS,
+    SERVICE_DELIVERY_UNIT_SLUG,
+)
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
+from commcare_connect.microplanning.forms import AssignmentModeForm
+from commcare_connect.microplanning.models import (
+    SRID,
+    ImplementationArea,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaStatus,
+)
+from commcare_connect.microplanning.tasks import (
+    WorkAreaCSVExporter,
+    get_implementation_area_import_cache_key,
+    get_import_area_cache_key,
+)
 from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
@@ -28,12 +53,42 @@ from commcare_connect.microplanning.tests.factories import (
 from commcare_connect.microplanning.views import (
     MAX_EXCLUDE_WORK_AREAS,
     MAX_UNASSIGN_WORK_AREAS,
+    InaccessibilityReviewAction,
     UserVisitVectorLayer,
     get_metrics_for_microplanning,
+    is_adding_work_areas,
 )
-from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
+from commcare_connect.opportunity.models import BlobMeta, DeliverUnit, VisitValidationStatus
+from commcare_connect.opportunity.tests.factories import (
+    DeliverUnitFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentUnitFactory,
+    UserVisitFactory,
+)
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+
+def work_area_at(opportunity, x, y, **kwargs):
+    """A 1x1 degree work area with its lower-left corner at (x, y).
+
+    The factory gives every work area the same fixed boundary, so a filter could never be seen to
+    narrow an extent; the bounds tests place each one deliberately instead.
+    """
+    return WorkAreaFactory(
+        opportunity=opportunity,
+        boundary=Polygon(((x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1), (x, y)), srid=SRID),
+        centroid=Point(x + 0.5, y + 0.5, srid=SRID),
+        **kwargs,
+    )
+
+
+@pytest.fixture
+def work_area_import_lock(opportunity):
+    """The cache key that marks the opportunity's work area import as running. Deleted after the test."""
+    lock_key = get_import_area_cache_key(opportunity.id)
+    yield lock_key
+    cache.delete(lock_key)
 
 
 class BaseMicroplanningFlagTest:
@@ -91,6 +146,50 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert "An import for this opportunity is already in progress." in str(messages[1])
         assert mock_delay.call_count == 1  # No new task
 
+    @pytest.mark.usefixtures("work_area_import_lock")
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    def test_upload_accepted_when_work_areas_exist(self, mock_delay, client, org_user_admin, opportunity, csv_file):
+        WorkAreaFactory(opportunity=opportunity)
+        mock_delay.return_value = MagicMock(id="task-456")
+        client.force_login(org_user_admin)
+
+        url = self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id)
+        response = client.post(url, {"csv_file": csv_file})
+
+        assert mock_delay.call_count == 1
+        assert "Work Area upload has been started." in str(list(response.wsgi_request._messages)[0])
+
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
+    def test_an_import_that_ends_at_once_leaves_no_lock(
+        self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
+    ):
+        def import_that_ends_at_once(**kwargs):
+            cache.delete(work_area_import_lock)  # as the task does when it ends
+            return MagicMock(id="task-789")
+
+        mock_delay.side_effect = import_that_ends_at_once
+        client.force_login(org_user_admin)
+
+        client.post(
+            self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id),
+            {"csv_file": csv_file},
+        )
+
+        assert cache.get(work_area_import_lock) is None
+
+    @patch("commcare_connect.microplanning.views.import_work_areas_task.delay", side_effect=RuntimeError("no broker"))
+    def test_lock_and_file_are_released_when_the_import_cannot_be_queued(
+        self, mock_delay, client, org_user_admin, opportunity, csv_file, work_area_import_lock
+    ):
+        client.force_login(org_user_admin)
+        url = self.get_url(org_slug=opportunity.organization.slug, opp_id=opportunity.opportunity_id)
+
+        with pytest.raises(RuntimeError):
+            client.post(url, {"csv_file": csv_file})
+
+        assert cache.get(work_area_import_lock) is None
+        assert default_storage.listdir("")[1] == []
+
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     @patch("commcare_connect.microplanning.views.import_work_areas_task.delay")
     def test_flagged_permission_required(self, mock_delay, client, org_user_admin, opportunity, csv_file):
@@ -104,19 +203,408 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         assert response.status_code == 404
         assert mock_delay.call_count == 0
 
+    def test_download_template_row_matches_headers(self, client, org_user_admin, opportunity):
+        url = self.get_url(opportunity.organization.slug, opportunity.opportunity_id)
+        client.force_login(org_user_admin)
+
+        response = client.get(url)
+
+        rows = list(csv_mod.reader(io.StringIO(response.content.decode())))
+        header_row, sample_row = rows[0], rows[1]
+        assert header_row[-1] == "Work Area Group Name"
+        assert len(sample_row) == len(header_row)
+
+
+@pytest.mark.django_db
+class TestAreaUploadRefusals(BaseMicroplanningFlagTest):
+    # Upload page name, task the view queues, and the cache key that marks that import as running.
+    UPLOADS = {
+        "work-areas": ("upload_work_areas", "import_work_areas_task", get_import_area_cache_key),
+        "implementation-areas": (
+            "upload_implementation_areas",
+            "import_implementation_areas_task",
+            get_implementation_area_import_cache_key,
+        ),
+    }
+    NOT_CSV = "Unsupported file format. Please upload a CSV file."
+    RUNNING = "An import for this opportunity is already in progress."
+
+    @pytest.fixture(autouse=True)
+    def clear_import_locks(self, opportunity):
+        yield
+        for _, _, get_lock_key in self.UPLOADS.values():
+            cache.delete(get_lock_key(opportunity.id))
+
+    @pytest.mark.parametrize(
+        ("upload", "state", "content_type", "message"),
+        [
+            pytest.param("work-areas", None, "text/plain", NOT_CSV, id="work-areas-not-csv"),
+            pytest.param("implementation-areas", None, "text/plain", NOT_CSV, id="implementation-areas-not-csv"),
+            pytest.param("work-areas", "import-running", "text/csv", RUNNING, id="work-areas-import-running"),
+            pytest.param(
+                "implementation-areas", "import-running", "text/csv", RUNNING, id="implementation-areas-running"
+            ),
+            pytest.param(
+                "implementation-areas",
+                "areas-exist",
+                "text/csv",
+                "Implementation Areas already exist for this opportunity.",
+                id="implementation-areas-exist",
+            ),
+        ],
+    )
+    def test_upload_refused(self, client, org_user_admin, opportunity, upload, state, content_type, message):
+        url_name, task_name, get_lock_key = self.UPLOADS[upload]
+        if state == "import-running":
+            cache.set(get_lock_key(opportunity.id), "running")
+        if state == "areas-exist":
+            ImplementationAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+        url = reverse(
+            f"microplanning:{url_name}",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        with patch(f"commcare_connect.microplanning.views.{task_name}.delay") as delay:
+            csv_file = SimpleUploadedFile("areas.csv", b"a,b\n1,2\n", content_type=content_type)
+            response = client.post(url, {"csv_file": csv_file})
+
+        delay.assert_not_called()
+        assert [str(message) for message in response.wsgi_request._messages] == [message]
+
+
+@pytest.mark.django_db
+class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
+    CSV_CONTENT = (
+        b"Implementation Area Name,Centroid,Boundary\nWard North,77.1 28.6,POLYGON((77 28,78 28,78 29,77 29,77 28))\n"
+    )
+
+    @pytest.fixture
+    def csv_file(self):
+        return SimpleUploadedFile("ia.csv", self.CSV_CONTENT, content_type="text/csv")
+
+    def get_url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:upload_implementation_areas",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    @patch("commcare_connect.microplanning.views.import_implementation_areas_task.delay")
+    def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
+        mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"csv_file": csv_file})
+        assert response.status_code == 302
+        assert "task_id=" in response.url
+        assert "area_type=implementation_area" in response.url
+        mock_delay.assert_called_once()
+        assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None
+
+    def test_template_download(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response["Content-Disposition"] == 'attachment; filename="implementation_area_template.csv"'
+        assert b"Implementation Area Name" in response.content
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        assert client.get(url).status_code == 404
+
+    def test_status_modal_renders_implementation_area_title(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b"Upload Implementation Area" in response.content
+        assert (
+            reverse(
+                "microplanning:upload_implementation_areas",
+                kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+            ).encode()
+            in response.content
+        )
+
+    def test_clear_deletes_areas_and_keeps_work_area_names(self, client, org_user_admin, organization, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, implementation_area=area, implementation_area_name="Ward North"
+        )
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:clear_implementation_areas",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        response = client.post(url)
+
+        assert response.status_code == 200
+        assert response["HX-Redirect"]
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+        work_area.refresh_from_db()
+        assert work_area.implementation_area_id is None
+        assert work_area.implementation_area_name == "Ward North"
+
+
+@pytest.mark.django_db
+class TestImplementationAreasGeojson(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:implementation_areas_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_feature_per_area(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        features = response.json()["implementation_area_features"]
+        assert len(features) == 1
+        feature = features[0]
+        assert feature["type"] == "Feature"
+        assert feature["properties"]["name"] == "Ward North"
+        assert feature["geometry"]["type"] == "Polygon"
+        assert feature["geometry"]["coordinates"]
+
+    def test_empty_when_none(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == 200
+        assert response.json() == {"implementation_area_features": []}
+
+    def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="Mine")
+        other_opp = OpportunityFactory(organization=organization)
+        ImplementationAreaFactory(opportunity=other_opp, name="Theirs")
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        names = [f["properties"]["name"] for f in response.json()["implementation_area_features"]]
+        assert names == ["Mine"]
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        assert client.get(self.url(organization.slug, opportunity.opportunity_id)).status_code == 404
+
+
+@pytest.mark.django_db
+class TestWorkAreasGroupGeojson(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:workareas_group_geojson",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_a_feature_per_group(self, client, org_user_admin, organization, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=None)
+        client.force_login(org_user_admin)
+
+        payload = client.get(self.url(organization.slug, opportunity.opportunity_id)).json()
+
+        assert [f["properties"]["group_id"] for f in payload["group_features"]] == [group.id]
+
+    def test_serves_outlines_only(self, client, org_user_admin, organization, opportunity):
+        """Bounds moved to workareas_bounds, which applies the map's filters; this view is outlines."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        payload = client.get(self.url(organization.slug, opportunity.opportunity_id)).json()
+
+        assert set(payload) == {"group_features"}
+
+
+@pytest.mark.django_db
+class TestWorkAreaBoundsView(BaseMicroplanningFlagTest):
+    """The map's auto-zoom source: the extent of whatever the current filters match."""
+
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:workareas_bounds",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def get_bounds(self, client, org_user_admin, organization, opportunity, params=None):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id), data=params or {})
+        assert response.status_code == 200
+        return response.json()["bounds"]
+
+    def test_unfiltered_covers_every_work_area(self, client, org_user_admin, organization, opportunity):
+        work_area_at(opportunity, 10, 20)
+        work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
+
+        assert bounds == [10, 20, 41, 51]
+
+    def test_status_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+        work_area_at(opportunity, 40, 50, status=WorkAreaStatus.NOT_VISITED)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.VISITED})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_work_area_group_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area_at(opportunity, 10, 20, work_area_group=group)
+        work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area_group": group.id})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_implementation_area_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity)
+        work_area_at(opportunity, 10, 20, implementation_area=implementation_area)
+        work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(
+            client, org_user_admin, organization, opportunity, {"implementation_area": implementation_area.id}
+        )
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_work_area_filter_returns_just_that_area(self, client, org_user_admin, organization, opportunity):
+        """The search box's path: picking one work area sets the hidden `work_area` filter."""
+        target = work_area_at(opportunity, 10, 20)
+        work_area_at(opportunity, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity, {"work_area": target.id})
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_visit_date_filter_narrows_the_extent(self, client, org_user_admin, organization, opportunity):
+        """The uservisit-joining, DISTINCT-ed case — duplicate rows must not disturb the extent."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        in_range = work_area_at(opportunity, 10, 20)
+        out_of_range = work_area_at(opportunity, 40, 50)
+        # Two visits on the in-range area, so the join duplicates its row.
+        for _ in range(2):
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=access.user,
+                work_area=in_range,
+                visit_date=datetime(2025, 6, 1, tzinfo=UTC),
+            )
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=access.user,
+            work_area=out_of_range,
+            visit_date=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+
+        bounds = self.get_bounds(
+            client,
+            org_user_admin,
+            organization,
+            opportunity,
+            {"start_date": "2025-05-01", "end_date": "2025-07-01"},
+        )
+
+        assert bounds == [10, 20, 11, 21]
+
+    def test_no_matches_returns_null(self, client, org_user_admin, organization, opportunity):
+        work_area_at(opportunity, 10, 20, status=WorkAreaStatus.VISITED)
+
+        bounds = self.get_bounds(
+            client, org_user_admin, organization, opportunity, {"status": WorkAreaStatus.INACCESSIBLE}
+        )
+
+        assert bounds is None
+
+    def test_no_work_areas_returns_null(self, client, org_user_admin, organization, opportunity):
+        assert self.get_bounds(client, org_user_admin, organization, opportunity) is None
+
+    def test_scoped_to_opportunity(self, client, org_user_admin, organization, opportunity):
+        work_area_at(opportunity, 10, 20)
+        other_opp = OpportunityFactory(organization=organization)
+        work_area_at(other_opp, 40, 50)
+
+        bounds = self.get_bounds(client, org_user_admin, organization, opportunity)
+
+        assert bounds == [10, 20, 11, 21]
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        assert client.get(self.url(organization.slug, opportunity.opportunity_id)).status_code == 404
+
 
 @pytest.mark.django_db
 class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
     def url(self, org_slug: str, opp_id: str):
         return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
 
-    def test_success(self, client: Client, settings, organization, org_user_admin, opportunity):
+    @pytest.fixture
+    def get_home(self, client: Client, settings, organization, org_user_admin, opportunity):
+        """Return a function that fetches the home page as an org admin."""
         settings.MAPBOX_TOKEN = "test-mapbox-token"
         client.force_login(org_user_admin)
-        response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+        return lambda: client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
+
+    def test_success(self, get_home):
+        response = get_home()
 
         assert response.status_code == 200
         assert any(t.name == "microplanning/home.html" for t in response.templates)
+
+    def test_the_buildings_tooltip_names_the_release_on_screen(self, get_home, overture_release):
+        response = get_home()
+
+        # Read literally by x-tooltip.raw, so the release has to appear as itself rather than as
+        # escape sequences a reader would see verbatim.
+        assert f"Overture Maps Foundation, release {overture_release}." in response.content.decode()
+
+    def test_no_buildings_control_without_a_release(self, get_home, release):
+        """With no release there is no archive to point the browser at, so the toggle goes away."""
+        release(None)
+        response = get_home()
+
+        body = response.content.decode()
+        assert response.status_code == 200
+        assert "show-buildings-toggle" not in body
+
+    @pytest.mark.parametrize(
+        "expected_snippets",
+        [
+            # The "Select Work Area" sidebar detail panel labels the selected area's Implementation Area.
+            pytest.param(
+                [b"Implementation Area", b"selectedFeature.implementation_area_name"],
+                id="sidebar_shows_implementation_area_label",
+            ),
+            # The map registers a hover handler on the Implementation Area outline layer
+            # (highlight + name tooltip).
+            pytest.param(
+                [b"'mousemove', 'implementation-areas-outline'", b"implementationAreaPopup"],
+                id="map_wires_implementation_area_hover",
+            ),
+            # A failed Implementation Areas fetch surfaces a visible toast, not just a console error.
+            pytest.param(
+                [b"Failed to load Implementation Areas."],
+                id="map_shows_toast_on_implementation_area_fetch_error",
+            ),
+            # The filter sidebar exposes a switch to show/hide the Implementation Area layer.
+            pytest.param(
+                [b"Show Implementation Areas", b"showImplementationAreas"],
+                id="map_has_implementation_area_layer_toggle",
+            ),
+        ],
+    )
+    def test_page_includes_implementation_area_ui(self, get_home, expected_snippets):
+        response = get_home()
+        for snippet in expected_snippets:
+            assert snippet in response.content
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_flag_disabled(self, client: Client, organization, org_user_admin, opportunity):
@@ -128,6 +616,122 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         client.force_login(org_user_member)
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
+
+    def test_upload_and_clear_buttons_toggle_on_implementation_areas(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        url = self.url(organization.slug, str(opportunity.opportunity_id))
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is True
+        assert response.context["implementation_areas_present"] is False
+        assert b"Upload Implementation Area" in response.content
+        # The Clear Data entry is always rendered; with nothing uploaded it is disabled and says so.
+        assert b"Clear Implementation Areas" in response.content
+        assert (
+            response.context["clear_data_details"]["implementation_areas"]
+            == "No Implementation Areas have been uploaded yet."
+        )
+
+        ImplementationAreaFactory(opportunity=opportunity)
+
+        response = client.get(url)
+        assert response.context["show_implementation_area_btn"] is False
+        assert response.context["implementation_areas_present"] is True
+        assert b"Upload Implementation Area" not in response.content
+        assert b"Clear Implementation Areas" in response.content
+        assert response.context["clear_data_details"]["implementation_areas"] == "1 record"
+
+    def test_auto_poll_targets_matching_status_endpoint(
+        self, client: Client, settings, organization, org_user_admin, opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        base = self.url(organization.slug, str(opportunity.opportunity_id))
+        wa_status = reverse(
+            "microplanning:import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        ia_status = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        wa_response = client.get(f"{base}?task_id=abc")
+        assert wa_response.context["import_status_url"] == wa_status
+
+        ia_response = client.get(f"{base}?task_id=abc&area_type=implementation_area")
+        assert ia_response.context["import_status_url"] == ia_status
+        assert ia_status.encode() in ia_response.content
+
+    @pytest.fixture
+    def get_import_status(self, client: Client, org_user_admin, opportunity):
+        """Return a function that fetches the work area upload modal as an org admin: for an upload
+        that finished with task_result, or before any upload."""
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:import_status",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+        def fetch(task_result=None):
+            if task_result is None:
+                return client.get(url)
+            with mock.patch("commcare_connect.microplanning.views.AsyncResult") as async_result:
+                task = async_result.return_value
+                task.ready.return_value = True
+                task.successful.return_value = True
+                task.result = task_result
+                return client.get(url, {"task_id": str(uuid.uuid4())})
+
+        return fetch
+
+    def test_import_status_renders_errors_as_table(self, get_import_status):
+        response = get_import_status(task_result={"errors": {"Centroid must be in 'lon lat' format": [4, 17]}})
+
+        content = response.content.decode()
+        assert "Centroid must be in &#x27;lon lat&#x27; format" in content  # autoescaped, not marked safe
+        assert "4, 17" in content
+        assert "Error Description" in content
+
+    @pytest.mark.parametrize(
+        ("has_work_areas", "upload_running", "shown", "labels"),
+        [
+            pytest.param(False, False, True, ["Upload Work Areas"], id="no-work-areas"),
+            pytest.param(True, False, True, ["Add Work Areas"], id="work-areas-exist"),
+            pytest.param(True, True, False, [], id="upload-running"),
+        ],
+    )
+    def test_upload_button(
+        self, get_home, opportunity, work_area_import_lock, has_work_areas, upload_running, shown, labels
+    ):
+        if has_work_areas:
+            WorkAreaFactory(opportunity=opportunity)
+        if upload_running:
+            cache.set(work_area_import_lock, "task-id")
+
+        response = get_home()
+
+        content = response.content.decode()
+        assert response.context["show_area_btn"] is shown
+        assert [text for text in ("Upload Work Areas", "Add Work Areas") if text in content] == labels
+
+    @pytest.mark.parametrize(
+        ("existing", "task_result", "title"),
+        [
+            pytest.param(1, None, "Add Work Areas", id="before-adding"),
+            pytest.param(3, {"created": 3}, "Upload Work Areas", id="after-first-upload"),
+            pytest.param(4, {"created": 3}, "Add Work Areas", id="after-adding"),
+        ],
+    )
+    def test_import_status_title(self, get_import_status, opportunity, existing, task_result, title):
+        WorkAreaFactory.create_batch(size=existing, opportunity=opportunity)
+
+        response = get_import_status(task_result=task_result)
+
+        assert response.context["modal_title"] == title
 
     def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
         """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""
@@ -163,6 +767,73 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
 
         assert response.context["show_rerun_clear_work_area_groups_btn"] is False
         assert response.context["show_workarea_groups_btn"] is True
+
+    @pytest.mark.parametrize(
+        ("has_work_area", "assigned", "expected"),
+        [
+            pytest.param(True, False, True, id="unassigned-areas-present"),
+            pytest.param(True, True, False, id="areas-assigned"),
+            pytest.param(False, False, False, id="no-areas"),
+        ],
+    )
+    def test_clear_work_areas_button_visibility(
+        self, client, org_user_admin, opportunity, has_work_area, assigned, expected
+    ):
+        if has_work_area:
+            access = OpportunityAccessFactory(opportunity=opportunity) if assigned else None
+            WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_clear_work_areas_btn"] is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("existing", "created", "expected"),
+    [
+        pytest.param(0, 0, False, id="no-work-areas"),
+        pytest.param(2, 0, True, id="work-areas-exist"),
+        pytest.param(3, 3, False, id="first-upload-saved"),
+        pytest.param(5, 3, True, id="upload-added-to-existing"),
+    ],
+)
+def test_is_adding_work_areas(opportunity, existing, created, expected):
+    WorkAreaFactory.create_batch(size=existing, opportunity=opportunity)
+
+    assert is_adding_work_areas(opportunity_id=opportunity.id, created=created) is expected
+
+
+@pytest.mark.django_db
+class TestMissingDeliverUnitsBanner(BaseMicroplanningFlagTest):
+    @pytest.mark.parametrize("view_name", ["microplanning:microplanning_home", "microplanning:coverage_progress"])
+    @pytest.mark.parametrize(
+        "create_deliver_units, expected_quoted",
+        [
+            pytest.param(False, '"services_delivery_unit", "no-children-wa"', id="both-missing"),
+            pytest.param(True, "", id="both-present"),
+        ],
+    )
+    def test_missing_deliver_units_banner(
+        self,
+        client: Client,
+        settings,
+        organization,
+        org_user_admin,
+        opportunity,
+        view_name,
+        create_deliver_units,
+        expected_quoted,
+    ):
+        if create_deliver_units:
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG)
+            DeliverUnitFactory(app=opportunity.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(org_user_admin)
+        response = client.get(reverse(view_name, args=(organization.slug, str(opportunity.opportunity_id))))
+        assert response.context["quoted_missing_deliver_units"] == expected_quoted
+        assert (SERVICE_DELIVERY_UNIT_SLUG.encode() in response.content) == (not create_deliver_units)
 
 
 @pytest.mark.django_db
@@ -201,34 +872,19 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
             work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
         )
         assert work_area.work_area_group is None
-        new_expected_visit_count = 25
         client.force_login(org_user_admin)
-        response = client.post(
-            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
-            {
-                "expected_visit_count": new_expected_visit_count,
-                "work_area_group": group.id,
-                "reason": "Boundary adjusted",
-            },
+        self._assert_update_applied(
+            client=client,
+            opportunity=opportunity,
+            work_area=work_area,
+            group=group,
+            initial_event_count=initial_event_count,
         )
-        assert response.status_code == 204
-        trigger = json.loads(response["HX-Trigger"])
-        assert "workAreaUpdated" in trigger
-        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
-        assert trigger["workAreaUpdated"]["group_id"] == group.id
-        assert trigger["workAreaUpdated"]["group_name"] == group.name
         assert mock_sync.call_count == 1
-
-        work_area.refresh_from_db()
-        assert work_area.expected_visit_count == new_expected_visit_count
-        assert work_area.work_area_group == group
-
-        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
-        assert events.count() == initial_event_count + 1
-        event = events.last()
-        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
-        assert event.expected_visit_count == new_expected_visit_count
-        assert event.work_area_group == group
+        assert group.centroid is None
+        group.refresh_from_db()
+        assert group.centroid.x == 77.5
+        assert group.centroid.y == 28.5
 
     @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
@@ -347,6 +1003,76 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.status == expected_status
 
+    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    def test_successful_group_field_update_for_centroid_recalculation(
+        self, mock_sync, client, org_user_admin, opportunity
+    ):
+        group_1 = WorkAreaGroupFactory(opportunity=opportunity, name="group_1")
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            expected_visit_count=10,
+            opportunity_access=access,
+            work_area_group=group_1,
+        )
+        work_area.work_area_group.update_centroid()
+
+        initial_event_count = (
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
+        )
+        assert work_area.work_area_group
+
+        group_2 = WorkAreaGroupFactory(opportunity=opportunity, name="group_2")
+
+        client.force_login(org_user_admin)
+        self._assert_update_applied(
+            client=client,
+            opportunity=opportunity,
+            work_area=work_area,
+            group=group_2,
+            initial_event_count=initial_event_count,
+        )
+        assert mock_sync.call_count == 1
+
+        assert group_1.centroid.x == 77.5
+        assert group_1.centroid.y == 28.5
+        group_1.refresh_from_db()
+        assert group_1.centroid is None
+
+        assert group_2.centroid is None
+        group_2.refresh_from_db()
+        assert group_2.centroid.x == 77.5
+        assert group_2.centroid.y == 28.5
+
+    def _assert_update_applied(self, *, client, opportunity, work_area, group, initial_event_count):
+        """Post a visit count and group change, then check the response, the work area and its history."""
+        new_expected_visit_count = 25
+        response = client.post(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
+            {
+                "expected_visit_count": new_expected_visit_count,
+                "work_area_group": group.id,
+                "reason": "Boundary adjusted",
+            },
+        )
+        assert response.status_code == 204
+        trigger = json.loads(response["HX-Trigger"])
+        assert "workAreaUpdated" in trigger
+        assert trigger["workAreaUpdated"]["expected_visit_count"] == new_expected_visit_count
+        assert trigger["workAreaUpdated"]["group_id"] == group.id
+        assert trigger["workAreaUpdated"]["group_name"] == group.name
+
+        work_area.refresh_from_db()
+        assert work_area.expected_visit_count == new_expected_visit_count
+        assert work_area.work_area_group == group
+
+        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
+        assert events.count() == initial_event_count + 1
+        event = events.last()
+        assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
+        assert event.expected_visit_count == new_expected_visit_count
+        assert event.work_area_group == group
+
 
 @pytest.mark.django_db
 class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
@@ -376,6 +1102,10 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert response.status_code in (200, 204)
         assert len(captured_qs) == 1
         return captured_qs[0]
+
+    def test_implementation_area_name_is_a_tile_field(self):
+        # Exposed in the vector tile so the map sidebar can show it for the selected work area.
+        assert "implementation_area_name" in microplanning_views.WorkAreaVectorLayer.tile_fields
 
     def test_unfiltered_returns_all_work_areas(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
@@ -426,6 +1156,7 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
         assert row.group_id == group.id
         assert row.group_name == group.name
         assert row.assignee_name == access.user.name
+        assert row.assignee_phone == access.user.phone_number
 
 
 @pytest.mark.django_db
@@ -456,6 +1187,15 @@ class TestWorkAreaMapFilterSet:
     def _filter_ids(self, params, opportunity):
         qs = WorkArea.objects.filter(opportunity=opportunity)
         return set(WorkAreaMapFilterSet(params, queryset=qs, opportunity=opportunity).qs.values_list("id", flat=True))
+
+    def test_search_kinds_map_to_real_filters(self):
+        """Each search kind must name a filter this filter set actually declares.
+
+        The map JS applies the ``filter_name`` stamped on each search option verbatim, so a filter
+        renamed here without updating SEARCH_KIND_FILTERS would silently stop filtering the map
+        rather than raise anywhere.
+        """
+        assert set(SEARCH_KIND_FILTERS.values()) <= set(WorkAreaMapFilterSet.base_filters)
 
     @pytest.mark.parametrize(
         "statuses, expected_attrs",
@@ -522,6 +1262,67 @@ class TestWorkAreaMapFilterSet:
         empty_qs = WorkArea.objects.none()
         fs = WorkAreaMapFilterSet({}, queryset=empty_qs)
         assert fs.filters["assignee"].queryset.count() == 0
+
+    def test_implementation_area_filter(self, opportunity, work_areas):
+        impl_area = ImplementationAreaFactory(opportunity=opportunity)
+        work_areas.wa_visited.implementation_area = impl_area
+        work_areas.wa_visited.save(update_fields=["implementation_area"])
+
+        result = self._filter_ids({"implementation_area": [impl_area.id]}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_work_area_group_filter(self, opportunity, work_areas):
+        other_group = WorkAreaGroupFactory(opportunity=opportunity)
+        wa_other_group = WorkAreaFactory(opportunity=opportunity, work_area_group=other_group)
+
+        result = self._filter_ids({"work_area_group": [work_areas.group.id]}, opportunity)
+        assert result == {work_areas.wa_not_visited.id, work_areas.wa_visited.id}
+        assert wa_other_group.id not in result
+
+    def test_payment_unit_filter(self, opportunity, work_areas):
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        deliver_unit = DeliverUnitFactory(payment_unit=payment_unit)
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=work_areas.access.user,
+            work_area=work_areas.wa_visited,
+            deliver_unit=deliver_unit,
+        )
+
+        result = self._filter_ids({"payment_unit": payment_unit.id}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_unassigned_only_is_a_checkbox_with_no_unknown_option(self, opportunity):
+        fs = WorkAreaMapFilterSet({}, queryset=WorkArea.objects.none(), opportunity=opportunity)
+        widget = fs.form.fields["unassigned_only"].widget
+        assert isinstance(widget, forms.CheckboxInput)
+
+    def test_unassigned_only_still_filters_when_true(self, opportunity, work_areas):
+        result = self._filter_ids({"unassigned_only": "True"}, opportunity)
+        assert result == {work_areas.wa_unassigned.id}
+
+    def test_work_area_filter(self, opportunity, work_areas):
+        """Picking a work area in the search box narrows to just that one. Groups and
+        implementation areas reuse the sidebar's own filters, so they need no equivalent here."""
+        result = self._filter_ids({"work_area": work_areas.wa_visited.id}, opportunity)
+        assert result == {work_areas.wa_visited.id}
+
+    def test_work_area_filter_ignores_empty_value(self, opportunity, work_areas):
+        """The hidden input is submitted on every filter change, so a blank value has to be a
+        no-op rather than an error that empties the map."""
+        expected = {work_areas.wa_not_visited.id, work_areas.wa_visited.id, work_areas.wa_unassigned.id}
+        assert self._filter_ids({"work_area": ""}, opportunity) == expected
+
+    def test_work_area_filter_matches_nothing_for_another_opportunitys_area(self, opportunity, work_areas):
+        other_work_area = WorkAreaFactory()
+
+        assert self._filter_ids({"work_area": other_work_area.id}, opportunity) == set()
+
+    def test_work_area_filter_combines_with_status(self, opportunity, work_areas):
+        result = self._filter_ids(
+            {"work_area": work_areas.wa_visited.id, "status": [WorkAreaStatus.NOT_VISITED]}, opportunity
+        )
+        assert result == set()
 
 
 @pytest.mark.django_db
@@ -716,6 +1517,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
             "0",
             "LGA1",
             "State1",
+            "",
             wa.work_area_group.name,
         ]
 
@@ -737,7 +1539,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         WorkAreaFactory(opportunity=opportunity, case_properties=None, work_area_group=None)
         client.force_login(org_user_admin)
         row = self._parse_csv(client.get(self.url(opportunity)))[1]
-        assert row[6:] == ["0", "", "", ""]
+        assert row[6:] == ["0", "", "", "", ""]
 
     @pytest.mark.parametrize(
         "login_as, method, expected_status",
@@ -785,12 +1587,12 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_with_visit,
-            visit_date=datetime(2025, 6, 15, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 6, 15, tzinfo=UTC),
         )
         UserVisitFactory(
             opportunity=opportunity,
             work_area=wa_without_visit,
-            visit_date=datetime(2025, 3, 1, tzinfo=timezone.utc),
+            visit_date=datetime(2025, 3, 1, tzinfo=UTC),
         )
         client.force_login(org_user_admin)
 
@@ -830,30 +1632,36 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert row_dict["Work Area Group Name"] == "Rev Group"
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
     @pytest.fixture(autouse=True)
-    def setup_microplanning_flag(self, managed_opportunity, request):
+    def setup_microplanning_flag(self, pm_opportunity, request):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
-    def _url(self, program_manager_org, managed_opportunity):
+    def _url(self, program_manager_org, pm_opportunity):
         return reverse(
             "microplanning:save_assignment",
-            kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
+            kwargs={"org_slug": program_manager_org.slug, "opp_id": pm_opportunity.opportunity_id},
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
-        self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        pm_opportunity,
+        django_capture_on_commit_callbacks,
     ):
-        access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
-        access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa2 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa3 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa4 = WorkAreaFactory(opportunity=managed_opportunity)
+        access_a = OpportunityAccessFactory(opportunity=pm_opportunity)
+        access_b = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa3 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa4 = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         payload = {
@@ -863,11 +1671,14 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
                 {"assignee_id": access_b.pk, "work_area_ids": [wa4.id]},
             ]
         }
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
-                self._url(program_manager_org, managed_opportunity),
+                self._url(program_manager_org, pm_opportunity),
                 data=json.dumps(payload),
                 content_type="application/json",
             )
@@ -877,16 +1688,24 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
         assert called_ids == sorted([access_a.pk, access_b.pk])
 
     def test_ignores_assignees_from_other_opportunity(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        pm_opportunity,
+        django_capture_on_commit_callbacks,
     ):
         other_access = OpportunityAccessFactory(opportunity=OpportunityFactory())
         client.force_login(program_manager_org_user_admin)
 
-        with mock.patch(
-            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
-        ) as delay_patch:
+        with (
+            mock.patch(
+                "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+            ) as delay_patch,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             response = client.post(
-                self._url(program_manager_org, managed_opportunity),
+                self._url(program_manager_org, pm_opportunity),
                 data=json.dumps({"assignments": [{"assignee_id": other_access.pk, "work_area_ids": [1]}]}),
                 content_type="application/json",
             )
@@ -896,7 +1715,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
-class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
+class TestReviewInaccessibilityPanel(BaseMicroplanningFlagTest):
     def get_url(self, org_slug, opp_id, work_area_id):
         return reverse(
             "microplanning:review_inaccessibility_request",
@@ -926,13 +1745,13 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         )
         return work_area, inacc_request
 
-    def test_get_modal_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
+    def test_get_panel_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
         work_area, _ = pending_wa
         client.force_login(org_user_admin)
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
 
     @pytest.mark.parametrize(
         "status",
@@ -943,7 +1762,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         ],
         ids=["not_visited", "visited", "inaccessible"],
     )
-    def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
+    def test_get_panel_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
@@ -964,7 +1783,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
         response = client.get(url)
         assert response.status_code == 200
-        assert any(t.name == "microplanning/review_inaccessibility_modal.html" for t in response.templates)
+        assert any(t.name == "microplanning/review_inaccessibility_panel.html" for t in response.templates)
         photo = response.context["photo"]
         assert photo is not None
         assert photo.name == "photo.jpg"
@@ -993,6 +1812,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
 
+        old_wag_centroid_value = work_area.work_area_group.centroid
+
         with (
             patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
             patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"),
@@ -1012,6 +1833,12 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         event = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.last()
         assert event.pgh_context.metadata["username"] == org_user_admin.username
         assert event.pgh_context.metadata["user_email"] == org_user_admin.email
+
+        if action == InaccessibilityReviewAction.APPROVE.value:
+            assert work_area.work_area_group.centroid is None
+
+        if action == InaccessibilityReviewAction.DENY.value:
+            assert work_area.work_area_group.centroid == old_wag_centroid_value
 
         if expect_notify:
             mock_notif.delay.assert_called_once()
@@ -1046,13 +1873,31 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.INACCESSIBLE],
         ids=["not_visited", "already_inaccessible"],
     )
-    def test_action_404_when_wa_not_pending(self, status, client, org_user_admin, opportunity, organization):
+    def test_action_on_unreviewable_work_area_answers_in_plain_text(
+        self, status, client, org_user_admin, opportunity, organization
+    ):
+        """The review panel renders the body as its error text, so an error page would land in the
+        sidebar as raw markup."""
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
+
         response = client.post(url, {"action": "approve"})
+
+        assert response.status_code == 409
+        assert response["Content-Type"].startswith("text/plain")
+
+    def test_action_404_for_a_work_area_outside_the_opportunity(
+        self, client, org_user_admin, opportunity, organization
+    ):
+        other_work_area = WorkAreaFactory(status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, opportunity.opportunity_id, other_work_area.id)
+
+        response = client.post(url, {"action": "approve"})
+
         assert response.status_code == 404
 
     def test_review_modal_returns_pending_not_historical_request(
@@ -1086,11 +1931,305 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
 
 
 @pytest.mark.django_db
+class TestAssignmentModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, pm_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    def test_worker_list_url_points_to_work_area_assignments_tab(
+        self, client, settings, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, str(pm_opportunity.opportunity_id)),
+            {"assignment_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        expected_url = reverse(
+            "opportunity:worker_work_areas",
+            args=(program_manager_org.slug, pm_opportunity.opportunity_id),
+        )
+        assert response.context["worker_list_url"] == expected_url
+
+    def test_work_area_group_field_accepts_multiple_groups(self, pm_opportunity):
+        group_a = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=pm_opportunity)
+
+        form = AssignmentModeForm(
+            data={"work_area_group": [group_a.id, group_b.id]},
+            opportunity=pm_opportunity,
+        )
+
+        assert form.is_valid()
+        assert set(form.cleaned_data["work_area_group"]) == {group_a, group_b}
+
+
+ASSIGNMENT_ROLES = [
+    pytest.param("program_manager_org", "program_manager_org_user_admin", True, id="pm_admin"),
+    pytest.param("organization", "org_user_admin", True, id="nm_admin"),
+    pytest.param("program_manager_org", "program_manager_org_user_member", False, id="pm_member"),
+    pytest.param("organization", "org_user_member", False, id="nm_member"),
+]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("org_fixture, user_fixture, allowed", ASSIGNMENT_ROLES)
+class TestAssignmentAccess:
+    """Assignment is open to admins of both the program manager and the network manager org."""
+
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, pm_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity)
+        flag.flush()
+
+    @pytest.fixture
+    def login_as(self, request, client):
+        def _login(org_fixture, user_fixture):
+            client.force_login(request.getfixturevalue(user_fixture))
+            return request.getfixturevalue(org_fixture)
+
+        return _login
+
+    def test_assignment_mode_button(
+        self, client, settings, login_as, pm_opportunity, org_fixture, user_fixture, allowed
+    ):
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        org = login_as(org_fixture, user_fixture)
+        url = reverse("microplanning:microplanning_home", args=(org.slug, pm_opportunity.opportunity_id))
+
+        map_response = client.get(url)
+        assignment_response = client.get(url, {"assignment_mode": "1"})
+
+        if allowed:
+            assert map_response.status_code == 200
+            assert 'href="?assignment_mode=1"' in map_response.content.decode()
+            assert assignment_response.status_code == 200
+            assert assignment_response.context["assignment_mode"]
+        else:
+            assert map_response.status_code == 404
+            assert assignment_response.status_code == 404
+
+    def test_read_endpoints(self, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        org = login_as(org_fixture, user_fixture)
+        opp_kwargs = {"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id}
+        urls = [
+            reverse("microplanning:get_work_areas_for_assignment", kwargs=opp_kwargs),
+            reverse(
+                "microplanning:get_flw_work_areas_for_assignment",
+                kwargs={**opp_kwargs, "assignee_id": access.id},
+            ),
+            reverse("microplanning:get_flw_summary_for_assignment", kwargs=opp_kwargs) + f"?assignee_id={access.id}",
+        ]
+
+        for url in urls:
+            assert client.get(url).status_code == (200 if allowed else 404), url
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_save_assignment(self, mock_hq_sync, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
+        org = login_as(org_fixture, user_fixture)
+
+        response = client.post(
+            reverse(
+                "microplanning:save_assignment",
+                kwargs={"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id},
+            ),
+            data=json.dumps({"assignments": [{"assignee_id": access.id, "work_area_ids": [wa.id]}]}),
+            content_type="application/json",
+        )
+
+        wa.refresh_from_db()
+        if allowed:
+            assert response.status_code == 200
+            assert wa.opportunity_access_id == access.id
+        else:
+            assert response.status_code == 404
+            assert wa.opportunity_access_id is None
+
+    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    def test_unassign_work_areas(
+        self, mock_unassign, client, login_as, pm_opportunity, org_fixture, user_fixture, allowed
+    ):
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
+        mock_unassign.return_value = {"unassigned_ids": [wa.id], "skipped": 0, "failed_ids": []}
+        org = login_as(org_fixture, user_fixture)
+
+        response = client.post(
+            reverse(
+                "microplanning:unassign_work_areas",
+                kwargs={"org_slug": org.slug, "opp_id": pm_opportunity.opportunity_id},
+            ),
+            data=json.dumps({"work_area_ids": [wa.id]}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == (200 if allowed else 404)
+        assert mock_unassign.called is allowed
+
+
+@pytest.mark.django_db
+class TestInaccessibleModeContext:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, pm_opportunity, opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity, opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    @pytest.mark.parametrize(
+        "org_fixture, user_fixture, opportunity_fixture",
+        [
+            pytest.param(
+                "program_manager_org",
+                "program_manager_org_user_admin",
+                "pm_opportunity",
+                id="program_manager",
+            ),
+            pytest.param("organization", "org_user_admin", "opportunity", id="opportunity_admin"),
+        ],
+    )
+    def test_can_enter_the_mode(self, request, client, settings, org_fixture, user_fixture, opportunity_fixture):
+        org = request.getfixturevalue(org_fixture)
+        user = request.getfixturevalue(user_fixture)
+        opportunity = request.getfixturevalue(opportunity_fixture)
+        settings.MAPBOX_TOKEN = "test-mapbox-token"
+        work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE)
+        WorkAreaInaccessibilityRequestFactory(work_area=work_area)
+        client.force_login(user)
+
+        response = client.get(
+            self.url(org.slug, str(opportunity.opportunity_id)),
+            {"inaccessible_mode": "1"},
+        )
+
+        assert response.status_code == 200
+        assert response.context["inaccessible_mode"]
+        assert response.context["inaccessible_request_count"] == 1
+        assert response.context["inaccessibility_requests"][0]["work_area_id"] == work_area.id
+
+
+class TestGetWorkAreasForAssignment:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, pm_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:get_work_areas_for_assignment",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    def test_returns_union_of_multiple_groups(
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        group_a = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        group_b = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        other_group = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        wa_a = WorkAreaFactory(opportunity=pm_opportunity, work_area_group=group_a)
+        wa_b = WorkAreaFactory(opportunity=pm_opportunity, work_area_group=group_b)
+        WorkAreaFactory(opportunity=pm_opportunity, work_area_group=other_group)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
+            {"group_id": [group_a.id, group_b.id]},
+        )
+
+        assert response.status_code == 200
+        work_areas = response.json()["work_areas"]
+        returned_ids = {wa["id"] for wa in work_areas}
+        assert returned_ids == {wa_a.id, wa_b.id}
+        group_id_by_wa_id = {wa["id"]: wa["group_id"] for wa in work_areas}
+        assert group_id_by_wa_id == {wa_a.id: group_a.id, wa_b.id: group_b.id}
+
+    def test_no_group_ids_returns_empty(
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        WorkAreaFactory(opportunity=pm_opportunity)
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id))
+
+        assert response.status_code == 200
+        assert response.json()["work_areas"] == []
+        assert response.json()["bounds"] is None
+
+    def test_returns_bounds_of_the_selected_groups(
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        """Assignment mode zooms from this, since these work areas bypass the tile filters."""
+        group = WorkAreaGroupFactory(opportunity=pm_opportunity)
+        work_area_at(pm_opportunity, 10, 20, work_area_group=group)
+        work_area_at(pm_opportunity, 12, 22, work_area_group=group)
+        work_area_at(pm_opportunity, 40, 50)  # another group, must not widen the box
+        client.force_login(program_manager_org_user_admin)
+
+        response = client.get(
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
+            {"group_id": [group.id]},
+        )
+
+        assert response.json()["bounds"] == [10, 20, 13, 23]
+
+
+@pytest.mark.django_db
+class TestGetFlwWorkAreasForAssignment:
+    @pytest.fixture(autouse=True)
+    def setup_flag(self, pm_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity)
+        flag.flush()
+
+    def url(self, org_slug, opp_id, assignee_id):
+        return reverse(
+            "microplanning:get_flw_work_areas_for_assignment",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id, "assignee_id": assignee_id},
+        )
+
+    def test_returns_the_assignees_areas_and_their_bounds(
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        mine = work_area_at(pm_opportunity, 10, 20, opportunity_access=access)
+        work_area_at(pm_opportunity, 40, 50)  # unassigned, must not widen the box
+        client.force_login(program_manager_org_user_admin)
+
+        payload = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id, access.id)).json()
+
+        assert [wa["id"] for wa in payload["work_areas"]] == [mine.id]
+        assert payload["bounds"] == [10, 20, 11, 21]
+
+    def test_no_areas_returns_null_bounds(
+        self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity
+    ):
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        client.force_login(program_manager_org_user_admin)
+
+        payload = client.get(self.url(program_manager_org.slug, pm_opportunity.opportunity_id, access.id)).json()
+
+        assert payload == {"work_areas": [], "bounds": None}
+
+
 class TestSaveAssignment:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -1106,24 +2245,24 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_assigns_work_areas_and_syncs_to_hq(
         self,
         mock_hq_sync,
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(opportunity=managed_opportunity)
-        wa2 = WorkAreaFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [{"assignee_id": access.id, "work_area_ids": [wa1.id, wa2.id]}],
         )
 
@@ -1136,25 +2275,25 @@ class TestSaveAssignment:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
 
-    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
     def test_hq_failure_rolls_back_db(
         self,
         mock_hq_sync,
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
         """If HQ sync fails, the DB assignment must not be committed."""
         mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [{"assignee_id": access.id, "work_area_ids": [wa.id]}],
         )
 
@@ -1175,34 +2314,21 @@ class TestSaveAssignment:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
         payload,
         expected_status,
     ):
         client.force_login(program_manager_org_user_admin)
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, payload)
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, payload)
         assert response.status_code == expected_status
-
-    def test_non_program_manager_cannot_assign(self, client, organization, org_user_admin, managed_opportunity):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
-        client.force_login(org_user_admin)
-
-        response = self._post(
-            client,
-            organization.slug,
-            managed_opportunity.opportunity_id,
-            [{"assignee_id": access.id, "work_area_ids": [wa.id]}],
-        )
-        assert response.status_code == 404
 
 
 @pytest.mark.django_db
 class TestUnassignWorkAreas:
     @pytest.fixture(autouse=True)
-    def setup_flag(self, managed_opportunity):
+    def setup_flag(self, pm_opportunity):
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
-        flag.opportunities.add(managed_opportunity)
+        flag.opportunities.add(pm_opportunity)
         flag.flush()
 
     def url(self, org_slug, opp_id):
@@ -1225,22 +2351,18 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        access = OpportunityAccessFactory(opportunity=managed_opportunity)
-        wa1 = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
-        )
-        wa2 = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
-        )
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        wa1 = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED)
+        wa2 = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED)
         mock_unassign.return_value = {"unassigned_ids": [wa1.id, wa2.id], "skipped": 0, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
             client,
             program_manager_org.slug,
-            managed_opportunity.opportunity_id,
+            pm_opportunity.opportunity_id,
             [wa1.id, wa2.id],
         )
 
@@ -1253,7 +2375,7 @@ class TestUnassignWorkAreas:
         }
         mock_unassign.assert_called_once()
         kwargs = mock_unassign.call_args.kwargs
-        assert kwargs["opportunity"].pk == managed_opportunity.pk
+        assert kwargs["opportunity"].pk == pm_opportunity.pk
         assert kwargs["work_area_ids"] == [wa1.id, wa2.id]
         assert kwargs["user"] == program_manager_org_user_admin
 
@@ -1264,13 +2386,13 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         mock_unassign.return_value = {"unassigned_ids": [], "skipped": 0, "failed_ids": [wa.id]}
         client.force_login(program_manager_org_user_admin)
 
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, [wa.id])
         assert response.status_code == 502
         assert "error" in response.json()
 
@@ -1281,13 +2403,13 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
+        wa = WorkAreaFactory(opportunity=pm_opportunity)
         mock_unassign.return_value = {"unassigned_ids": [], "skipped": 1, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
-        response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
+        response = self._post(client, program_manager_org.slug, pm_opportunity.opportunity_id, [wa.id])
         assert response.status_code == 200
         assert response.json() == {"status": "ok", "unassigned_ids": [], "skipped": 1, "failed_ids": []}
 
@@ -1308,22 +2430,22 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
         payload,
         expected_status,
     ):
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data=json.dumps(payload),
             content_type="application/json",
         )
         assert response.status_code == expected_status
 
-    def test_invalid_json_body(self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity):
+    def test_invalid_json_body(self, client, program_manager_org, program_manager_org_user_admin, pm_opportunity):
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data="not-json",
             content_type="application/json",
         )
@@ -1336,25 +2458,18 @@ class TestUnassignWorkAreas:
         client,
         program_manager_org,
         program_manager_org_user_admin,
-        managed_opportunity,
+        pm_opportunity,
     ):
 
         client.force_login(program_manager_org_user_admin)
         response = client.post(
-            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            self.url(program_manager_org.slug, pm_opportunity.opportunity_id),
             data=json.dumps({"work_area_ids": list(range(1, MAX_UNASSIGN_WORK_AREAS + 2))}),
             content_type="application/json",
         )
         assert response.status_code == 400
         assert str(MAX_UNASSIGN_WORK_AREAS) in response.json()["error"]
         mock_unassign.assert_not_called()
-
-    def test_non_program_manager_blocked(self, client, organization, org_user_admin, managed_opportunity):
-        wa = WorkAreaFactory(opportunity=managed_opportunity)
-        client.force_login(org_user_admin)
-
-        response = self._post(client, organization.slug, managed_opportunity.opportunity_id, [wa.id])
-        assert response.status_code == 404
 
 
 @pytest.mark.django_db
@@ -1447,26 +2562,37 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def opp(self):
         return OpportunityFactory(end_date=date.today() + timedelta(days=5))
 
-    def _make_work_areas(self, opp, statuses, expected_visit_counts=None):
-        """Create WorkArea objects with given statuses (and optional expected_visit_counts list)."""
+    def _make_work_areas(self, opp, statuses, expected_visit_counts=None, assigned=True):
+        access = OpportunityAccessFactory(opportunity=opp) if assigned else None
         areas = []
         for i, status in enumerate(statuses):
             evc = expected_visit_counts[i] if expected_visit_counts else 10
-            areas.append(WorkAreaFactory(opportunity=opp, status=status, expected_visit_count=evc))
+            areas.append(
+                WorkAreaFactory(opportunity=opp, status=status, expected_visit_count=evc, opportunity_access=access)
+            )
         return areas
 
-    def _make_visits(self, opp, work_area, *, approved=0, pending=0):
+    def _make_visits(self, opp, work_area, *, approved=0, pending=0, deliver_unit=None):
         """Create `approved` approved + `pending` pending UserVisits for `work_area`."""
+        deliver_unit = (
+            deliver_unit
+            or DeliverUnit.objects.for_opportunity(opp).filter(slug=SERVICE_DELIVERY_UNIT_SLUG).first()
+            or DeliverUnitFactory(
+                opportunity=opp, app=opp.deliver_app, slug=SERVICE_DELIVERY_UNIT_SLUG, name="Health Service Delivery"
+            )
+        )
         for _ in range(approved):
             UserVisitFactory(
                 opportunity=opp,
                 work_area=work_area,
+                deliver_unit=deliver_unit,
                 status=VisitValidationStatus.approved,
             )
         for _ in range(pending):
             UserVisitFactory(
                 opportunity=opp,
                 work_area=work_area,
+                deliver_unit=deliver_unit,
                 status=VisitValidationStatus.pending,
             )
 
@@ -1475,73 +2601,95 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert result is not None, f"Metric '{name}' not found in {[m['name'] for m in metrics]}"
         return result
 
-    def test_days_remaining(self, opp):
-        metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Days Remaining")
-        assert m["value"] == 5
-        assert "percentage" not in m
-
     def test_unvisited_count_and_percentage(self, opp):
-        """Unvisited = WAs with 0 approved visits, among non-excluded.
-
-        Inaccessible with 0 approved visits is included.
-        """
-        wa_visited, wa_pending_only, wa_empty, wa_inaccessible, wa_excluded = self._make_work_areas(
+        """Unvisited = WAs still carrying the NOT_VISITED status, among in-scope areas."""
+        _wa_not_visited, wa_visited, _wa_inaccessible, _wa_excluded = self._make_work_areas(
             opp,
             [
                 WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.INACCESSIBLE,  # counts as unvisited because 0 approved visits
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.INACCESSIBLE,
                 WorkAreaStatus.EXCLUDED,
             ],
         )
         self._make_visits(opp, wa_visited, approved=2)
-        # Pending visits don't count — these WAs stay "unvisited".
-        self._make_visits(opp, wa_pending_only, pending=3)
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Unvisited Work Areas")
-        # non_excluded = 4 (wa_visited, wa_pending_only, wa_empty, wa_inaccessible)
-        # unvisited = 3 (all non-excluded except wa_visited)
-        assert m["value"] == 3
-        assert m["percentage"] == 75  # round(3/4 * 100)
+        # in scope = 3 (wa_not_visited, wa_visited, wa_inaccessible); unvisited = 1
+        assert m["value"] == 1
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
-    def test_visited_count_and_percentage(self, opp):
-        """Visited = WAs with >=1 approved visit, among non-excluded."""
-        wa_visited_1, wa_visited_2, wa_no_visits, wa_excluded = self._make_work_areas(
+    def test_visited_children_found_count_and_percentage(self, opp):
+        """Visited (children found) = WAs with >=1 approved HSD visit, among in-scope areas."""
+        wa_visited_1, wa_visited_2, wa_no_visits, wa_pending_only, wa_excluded = self._make_work_areas(
             opp,
             [
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.VISITED,
                 WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.EXCLUDED,
+            ],
+        )
+        self._make_visits(opp, wa_visited_1, approved=1)
+        self._make_visits(opp, wa_visited_2, approved=3)
+        self._make_visits(opp, wa_pending_only, pending=2)
+        # Approved visits on an excluded WA must not bump the count.
+        self._make_visits(opp, wa_excluded, approved=5)
+
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Visited Work Areas (children found)")
+        # in scope = 4; visited = 2
+        assert m["value"] == 2
+        assert m["percentage"] == 50  # round(2/4 * 100)
+
+    def test_visited_children_found_ignores_non_hsd_deliver_units(self, opp):
+        """Only approved visits on the Service Delivery deliver unit count as 'children found'."""
+        (wa,) = self._make_work_areas(opp, [WorkAreaStatus.VISITED])
+        other_unit = DeliverUnitFactory(app=opp.deliver_app, slug="registration")
+        self._make_visits(opp, wa, approved=1, deliver_unit=other_unit)
+
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Visited Work Areas (children found)")
+        assert m["value"] == 0
+
+    def test_visited_no_children_found_count_and_percentage(self, opp):
+        """Visited (no children found) = WAs with >=1 approved No Children Work Area visit."""
+        wa_ncwa, wa_hsd_only, wa_none, wa_excluded = self._make_work_areas(
+            opp,
+            [
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.VISITED,
                 WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
         )
-        # Two WAs get approved visits; one gets only non-approved (does NOT count as visited).
-        self._make_visits(opp, wa_visited_1, approved=1)
-        self._make_visits(opp, wa_visited_2, approved=3)
-        self._make_visits(opp, wa_no_visits, pending=2)
-        # Approved visits on an excluded WA must not bump visited count.
-        self._make_visits(opp, wa_excluded, approved=5)
+        ncwa_unit = DeliverUnitFactory(app=opp.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        self._make_visits(opp, wa_ncwa, approved=1, deliver_unit=ncwa_unit)
+        self._make_visits(opp, wa_hsd_only, approved=1)  # HSD visit doesn't count toward this tile
+        self._make_visits(opp, wa_excluded, approved=2, deliver_unit=ncwa_unit)
 
         metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Visited Work Areas")
-        # denominator = 3 non-excluded; numerator = 2 WAs with >=1 approved visit
-        assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        m = self._get_metric(metrics, "Visited Work Areas (no children found)")
+        # in scope = 3; no-children-found = 1 (wa_ncwa only)
+        assert m["value"] == 1
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
     def test_evc_reached_count_and_percentage(self, opp):
-        """EVC reached = WAs with approved_count >= expected_visit_count, among non-excluded."""
-        wa_reached, wa_partial, wa_over, wa_excluded_reached = self._make_work_areas(
+        """EVC reached = WAs with approved HSD visits >= expected_visit_count, among in-scope areas.
+        A WA with no expected count set has no target to reach, so it never counts.
+        """
+        wa_reached, wa_partial, wa_over, wa_no_target, wa_excluded_reached = self._make_work_areas(
             opp,
             [
-                WorkAreaStatus.NOT_VISITED,
-                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.EXPECTED_VISIT_REACHED,
+                WorkAreaStatus.VISITED,
+                WorkAreaStatus.EXPECTED_VISIT_REACHED,
                 WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
-            expected_visit_counts=[5, 5, 5, 5],
+            expected_visit_counts=[5, 5, 5, 0, 5],
         )
         self._make_visits(opp, wa_reached, approved=5)  # reached
         self._make_visits(opp, wa_partial, approved=4)  # not reached
@@ -1550,25 +2698,29 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "EVC Reached")
-        # non_excluded = 3; reached = 2
+        # in scope = 4; reached = 2 - wa_no_target is not one of them
         assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        assert m["percentage"] == 50  # round(2/4 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
+        """Inaccessible = in-scope areas whose inaccessibility request was accepted. One still
+        awaiting review is not inaccessible yet — the reviewer may well deny it."""
         self._make_work_areas(
             opp,
             [
                 WorkAreaStatus.INACCESSIBLE,
+                WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
                 WorkAreaStatus.VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
         )
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Inaccessible Work Areas")
+        # in scope = 3; inaccessible = 1, the requested one not having been accepted yet
         assert m["value"] == 1
-        assert m["percentage"] == 50  # round(1/2 * 100)
+        assert m["percentage"] == 33  # round(1/3 * 100)
 
-    def test_excluded_count_and_percentage(self, opp):
+    def test_excluded_is_a_plain_count(self, opp):
         self._make_work_areas(
             opp,
             [
@@ -1580,18 +2732,59 @@ class TestGetMetricsForMicroplanningWorkAreas:
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Excluded Work Areas")
         assert m["value"] == 2
-        assert m["percentage"] == 67  # round(2/3 * 100)
+        assert "percentage" not in m
+
+    def test_work_areas_done_counts_each_area_once(self, opp):
+        """Work Areas Done is the union of three: approved visit(HSD or NCWA ) or inaccessible."""
+        # wa_overlap holds an approved HSD visit *and* is inaccessible, so it must count once, not
+        # twice - otherwise the tile could exceed count(WA).
+        wa_hsd, wa_ncwa, wa_inaccessible, wa_request_inaccessible, wa_overlap, wa_untouched, wa_excluded = (
+            self._make_work_areas(
+                opp,
+                [
+                    WorkAreaStatus.VISITED,
+                    WorkAreaStatus.VISITED,
+                    WorkAreaStatus.INACCESSIBLE,
+                    WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+                    WorkAreaStatus.INACCESSIBLE,
+                    WorkAreaStatus.NOT_VISITED,
+                    WorkAreaStatus.EXCLUDED,
+                ],
+            )
+        )
+        self._make_visits(opp, wa_hsd, approved=1)
+        ncwa_unit = DeliverUnitFactory(app=opp.deliver_app, slug=NO_CHILDREN_WORK_AREA_UNIT_SLUG)
+        self._make_visits(opp, wa_ncwa, approved=1, deliver_unit=ncwa_unit)
+        self._make_visits(opp, wa_overlap, approved=1)  # inaccessible *and* has an approved HSD visit
+        # An excluded WA's approved visit must not count - it's out of scope entirely.
+        self._make_visits(opp, wa_excluded, approved=1)
+
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Work Areas Done")
+        # in scope = 6 (all but wa_excluded); done = 5 (wa_untouched is the only one left out)
+        assert m["value"] == 5
+        assert m["percentage"] == 83  # round(5/6 * 100)
+
+    def test_ratio_ignores_non_hsd_deliver_units(self, opp):
+        """Approved visits on any deliver unit other than Service Delivery must not feed the ratio."""
+        (wa,) = self._make_work_areas(opp, [WorkAreaStatus.VISITED], expected_visit_counts=[10])
+        other_unit = DeliverUnitFactory(app=opp.deliver_app, slug="registration")
+        self._make_visits(opp, wa, approved=5, deliver_unit=other_unit)
+
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "WA Visited : Visits Ratio")
+        assert m["value"] == "--"  # zero HSD visits, as denominator pct_visits is zero
 
     def test_pct_visited_to_pct_visits(self, opp):
-        """Ratio uses approved UserVisits on non-excluded WAs only, and data-driven `visited` count.
+        """Ratio uses approved HSD visits on in-scope WAs only, and the HSD-based visited count.
 
         Setup:
-          - wa_visited (NOT_VISITED, expected=10): 1 approved → counted as visited
-          - wa_unvisited (NOT_VISITED, expected=10): 0 approved → not visited
-          - wa_excluded (EXCLUDED, expected=10): 3 approved → excluded from both numerator and denominator
-          pct_wa_visited = 1/2 = 0.5  (non_excluded = 2)
-          total_approved (non_excluded) = 1
-          total_expected (non_excluded) = 10 + 10 = 20
+          - wa_visited (NOT_VISITED, expected=10): 1 approved HSD visit -> counted as visited
+          - wa_unvisited (NOT_VISITED, expected=10): 0 approved -> not visited
+          - wa_excluded (EXCLUDED, expected=10): 3 approved -> excluded from both numerator and denominator
+          pct_wa_visited = 1/2 = 0.5  (in scope = 2)
+          total_hsd (in scope) = 1
+          total_expected (in scope) = 10 + 10 = 20
           pct_visits = 1/20 = 0.05
           ratio = 0.5 / 0.05 = 10.0
         """
@@ -1600,7 +2793,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
             [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.NOT_VISITED, WorkAreaStatus.EXCLUDED],
             expected_visit_counts=[10, 10, 10],
         )
-        # 1 approved on visited WA
         self._make_visits(opp, wa_visited, approved=1)
         # Approved visits on excluded WAs must be ignored.
         self._make_visits(opp, wa_excluded, approved=3)
@@ -1623,60 +2815,59 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert "unit" not in m
 
     def test_pct_visited_ignores_visits_without_work_area(self, opp):
-        """Approved visits with no work_area must not inflate the ratio's total_approved denominator."""
+        """Approved visits with no work_area must not inflate the ratio's total_hsd denominator."""
         wa_visited, wa_unvisited = self._make_work_areas(
             opp,
-            [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.NOT_VISITED],
+            [WorkAreaStatus.VISITED, WorkAreaStatus.NOT_VISITED],
             expected_visit_counts=[10, 10],
         )
         self._make_visits(opp, wa_visited, approved=1)
         # Orphan approved visits (no work area) must be ignored.
+        hsd_unit = DeliverUnit.objects.for_opportunity(opp).get(slug=SERVICE_DELIVERY_UNIT_SLUG)
         for _ in range(3):
-            UserVisitFactory(opportunity=opp, work_area=None, status=VisitValidationStatus.approved)
+            UserVisitFactory(
+                opportunity=opp, work_area=None, deliver_unit=hsd_unit, status=VisitValidationStatus.approved
+            )
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "WA Visited : Visits Ratio")
-        # total_approved (WA-attached) = 1 → pct_visits = 1/20 = 0.05
-        # pct_wa_visited = 1/2 = 0.5 → ratio = 0.5 / 0.05 = 10.0
+        # total_hsd (WA-attached) = 1 -> pct_visits = 1/20 = 0.05
+        # pct_wa_visited = 1/2 = 0.5 -> ratio = 0.5 / 0.05 = 10.0
         assert m["value"] == 10.0
 
-    def test_zero_non_excluded_work_areas(self, opp):
+    def test_zero_in_scope_work_areas(self, opp):
         """All WAs excluded → percentage metrics show None; visited count is 0."""
         self._make_work_areas(opp, [WorkAreaStatus.EXCLUDED])
         metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Visited Work Areas")
+        m = self._get_metric(metrics, "Visited Work Areas (children found)")
         assert m["value"] == 0
         assert m["percentage"] is None
 
-    def test_unassigned_counted_as_unvisited(self, opp):
-        """UNASSIGNED with 0 approved visits → unvisited. A WA with approved visits → visited regardless of status."""
-        wa_unassigned, wa_with_visits = self._make_work_areas(
-            opp,
-            [
-                WorkAreaStatus.UNASSIGNED,  # default status, no visits → unvisited
-                WorkAreaStatus.UNASSIGNED,  # has approved visit → visited
-            ],
+    def test_unassigned_work_areas_leave_every_total(self, opp):
+        """An unassigned WA has no FLW to do the work, so it drops out of every numerator and denominator."""
+        # in scope
+        _, visited_wa = self._make_work_areas(
+            opp, statuses=[WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED], expected_visit_counts=[5, 2]
         )
-        self._make_visits(opp, wa_with_visits, approved=1)
+        self._make_visits(opp, visited_wa, approved=2)  # EVC reached, and "done", for this one
+        # out of scope: excluded from every metric's denominator and numerator as unassigned
+        wa_unassigned, _wa_inaccessible, _wa_excluded = self._make_work_areas(
+            opp,
+            [WorkAreaStatus.UNASSIGNED, WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.EXCLUDED],
+            expected_visit_counts=[1, 10, 10],
+            assigned=False,
+        )
+        self._make_visits(opp, wa_unassigned, approved=1)
 
-        metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Unvisited Work Areas")
-        assert m["value"] == 1
-        assert m["percentage"] == 50
-
-    @pytest.mark.parametrize(
-        "end_date, expected",
-        [
-            pytest.param(None, "--", id="missing"),
-            pytest.param(date.today() - timedelta(days=3), 0, id="in-past"),
-        ],
-    )
-    def test_days_remaining_edge_cases(self, opp, end_date, expected):
-        """Missing end_date → '--'; past end_date → 0 (not negative)."""
-        opp.end_date = end_date
-        metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "Days Remaining")
-        assert m["value"] == expected
+        tiles = {m["name"]: (m["value"], m.get("percentage")) for m in get_metrics_for_microplanning(opp)}
+        assert tiles["Work Areas Done"] == (1, 50)  # denominator is 2, not 5
+        assert tiles["Unvisited Work Areas"] == (1, 50)
+        assert tiles["Visited Work Areas (children found)"] == (1, 50)
+        assert tiles["EVC Reached"] == (1, 50)
+        assert tiles["Inaccessible Work Areas"] == (0, 0)
+        assert tiles["WA Visited : Visits Ratio"] == (1.75, None)
+        # The one tile that must not follow the rule: its count is what the rule removes, over all areas.
+        assert tiles["Excluded Work Areas"] == (1, None)
 
 
 @pytest.mark.django_db
@@ -1685,7 +2876,12 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         return reverse("microplanning:coverage_progress", args=(org_slug, opp_id))
 
     def test_renders_page_with_tables_in_context(self, client, org_user_admin, opportunity):
-        WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+        WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            ward="w1",
+            status=WorkAreaStatus.VISITED,
+        )
         client.force_login(org_user_admin)
         resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
         assert resp.status_code == 200
@@ -1738,7 +2934,12 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
         assert resp["Content-Type"].startswith("text/csv")
 
     def test_export_returns_csv_of_requested_table(self, client, org_user_admin, opportunity):
-        WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+        WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+            ward="w1",
+            status=WorkAreaStatus.VISITED,
+        )
         client.force_login(org_user_admin)
         resp = client.get(
             self.url(opportunity.organization.slug, str(opportunity.opportunity_id)),
@@ -1883,6 +3084,132 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
         assert mock_delay.call_count == 0
         # Nothing is deleted when assignments exist.
         assert WorkAreaGroup.objects.filter(id=old_group.id).exists()
+
+
+@pytest.mark.django_db
+class TestClearWorkAreas(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:clear_work_areas", args=(org_slug, opp_id))
+
+    def test_clears_work_areas_and_groups(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"].endswith(
+            reverse(
+                "microplanning:microplanning_home", args=(opportunity.organization.slug, opportunity.opportunity_id)
+            )
+        )
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        # Groups only exist to group Work Areas, so they go too.
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("cleared" in str(m) for m in messages)
+
+    def test_other_opportunities_are_untouched(self, client, org_user_admin, opportunity):
+        other_opportunity = OpportunityFactory(organization=opportunity.organization)
+        other_group = WorkAreaGroupFactory(opportunity=other_opportunity)
+        other_area = WorkAreaFactory(opportunity=other_opportunity, work_area_group=other_group)
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert WorkArea.objects.filter(id=other_area.id).exists()
+        assert WorkAreaGroup.objects.filter(id=other_group.id).exists()
+
+    def test_implementation_areas_are_untouched(self, client, org_user_admin, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, implementation_area=implementation_area)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert ImplementationArea.objects.filter(id=implementation_area.id).exists()
+
+    def test_clear_blocked_when_assigned(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        unassigned_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        # A single assignment blocks the whole opportunity — nothing is deleted.
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+        assert WorkArea.objects.filter(id=unassigned_area.id).exists()
+        assert WorkAreaGroup.objects.filter(id=group.id).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("assigned" in str(m) for m in messages)
+
+    def test_clear_blocked_when_visits_recorded(self, client, org_user_admin, opportunity):
+        # UserVisit.work_area is PROTECT. A deleted OpportunityAccess nulls opportunity_access,
+        # so a visited Work Area can look unassigned and slip past the assignment check.
+        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=None)
+        UserVisitFactory(opportunity=opportunity, work_area=work_area)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+        messages = list(response.wsgi_request._messages)
+        assert any("Visits" in str(m) for m in messages)
+
+    def test_locks_work_areas_before_checking_assignments(self, client, org_user_admin, opportunity):
+        """Regression guard: the assignment check must serialize against save_assignment."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        with CaptureQueriesContext(connection) as ctx:
+            client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        locking_queries = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "for update" in q["sql"].lower() and "microplanning_workarea" in q["sql"].lower()
+        ]
+        assert locking_queries, (
+            "Expected a 'SELECT ... FOR UPDATE' on the Work Area rows so a concurrent "
+            "save_assignment cannot commit between the assignment check and the delete."
+        )
+
+    def test_clear_requires_post(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+        assert response.status_code == 405
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_clear_requires_flag(self, client, org_user_admin, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 404
+        assert WorkArea.objects.filter(id=work_area.id).exists()
+
+    def test_clear_requires_org_admin(self, client, org_user_member, opportunity):
+        work_area = WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 404
+        assert WorkArea.objects.filter(id=work_area.id).exists()
 
 
 @pytest.mark.django_db

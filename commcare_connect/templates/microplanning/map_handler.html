@@ -1,21 +1,49 @@
 {% load i18n %}
 <script>
     document.addEventListener("alpine:init", () => {
+        const WORKAREAS_FILL_LAYER = 'workareas-fill';
+
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
             highlightedWorkAreaId: null,
+            isHoveringWorkArea: false,
+            hintTimeout: null,
+            toastTimeout: null,
             showWorkAreaEditModal: false,
-            showReviewInaccessibilityModal: false,
+            showInaccessibilityReview: false,
             showVisits: false,
+            showImplementationAreas: false,
+
+            // Building footprint overlay. `buildingsAvailable` tracks whether the map is zoomed in
+            // far enough for footprints to be drawn at all; both flags are driven by the overlay.
+            showBuildings: false,
+            buildingsAvailable: false,
+            buildingsLoading: false,
+            buildingsFailed: false,
             filterQuery: '',
+            pendingTileQuery: null,
+            workAreaDetailRequestId: 0,
+            boundsRequestId: 0,
+            statusMeta: {},
+            hoveredWorkArea: null,
+
+            // Inaccessible mode state
+            inaccessibleMode: {{ inaccessible_mode|yesno:'true,false' }},
+            inaccessibilityRequests: [],
+            deniedInaccessibilityWorkAreaIds: [],
+            inaccessibilityColors: {},
+            selectedInaccessibilityRequestId: null,
+            selectedInaccessibilityRequestSlug: '',
+            reviewedRequestCount: 0,
+            totalRequestCount: 0,
 
             // Assignment mode state
             assignmentMode: {{ assignment_mode|yesno:'true,false' }},
             selectedWorkAreas: new Set(),
             groupWorkAreaIds: new Set(),
             flwFilterWorkAreaIds: new Set(),
-            selectedGroupId: null,
+            selectedGroupIds: [],
             selectedFlwFilterId: null,
             selectedAssigneeId: null,
             flwSummaryAssigneeId: null,
@@ -30,6 +58,7 @@
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
+            groupWorkAreasCache: new Map(),
             assignmentQueue: [],
             excludedWorkAreaIds: new Set(),
 
@@ -45,7 +74,23 @@
             },
 
             setWorkAreaState(id, state) {
+                if (!this.map?.getSource('workareas')) return;
                 this.map.setFeatureState({ source: 'workareas', sourceLayer: 'workareas', id }, state);
+            },
+
+            // Tile properties are a snapshot from when the tile loaded; feature-state carries
+            // every change made since — a review, an exclusion, an edit. State wins, so nothing
+            // reading a work area shows a value the map itself has already moved past.
+            workAreaWithLiveState(id, properties) {
+                const state = this.map.getFeatureState({ source: 'workareas', sourceLayer: 'workareas', id });
+                return { ...properties, ...state };
+            },
+
+            clearSelectedFeature() {
+                if (this.selectedFeature) {
+                    this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                }
+                this.selectedFeature = null;
             },
 
             openWorkAreaEditModal(workAreaId) {
@@ -69,6 +114,7 @@
                             .setHTML(`
                                 <table><tbody>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Connect Worker" %}</th><td>${data.worker_name}</td></tr>
+                                <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Phone Number" %}</th><td>${data.phone_number ?? '—'}</td></tr>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Visit Date" %}</th><td>${data.visit_date}</td></tr>
                                 <tr><th class="text-left pr-4 whitespace-nowrap">{% translate "Deliver Type" %}</th><td>${data.deliver_type ?? '—'}</td></tr>
                                 </tbody></table>
@@ -165,12 +211,14 @@
                 }
             },
 
-            openReviewInaccessibilityModal(workAreaId) {
+            // `zoom` follows the rest of the map: picking a work area from a sidebar frames it,
+            // clicking one already on screen leaves the camera alone.
+            openInaccessibilityReview(workAreaId, { zoom = false } = {}) {
                 const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
                 const url = reviewUrl + workAreaId + '/';
                 const fragment = document.getElementById('review-inaccessibility-fragment');
                 // Clear any previously loaded content so an errored fetch (htmx does not swap
-                // non-2xx responses) can't leave a stale or blank modal behind.
+                // non-2xx responses) can't leave a stale or blank panel behind.
                 fragment.innerHTML = '';
                 htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
                     .then(() => {
@@ -181,9 +229,70 @@
                             );
                             return;
                         }
-                        this.showReviewInaccessibilityModal = true;
-                        setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
+                        this.selectInaccessibilityRequestOnMap(workAreaId, { zoom });
+                        this.showInaccessibilityReview = true;
                     });
+            },
+
+            // Inaccessibility Review colours every area by its review outcome instead of by group,
+            // so the map reads the same way as the key beside it.
+            buildInaccessibleFillPaint() {
+                const status = ['coalesce', ['feature-state', 'status'], ['get', 'status']];
+                return {
+                    'fill-color': [
+                        'case',
+                        ['boolean', ['feature-state', 'hovered'], false],
+                        '#ffffff',
+                        ['==', status, 'REQUEST_FOR_INACCESSIBLE'],
+                        this.inaccessibilityColors.requested,
+                        ['==', status, 'INACCESSIBLE'],
+                        this.inaccessibilityColors.approved,
+                        ['boolean', ['feature-state', 'inaccessibility_denied'], false],
+                        this.inaccessibilityColors.denied,
+                        this.inaccessibilityColors.other
+                    ],
+                    'fill-opacity': 0.85
+                };
+            },
+
+            applyDeniedInaccessibilityState() {
+                for (const id of this.deniedInaccessibilityWorkAreaIds) {
+                    this.setWorkAreaState(id, { inaccessibility_denied: true });
+                }
+            },
+
+            // The request under review is the only area outlined in the selected colour, which is
+            // how the reviewer tells it apart from the other pending requests on the map.
+            selectInaccessibilityRequestOnMap(workAreaId, { zoom = false } = {}) {
+                if (this.selectedInaccessibilityRequestId !== null) {
+                    this.setWorkAreaState(this.selectedInaccessibilityRequestId, { selected: false });
+                }
+                this.selectedInaccessibilityRequestId = workAreaId;
+                this.selectedInaccessibilityRequestSlug = this.inaccessibilityRequests.find(
+                    (pendingRequest) => pendingRequest.work_area_id === workAreaId
+                )?.slug ?? '';
+                this.setWorkAreaState(workAreaId, { selected: true });
+                if (zoom) this.zoomToQuery(`work_area=${workAreaId}`);
+            },
+
+            // "3 of 12 reviewed" — the total is what the queue held when the page loaded, so the
+            // count keeps making sense as reviewed rows leave the list.
+            reviewedRequestsLabel() {
+                return '{% translate "{reviewed} of {total} reviewed" %}'
+                    .replace('{reviewed}', this.reviewedRequestCount)
+                    .replace('{total}', this.totalRequestCount);
+            },
+
+            requestRowDetails(pendingRequest) {
+                return [
+                    pendingRequest.date_of_visit,
+                    pendingRequest.implementation_area_name,
+                    pendingRequest.group_name,
+                ].filter(Boolean).join(' · ');
+            },
+
+            attachmentUrl(blobId) {
+                return '{{ attachment_url_base|escapejs }}' + blobId;
             },
 
             getDownloadUrl() {
@@ -198,78 +307,395 @@
                 document.getElementById('toast-icon').className = `fa-solid ${isError ? 'fa-circle-xmark' : 'fa-circle-check'} text-lg`;
                 toast.classList.remove('bg-green-600', 'bg-red-600', 'opacity-0');
                 toast.classList.add(isError ? 'bg-red-600' : 'bg-green-600', 'opacity-100');
-                setTimeout(() => {
+                // One shared element, so the previous toast's hide timer would otherwise fire on
+                // this message — hiding a 3s error after 500ms when a short toast preceded it.
+                clearTimeout(this.toastTimeout);
+                this.toastTimeout = setTimeout(() => {
                     toast.classList.remove('opacity-100');
                     toast.classList.add('opacity-0');
                 }, duration);
             },
 
-            applyFilters() {
-                if (!this.map) return;
-                const form = this.$refs.filterForm;
-                const query = new URLSearchParams(new FormData(form)).toString();
-                this.filterQuery = query;
-                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = query ? `${baseUrl}?${query}` : baseUrl;
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([newUrl]);
-                    this.selectedFeature = null; // Clear selection on filter change
+            // The one place that answers "which work areas is the map showing?". Both modes' tile
+            // sources and the auto-zoom fit all read it, so a fit can never frame a different set
+            // than the tiles do.
+            currentTileQuery() {
+                if (this.assignmentMode) {
+                    // No filter sidebar here — the query is composed from the unassigned toggle and
+                    // the search box, which apply together.
+                    const params = new URLSearchParams();
+                    if (this.showOnlyUnassigned) params.set('unassigned_only', 'true');
+                    const option = this.searchSelection();
+                    if (option) params.set(option.filter_name, option.object_id);
+                    return params.toString();
                 }
+                // Inaccessibility review renders no filter sidebar either, and never narrows the
+                // tiles: every work area shows, with the pending requests picked out by colour.
+                if (this.inaccessibleMode) return '';
+                return new URLSearchParams(new FormData(this.$refs.filterForm)).toString();
+            },
+
+            invalidateBoundsRequest() {
+                return ++this.boundsRequestId;
+            },
+
+            // Bounding box of the work areas matching `query`, or null when nothing matches.
+            fetchWorkAreaBounds(query) {
+                const requestId = this.invalidateBoundsRequest();
+                const baseUrl = '{{ bounds_url|escapejs }}';
+                return fetch(query ? `${baseUrl}?${query}` : baseUrl)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area bounds');
+                        return res.json();
+                    })
+                    // Ignore responses if the request has been superseded.
+                    .then((data) => (requestId === this.boundsRequestId ? data.bounds : undefined))
+                    .catch(() => undefined);
+            },
+
+            // `animate: false` for the initial fit, which should already be in place by the time
+            // the user sees the map; filter-driven fits animate so the movement is followable.
+            zoomToBounds(bounds, { animate = true } = {}) {
+                if (!this.map || !bounds) return;
+                const options = { padding: 40, maxZoom: {{ max_autozoom_zoom }} };
+                // Omit `duration` entirely to animate. Mapbox merges the options over its defaults
+                // with Object.assign, so an explicit `duration: undefined` overwrites the default
+                // instead of falling back to it — leaving the camera with a NaN zoom.
+                if (!animate) options.duration = 0;
+                // Work area tiles are not served below the layer's minzoom, so check the camera zoom and reset if we're below the minimum.
+                const camera = this.map.cameraForBounds(bounds, options);
+                if (camera && camera.zoom < {{ workarea_min_zoom }}) {
+                    options.center = camera.center;
+                    options.zoom = {{ workarea_min_zoom }};
+                }
+                this.map.fitBounds(bounds, options);
+            },
+
+            zoomToQuery(query, options) {
+                return this.fetchWorkAreaBounds(query).then((bounds) => {
+                    if (bounds === undefined) return;  // superseded, or the request failed
+                    if (bounds === null) {
+                        if (this.hasActiveFilters(query)) {
+                            this.showToast("{% translate 'No work areas match these filters.' %}", true);
+                        }
+                        return;
+                    }
+                    this.zoomToBounds(bounds, options);
+                });
+            },
+
+            // Whether `query` actually narrows anything. A serialized filter form is never the
+            // empty string — the hidden work_area field, the payment unit select and both date
+            // inputs each contribute a `name=` pair while blank.
+            hasActiveFilters(query) {
+                for (const [, value] of new URLSearchParams(query)) {
+                    if (value) return true;
+                }
+                return false;
+            },
+
+            // Smallest box containing both, for callers that collect bounds piecemeal (assignment
+            // mode fetches one work area group at a time). Either side may be absent.
+            combineBounds(a, b) {
+                if (!a) return b ?? null;
+                if (!b) return a;
+                return [
+                    Math.min(a[0], b[0]),
+                    Math.min(a[1], b[1]),
+                    Math.max(a[2], b[2]),
+                    Math.max(a[3], b[3]),
+                ];
+            },
+
+            applyTileQuery(query) {
+                const source = this.map?.getSource('workareas');
+                if (!source) return false;
+
+                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
+                source.setTiles([query ? `${baseUrl}?${query}` : baseUrl]);
+
                 const visitSource = this.map.getSource('user-visits');
                 if (visitSource) {
                     const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
-                    const visitNewUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
-                    visitSource.setTiles([visitNewUrl]);
+                    visitSource.setTiles([query ? `${visitBaseUrl}?${query}` : visitBaseUrl]);
                 }
+                return true;
+            },
+
+            applyFilters() {
+                const query = this.currentTileQuery();
+                this.filterQuery = query;
+                this.pendingTileQuery = query;
+                this.clearSelectedFeature(); // Clear selection on filter change
+                this.invalidateWorkAreaDetailRequest();
+                this.enableVisitsForDateFilter(query);
+                this.applyTileQuery(query);
                 this.showToast("{% translate 'Filters updated!' %}", false, 500);
+                // Every filter here narrows the work areas, so any of them is worth a re-fit —
+                // including the search box, which reaches this via onSearchChanged().
+                this.zoomToQuery(query);
+            },
+
+            // A visit date range only shows its effect through the visits layer, so switch the
+            // layer on rather than leave the filter looking inert. Setting showVisits fires its
+            // watcher, which builds the visit source from currentTileQuery() — the same query.
+            enableVisitsForDateFilter(query) {
+                if (this.showVisits) return;
+                const params = new URLSearchParams(query);
+                if (params.get('start_date') || params.get('end_date')) {
+                    this.showVisits = true;
+                }
+            },
+
+            onSearchChanged() {
+                // Assignment mode renders no filter sidebar, so there are no controls to drive
+                // and nothing to clear; its tiles are filtered directly instead.
+                if (this.assignmentMode) {
+                    this.applyAssignmentModeFilters();
+                    return;
+                }
+                const option = this.searchSelection();
+                this.clearFilterFields();
+                if (option) this.applySearchSelection(option);
+                this.applyFilters();  // clears selectedFeature
+                if (option?.kind === 'wa') {
+                    this.showWorkAreaDetail(option.object_id);
+                }
+            },
+
+            applySearchSelection(option) {
+                const el = this.$refs.filterForm.querySelector(
+                    `[name="${option.filter_name}"]`,
+                );
+                if (!el) return;
+                if (el.tomselect) {
+                    // Silent: a change event here would run onFilterChanged() and clear the
+                    // search box we are in the middle of applying.
+                    el.tomselect.setValue(String(option.object_id), true);
+                } else {
+                    el.value = option.object_id;
+                }
+            },
+
+            searchSelection() {
+                const el = this.searchElement();
+                const value = el?.tomselect?.getValue();
+                return value ? el.tomselect.options[value] : null;
+            },
+
+            invalidateWorkAreaDetailRequest() {
+                return ++this.workAreaDetailRequestId;
+            },
+
+            showWorkAreaDetail(workAreaId) {
+                const requestId = this.invalidateWorkAreaDetailRequest();
+                const url = '{{ work_area_detail_url|escapejs }}' + workAreaId + '/';
+                fetch(url)
+                    .then((res) => {
+                        if (!res.ok) throw new Error('Failed to load work area details');
+                        return res.json();
+                    })
+                    .then((detail) => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
+                        if (this.selectedFeature) {
+                            this.setWorkAreaState(this.selectedFeature._id, { selected: false });
+                        }
+                        this.selectedFeature = { ...detail, _id: detail.id };
+                        this.setWorkAreaState(detail.id, { selected: true });
+                    })
+                    .catch(() => {
+                        if (requestId !== this.workAreaDetailRequestId) return;  // superseded
+                        this.showToast("{% translate 'Could not load work area details.' %}", true);
+                    });
+            },
+
+            onFilterChanged() {
+                this.clearSearchSelection();
+                this.applyFilters();
             },
 
             clearFilters() {
-                const form = this.$refs.filterForm;
-                form.reset();
-                // Clear TomSelect instances
-                form.querySelectorAll('select[data-tomselect]').forEach(el => {
-                    if (el.tomselect) el.tomselect.clear();
-                });
+                this.clearFilterFields();
+                this.clearSearchSelection();
                 this.applyFilters();
+            },
+
+            clearFilterFields() {
+                const form = this.$refs.filterForm;
+                form.querySelectorAll('select[data-tomselect]').forEach(el => {
+                    // Silent clear — a change event here would trigger onFilterChanged() and
+                    // wipe the search selection we were just asked to apply.
+                    if (el.tomselect) el.tomselect.clear(true);
+                });
+                form.querySelectorAll('select:not([data-tomselect])').forEach(el => {
+                    el.selectedIndex = 0;
+                });
+                form.querySelectorAll('input').forEach(el => {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        el.checked = false;
+                    } else {
+                        el.value = '';
+                    }
+                });
+            },
+
+            searchElement() {
+                return document.getElementById('work-area-search');
+            },
+
+            clearSearchSelection() {
+                const el = this.searchElement();
+                if (el?.tomselect) el.tomselect.clear(true);
             },
 
             // --- Assignment mode methods ---
 
-            toggleWorkAreaSelection(id, properties) {
-                const isDeselecting = this.selectedWorkAreas.has(id);
-                if (isDeselecting) {
+            // Adds/removes a single work area from the assignment selection. Both single-WA
+            // and whole-group selection go through this one place. With multi-select groups:
+            // selecting a WA that happens to complete its group (the last remaining member)
+            // syncs that group into the dropdown, same as a plain click would; deselecting a
+            // WA that belongs to a dropdown-tracked group breaks just that one group's
+            // coherence and removes only it, not every group currently selected.
+            setWorkAreaSelected(id, selected, groupId = null) {
+                groupId = groupId != null ? String(groupId) : null;
+
+                if (selected) {
+                    this.selectedWorkAreas.add(id);
+
+                    if (groupId && !this.selectedGroupIds.includes(groupId)) {
+                        // Already cached once this group's been seen before; otherwise this
+                        // is the same fetch a click on it would trigger anyway.
+                        this.fetchGroupWorkAreas(groupId).then(workAreas => {
+                            const isFullySelected = workAreas.length > 0
+                                && workAreas.every(wa => this.selectedWorkAreas.has(wa.id));
+                            if (isFullySelected) {
+                                this.syncGroupDropdown(groupId, true, workAreas);
+                            }
+                        });
+                    }
+                } else {
                     this.selectedWorkAreas.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
-                } else {
-                    this.selectedWorkAreas.add(id);
-                    if (properties) {
-                        this.workAreaProperties.set(id, properties);
+
+                    if (groupId && this.selectedGroupIds.includes(groupId) && this.groupWorkAreaIds.has(id)) {
+                        this.selectedGroupIds = this.selectedGroupIds.filter(gid => gid !== groupId);
+                        this.$refs.groupSelect?.tomselect?.removeItem(groupId, true);
+                        // Already cached (this group must have been fetched to be tracked),
+                        // so this resolves immediately without a new network request.
+                        this.fetchGroupWorkAreas(groupId).then(workAreas => {
+                            for (const wa of workAreas) this.groupWorkAreaIds.delete(wa.id);
+                        });
                     }
                 }
 
-                // Clear group dropdown if the map click breaks the group selection:
-                // either deselecting a WA inside the group, or selecting one outside it
-                if (this.selectedGroupId) {
-                    const isGroupWa = this.groupWorkAreaIds.has(id);
-                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
-                        this.groupWorkAreaIds.clear();
-                        this.selectedGroupId = null;
-                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
-                    }
-                }
+                this.setWorkAreaState(id, { assignment_selected: selected });
+            },
 
-                this.setWorkAreaState(id, { assignment_selected: this.selectedWorkAreas.has(id) });
+            toggleWorkAreaSelection(id, properties) {
+                const isSelecting = !this.selectedWorkAreas.has(id);
+                if (isSelecting && properties) {
+                    this.workAreaProperties.set(id, properties);
+                }
+                this.setWorkAreaSelected(id, isSelecting, properties?.group_id);
                 this.updateFlwSummary();
             },
 
-            selectGroup(groupId) {
-                this.selectedGroupId = groupId || null;
+            // Fetches (and caches) one group's assignment payload: its work areas plus their
+            // extent, for the auto-zoom. Concurrent or repeat calls for the same group share one
+            // in-flight/cached request instead of re-fetching, since group membership doesn't
+            // change during a session.
+            async fetchGroupData(groupId) {
+                // Normalize to string for consistency from different callers
+                groupId = String(groupId);
+                if (!this.groupWorkAreasCache.has(groupId)) {
+                    // The endpoint takes repeatable ?group_id= query params (to support
+                    // fetching several groups in one call); a single id is just the 1-param case.
+                    const url = `{{ group_work_areas_url|escapejs }}?group_id=${encodeURIComponent(groupId)}`;
+                    const promise = fetch(url)
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load group work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .catch(e => {
+                            this.groupWorkAreasCache.delete(groupId);
+                            throw e;
+                        });
+                    this.groupWorkAreasCache.set(groupId, promise);
+                }
+                return this.groupWorkAreasCache.get(groupId);
+            },
+
+            // Most callers only care about membership; they share the cache above.
+            async fetchGroupWorkAreas(groupId) {
+                return (await this.fetchGroupData(groupId)).work_areas;
+            },
+
+            invalidateGroupWorkAreasCache() {
+                this.groupWorkAreasCache.clear();
+            },
+
+            // Selects/deselects an entire Work Area Group with one click.
+            async toggleGroupSelection(groupId) {
+                groupId = String(groupId);
+
+                let workAreas;
+                try {
+                    workAreas = await this.fetchGroupWorkAreas(groupId);
+                } catch (e) {
+                    console.error(e);
+                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                    return;
+                }
+
+                // A majority of the group already selected (e.g. all but one, after a
+                // shift+click removed a member) counts as "this group is selected" - a plain
+                // click deselects the rest. A minority selected (e.g. a couple of WAs picked
+                // one at a time via shift+click, starting from none) counts as "not selected" -
+                // a plain click fills in the rest instead of wiping out what's there.
+                const selectedCount = workAreas.filter(wa => this.selectedWorkAreas.has(wa.id)).length;
+                const isMajoritySelected = selectedCount > workAreas.length / 2;
+                const willSelect = !isMajoritySelected;
+
+                for (const wa of workAreas) {
+                    this.workAreaProperties.set(wa.id, wa);
+                    this.setWorkAreaSelected(wa.id, willSelect);
+                }
+                this.syncGroupDropdown(groupId, willSelect, workAreas);
+                this.updateFlwSummary();
+            },
+
+            // Keeps the group filter dropdown showing the same groups a map click just fully
+            // selected/deselected, so both stay visually in sync. Uses TomSelect's silent
+            // add/remove so this doesn't re-trigger the dropdown's own @change handler (which
+            // would otherwise re-run selectGroup() and re-fetch every currently-selected group).
+            syncGroupDropdown(groupId, selected, workAreas) {
+                if (selected) {
+                    for (const wa of workAreas) this.groupWorkAreaIds.add(wa.id);
+                    if (!this.selectedGroupIds.includes(groupId)) {
+                        this.selectedGroupIds = [...this.selectedGroupIds, groupId];
+                    }
+                    this.$refs.groupSelect?.tomselect?.addItem(groupId, true);
+                } else {
+                    for (const wa of workAreas) this.groupWorkAreaIds.delete(wa.id);
+                    this.selectedGroupIds = this.selectedGroupIds.filter(id => id !== groupId);
+                    this.$refs.groupSelect?.tomselect?.removeItem(groupId, true);
+                }
+            },
+
+            selectGroup(groupIds) {
+                this.selectedGroupIds = groupIds || [];
                 return this.replaceFilterSelection({
                     trackingSet: this.groupWorkAreaIds,
-                    selectionId: groupId,
-                    url: '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId),
+                    selectionId: this.selectedGroupIds,
+                    // Fetch each selected group through the same cached fetcher clicks use,
+                    // so a group picked here and also clicked on the map (or vice versa)
+                    // only ever fetches once, then merge the per-group results — and the
+                    // per-group extents, into one box covering them all — together.
+                    fetchSelection: () => Promise.all(this.selectedGroupIds.map(id => this.fetchGroupData(id)))
+                        .then(results => ({
+                            workAreas: results.flatMap(result => result.work_areas),
+                            bounds: results.reduce((box, result) => this.combineBounds(box, result.bounds), null),
+                        })),
                     errorMsg: "{% translate 'Failed to load group work areas' %}",
                 });
             },
@@ -279,37 +705,58 @@
                 return this.replaceFilterSelection({
                     trackingSet: this.flwFilterWorkAreaIds,
                     selectionId: assigneeId,
-                    url: '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId),
+                    // Not cached: unlike group membership, an assignee's work areas change
+                    // during a session (that's the point of this workflow), so a stale
+                    // cached list here would hide assignments just made this session.
+                    fetchSelection: () => fetch('{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId))
+                        .then(resp => {
+                            if (!resp.ok) throw new Error(`Failed to load FLW work areas (status ${resp.status})`);
+                            return resp.json();
+                        })
+                        .then(data => ({ workAreas: data.work_areas, bounds: data.bounds })),
                     errorMsg: "{% translate 'Failed to load FLW work areas' %}",
                 });
             },
 
-            // Replaces the selection contributed by one filter (a group or an FLW).
-            async replaceFilterSelection({ trackingSet, selectionId, url, errorMsg }) {
+            // Replaces the selection contributed by one filter (a group or an FLW). `fetchSelection`
+            // resolves to `{ workAreas, bounds }`; the bounds frame the new selection on the map.
+            async replaceFilterSelection({ trackingSet, selectionId, fetchSelection, errorMsg }) {
                 for (const id of trackingSet) {
                     this.selectedWorkAreas.delete(id);
                     this.setWorkAreaState(id, { assignment_selected: false });
                 }
                 trackingSet.clear();
 
-                if (!selectionId) {
+                const hasSelection = Array.isArray(selectionId) ? selectionId.length > 0 : !!selectionId;
+                if (!hasSelection) {
                     this.updateFlwSummary();
-                    return;
+                    // Clearing the filter widens the map back to everything the tile query shows,
+                    // so widen the camera to match instead of leaving it parked on the group or
+                    // FLW that was just dropped. Its bounds fetch claims the auto-zoom slot
+                    // synchronously, which also drops this filter's own previous reply if that
+                    // one is still in flight.
+                    return this.zoomToQuery(this.currentTileQuery());
                 }
+
+                // Claim the auto-zoom slot before awaiting, on the same counter
+                // fetchWorkAreaBounds() uses. These bounds ride along on the selection response
+                // rather than coming from that fetch, so without this a slow reply here could land
+                // after — and undo — the fit from a search or filter the user has since used.
+                const requestId = this.invalidateBoundsRequest();
 
                 // Show the summary spinner while this filter's areas load. Until they
                 // land, flwFilterWorkAreaIds is empty, so the live delta would transiently
                 // count the FLW's own existing areas as "new" and inflate the total.
                 this.flwSummaryLoading = true;
                 try {
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    for (const wa of data.work_areas) {
+                    const { workAreas, bounds } = await fetchSelection();
+                    for (const wa of workAreas) {
                         this.selectedWorkAreas.add(wa.id);
                         trackingSet.add(wa.id);
                         this.workAreaProperties.set(wa.id, wa);
                         this.setWorkAreaState(wa.id, { assignment_selected: true });
                     }
+                    if (requestId === this.boundsRequestId) this.zoomToBounds(bounds);
                 } catch (e) {
                     this.showToast(errorMsg, true);
                 }
@@ -323,8 +770,8 @@
                 this.selectedWorkAreas.clear();
                 this.groupWorkAreaIds.clear();
                 this.flwFilterWorkAreaIds.clear();
-                if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
-                this.selectedGroupId = null;
+                if (this.$refs.groupSelect?.tomselect) this.$refs.groupSelect.tomselect.clear();
+                this.selectedGroupIds = [];
                 this.selectedFlwFilterId = null;
                 this.updateFlwSummary();
             },
@@ -501,6 +948,7 @@
                     this.showConfirmModal = false;
                     if (resp.ok) {
                         this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.invalidateGroupWorkAreasCache();
                         this.assignmentQueue = [];
                         this.clearSelection();
                         if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
@@ -547,15 +995,16 @@
                             if (props) {
                                 props.status = 'UNASSIGNED';
                                 props.assignee_name = null;
+                                props.assignee_phone = null;
                             }
                         }
+                        if (unassignedIds.length > 0) this.invalidateGroupWorkAreasCache();
                         this.showUnassignModal = false;
                         // Clear the selection, then re-select any failed areas so they stay highlighted
                         // on the map for the user to inspect and retry.
                         this.clearSelection();
                         for (const id of failedIds) {
-                            this.selectedWorkAreas.add(id);
-                            this.setWorkAreaState(id, { assignment_selected: true });
+                            this.setWorkAreaSelected(id, true, this.workAreaProperties.get(id)?.group_id);
                         }
                         const msg = data.skipped || failedIds.length
                             ? "{% translate 'Unassigned' %} " + unassignedIds.length + " " + "{% translate 'work area(s).' %}"
@@ -583,14 +1032,12 @@
                 }
             },
 
-            applyUnassignedFilter() {
-                if (!this.map) return;
-                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
-                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
-                const source = this.map.getSource('workareas');
-                if (source) {
-                    source.setTiles([newUrl]);
-                }
+            // Assignment mode's equivalent of applyFilters().
+            applyAssignmentModeFilters() {
+                const query = this.currentTileQuery();
+                this.pendingTileQuery = query;
+                this.applyTileQuery(query);
+                this.zoomToQuery(query);
             },
 
             init() {
@@ -598,15 +1045,33 @@
                     this.initializeMap();
                 });
 
+                this.statusMeta = JSON.parse(document.getElementById('status-meta-data').textContent);
+
                 this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
                 this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
+
+                if (this.inaccessibleMode) {
+                    const requestsEl = document.getElementById('inaccessibility-requests-data');
+                    if (requestsEl) this.inaccessibilityRequests = JSON.parse(requestsEl.textContent);
+                    this.totalRequestCount = this.inaccessibilityRequests.length;
+
+                    const deniedEl = document.getElementById('denied-inaccessibility-data');
+                    if (deniedEl) this.deniedInaccessibilityWorkAreaIds = JSON.parse(deniedEl.textContent);
+
+                    const legendEl = document.getElementById('inaccessibility-legend-data');
+                    if (legendEl) {
+                        for (const entry of JSON.parse(legendEl.textContent)) {
+                            this.inaccessibilityColors[entry.key] = entry.color;
+                        }
+                    }
+                }
 
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
 
                     this.$watch('showOnlyUnassigned', () => {
-                        this.applyUnassignedFilter();
+                        this.applyAssignmentModeFilters();
                     });
                 }
 
@@ -640,8 +1105,26 @@
                     if (this.selectedFeature && this.selectedFeature._id === data.id) {
                         this.selectedFeature = { ...this.selectedFeature, status: data.status };
                     }
-                    this.setWorkAreaState(data.id, { status: data.status });
-                    this.showReviewInaccessibilityModal = false;
+                    const denied = data.status === 'NOT_VISITED';
+                    this.setWorkAreaState(data.id, {
+                        status: data.status,
+                        selected: false,
+                        inaccessibility_denied: denied,
+                    });
+                    // Tile reloads drop feature state, and these ids are what puts it back, so a
+                    // review has to move the area in or out of them as well.
+                    this.deniedInaccessibilityWorkAreaIds = denied
+                        ? [...this.deniedInaccessibilityWorkAreaIds, data.id]
+                        : this.deniedInaccessibilityWorkAreaIds.filter((id) => id !== data.id);
+                    this.inaccessibilityRequests = this.inaccessibilityRequests.filter(
+                        (pendingRequest) => pendingRequest.work_area_id !== data.id
+                    );
+                    if (this.selectedInaccessibilityRequestId === data.id) {
+                        this.selectedInaccessibilityRequestId = null;
+                        this.selectedInaccessibilityRequestSlug = '';
+                    }
+                    this.reviewedRequestCount += 1;
+                    this.showInaccessibilityReview = false;
                     this.showToast("{% translate 'Work area review saved.' %}");
                 });
 
@@ -652,6 +1135,7 @@
                         this.setWorkAreaState(id, { status: 'EXCLUDED' });
                         this.excludedWorkAreaIds.add(id);
                     }
+                    if (excluded.length > 0) this.invalidateGroupWorkAreasCache();
                     this.showExcludeModal = false;
                     this.clearSelection();
                     if (excluded.length > 0 && skipped === 0) {
@@ -684,7 +1168,18 @@
                 // navigation ui on left of the map
                 MapboxUtils.addNavigation(this.map, 'top-left');
 
+                // Mapbox binds shift+drag to box-zoom by default, which intercepts the
+                // mousedown/click sequence before our shift+click work-area handler sees it.
+                // Only assignment mode uses shift+click, so only disable it there.
+                if (this.assignmentMode) {
+                    this.map.boxZoom.disable();
+                }
+
                 await new Promise(resolve => this.map.once('load', resolve));
+
+                // Footprints are inserted beneath the Work Area layers (see `beforeId`): they are
+                // context for the areas, and the areas are what the user is here to read.
+                this.initBuildings();
 
                 // Workareas are served using django-vectortiles,
                 // promoteId maps the feature's 'id' property as the feature ID,
@@ -696,15 +1191,22 @@
                     promoteId: { 'workareas': 'id' }
                 });
 
+                if (this.pendingTileQuery) {
+                    this.applyTileQuery(this.pendingTileQuery);
+                }
+                if (this.selectedFeature) {
+                    this.setWorkAreaState(this.selectedFeature._id, { selected: true });
+                }
+
                 // Colors each workarea by group using a golden angle HSL hash on group_id,
                 // so adjacent groups get visually distinct colors without a lookup table.
                 // Opacity varies by status to give a quick visual overview of progress.
                 this.map.addLayer({
-                    id: 'workareas-fill',
+                    id: WORKAREAS_FILL_LAYER,
                     type: 'fill',
                     source: 'workareas',
                     'source-layer': 'workareas',
-                    paint: {
+                    paint: this.inaccessibleMode ? this.buildInaccessibleFillPaint() : {
                         'fill-color': [
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
@@ -802,6 +1304,49 @@
                     }
                 });
 
+                // Highlights the areas awaiting review. Opacity keys off feature-state so a
+                // reviewed area drops out at once; a layer filter cannot read feature-state.
+                if (this.inaccessibleMode) {
+                    this.applyDeniedInaccessibilityState();
+                    // Tile reloads on pan/zoom drop feature state, so it goes back on.
+                    this.map.on('sourcedata', (e) => {
+                        if (e.sourceId === 'workareas' && e.isSourceLoaded) {
+                            this.applyDeniedInaccessibilityState();
+                        }
+                    });
+
+                    this.map.addLayer({
+                        id: 'workareas-inaccessible-requested',
+                        type: 'line',
+                        source: 'workareas',
+                        'source-layer': 'workareas',
+                        paint: {
+                            'line-color': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                '#7c3aed',
+                                '#f97316'
+                            ],
+                            'line-width': [
+                                'case',
+                                ['boolean', ['feature-state', 'selected'], false],
+                                5,
+                                3
+                            ],
+                            'line-opacity': [
+                                'case',
+                                [
+                                    '==',
+                                    ['coalesce', ['feature-state', 'status'], ['get', 'status']],
+                                    'REQUEST_FOR_INACCESSIBLE'
+                                ],
+                                1,
+                                0
+                            ]
+                        }
+                    });
+                }
+
                 // Black highlight for assignment mode multi-select
                 if (this.assignmentMode) {
                     this.map.addLayer({
@@ -839,8 +1384,7 @@
 
                 this.$watch('showVisits', (visible) => {
                     if (visible && !visitsLayerAdded) {
-                        const form = this.$refs.filterForm;
-                        const query = new URLSearchParams(new FormData(form)).toString();
+                        const query = this.currentTileQuery();
                         const visitTilesUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
                         this.map.addSource('user-visits', {
                             type: 'vector',
@@ -920,16 +1464,19 @@
                             });
                         }
 
-                        // Zoom using precomputed bounds
-                        if (data.workarea_bounds) {
-                            this.map.fitBounds(data.workarea_bounds, {
-                                padding: 40,
-                                duration: 0
-                            });
-                        }
-
                     })
                     .catch(err => console.error(err));
+
+                // Frame the opportunity. Deliberately not awaited alongside the group outlines
+                // above: this is the cheap query of the two, and the fit shouldn't wait on the
+                // per-group unions. No toast if there are no work areas yet — an empty map is the
+                // expected state before an import, not a failed filter.
+                this.fetchWorkAreaBounds(this.pendingTileQuery ?? '')
+                    .then(bounds => this.zoomToBounds(bounds, { animate: false }));
+
+                // Implementation Areas are a standalone, toggleable overlay independent of
+                // Work Areas. Their setup lives in its own method to keep initializeMap focused.
+                this.initImplementationAreas();
 
 
                 // When the user clicks on the map, Mapbox returns the geographic object
@@ -938,16 +1485,31 @@
                 // `feature` → the raw Mapbox object returned from the click event.
                 // `selectedFeature` → our Alpine state that stores the currently selected workarea.
                 // We store its properties and ID so we can toggle the highlight and access its data.
-                this.map.on('click', 'workareas-fill', (e) => {
+                this.map.on('click', WORKAREAS_FILL_LAYER, (e) => {
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
 
-                    // In assignment mode, toggle multi-select instead of single-select
-                    if (this.assignmentMode) {
-                        this.toggleWorkAreaSelection(id, feature.properties);
+                    // In assignment mode: plain click selects/deselects the whole Work Area
+                    // Group by default; shift+click (or a work area with no group) targets
+                    // just this one work area.
+                    if (this.inaccessibleMode) {
+                        if (this.workAreaWithLiveState(id, feature.properties).status === 'REQUEST_FOR_INACCESSIBLE') {
+                            this.openInaccessibilityReview(id);
+                        }
                         return;
                     }
+
+                    if (this.assignmentMode) {
+                        if (e.originalEvent.shiftKey || feature.properties.group_id == null) {
+                            this.toggleWorkAreaSelection(id, feature.properties);
+                        } else {
+                            this.toggleGroupSelection(feature.properties.group_id);
+                        }
+                        return;
+                    }
+
+                    this.invalidateWorkAreaDetailRequest();
 
                     if (this.selectedFeature) {
                         this.setWorkAreaState(this.selectedFeature._id, { selected: false });
@@ -957,17 +1519,8 @@
                         return;
                     }
 
-                    // Merge tile properties with feature-state so sidebar reflects
-                    // any local edits applied via setFeatureState.
-                    const state = this.map.getFeatureState({
-                        source: 'workareas',
-                        sourceLayer: 'workareas',
-                        id
-                    });
-
                     this.selectedFeature = {
-                        ...e.features[0].properties,
-                        ...state,
+                        ...this.workAreaWithLiveState(id, e.features[0].properties),
                         _id: id
                     };
 
@@ -975,9 +1528,11 @@
                 });
 
                 // Tracks the currently hovered feature to apply white fill highlight
+                // and show a details overlay (`hoveredWorkArea`) with the work area's key details.
                 let hoveredId = null;
-                this.map.on('mousemove', 'workareas-fill', (e) => {
+                this.map.on('mousemove', WORKAREAS_FILL_LAYER, (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
+                    this.isHoveringWorkArea = true;
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const newId = feature.id;
@@ -987,13 +1542,172 @@
                     }
                     hoveredId = newId;
                     this.setWorkAreaState(hoveredId, { hovered: true });
+
+                    const props = this.workAreaWithLiveState(newId, feature.properties);
+                    this.hoveredWorkArea = {
+                        slug: props.slug,
+                        group_name: props.group_name,
+                        implementation_area_name: props.implementation_area_name,
+                        statusLabel: this.statusMeta[props.status]?.label ?? props.status
+                    };
                 });
 
-                this.map.on('mouseleave', 'workareas-fill', () => {
+                this.map.on('mouseleave', WORKAREAS_FILL_LAYER, () => {
                     this.map.getCanvasContainer().style.cursor = '';
+                    this.isHoveringWorkArea = false;
                     if (hoveredId !== null) {
                         this.setWorkAreaState(hoveredId, { hovered: false });
                         hoveredId = null;
+                    }
+                    this.hoveredWorkArea = null;
+                });
+            },
+
+            // Sets up the Building Data overlay, if it is configured. The overlay owns the source,
+            // the layers and the zoom threshold; this only wires its state to the control, which is
+            // hidden below that threshold rather than offering a toggle that appears to do nothing.
+            initBuildings() {
+                const configElement = document.getElementById('buildings-config');
+                if (!configElement) return;
+
+                const buildings = MapboxUtils.addBuildingsOverlay(this.map, JSON.parse(configElement.textContent), {
+                    beforeId: WORKAREAS_FILL_LAYER,
+                    onLoadingChange: (loading) => { this.buildingsLoading = loading; },
+                    onAvailabilityChange: (available) => { this.buildingsAvailable = available; },
+                    onFailed: () => {
+                        this.buildingsFailed = true;
+                        this.showBuildings = false;
+                    },
+                });
+
+                this.$watch('showBuildings', (visible) => buildings.setVisible(visible));
+            },
+
+            // Sets up the Implementation Area overlay: a GeoJSON source, a black outline layer,
+            // a lazy data fetch, hover highlight + name tooltip, and the show/hide toggle. Must be
+            // called from initializeMap after the Work Area layers are added, so the outline
+            // draws on top of them. Assumes this.map exists and its style has loaded.
+            initImplementationAreas() {
+                const implementationAreasUrl = '{{ implementation_areas_url|escapejs }}';
+
+                // generateId gives each feature a stable id so hover can be tracked per
+                // area via setFeatureState.
+                this.map.addSource('implementation-areas', {
+                    type: 'geojson',
+                    generateId: true,
+                    data: { type: 'FeatureCollection', features: [] }
+                });
+
+                this.map.addLayer({
+                    id: 'implementation-areas-outline',
+                    type: 'line',
+                    source: 'implementation-areas',
+                    layout: {
+                        'visibility': this.showImplementationAreas ? 'visible' : 'none'
+                    },
+                    paint: {
+                        'line-color': '#000000',
+                        // Bolder line while hovered so the highlighted area stands out.
+                        'line-width': [
+                            'case',
+                            ['boolean', ['feature-state', 'hovered'], false],
+                            4,
+                            2
+                        ],
+                        'line-opacity': 1
+                    }
+                });
+
+                // Fetched lazily on the first toggle so hidden overlays never hit the server.
+                // The flag is set up front to swallow rapid re-toggles, and reset on failure
+                // so the next toggle retries.
+                let implementationAreasLoaded = false;
+                const loadImplementationAreas = async () => {
+                    if (implementationAreasLoaded) return;
+                    implementationAreasLoaded = true;
+                    try {
+                        const res = await fetch(implementationAreasUrl);
+                        if (!res.ok) throw new Error("Failed to fetch implementation areas");
+                        const data = await res.json();
+                        if (data.implementation_area_features?.length) {
+                            this.map.getSource('implementation-areas').setData({
+                                type: "FeatureCollection",
+                                features: data.implementation_area_features
+                            });
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        implementationAreasLoaded = false;
+                        this.showToast("{% translate 'Failed to load Implementation Areas.' %}", true);
+                    }
+                };
+
+                if (this.showImplementationAreas) loadImplementationAreas();
+
+                // Hover indicator for Implementation Areas: highlight the hovered outline
+                // and show its name in a tooltip. Handlers are scoped to the outline layer,
+                // so they only fire over the boundary line — never over the Work Area boxes.
+                // setText (not setHTML) is used because area names come from user uploads.
+                let hoveredImplementationAreaId = null;
+                const implementationAreaPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false
+                });
+
+                const clearImplementationAreaHover = () => {
+                    if (hoveredImplementationAreaId !== null) {
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: false }
+                        );
+                        hoveredImplementationAreaId = null;
+                    }
+                    implementationAreaPopup.remove();
+                };
+
+                this.map.on('mousemove', 'implementation-areas-outline', (e) => {
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+
+                    if (feature.id !== hoveredImplementationAreaId) {
+                        if (hoveredImplementationAreaId !== null) {
+                            this.map.setFeatureState(
+                                { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                                { hovered: false }
+                            );
+                        }
+                        hoveredImplementationAreaId = feature.id;
+                        this.map.setFeatureState(
+                            { source: 'implementation-areas', id: hoveredImplementationAreaId },
+                            { hovered: true }
+                        );
+                    }
+
+                    implementationAreaPopup
+                        .setLngLat(e.lngLat)
+                        .setText(feature.properties?.name ?? '')
+                        .addTo(this.map);
+                });
+
+                this.map.on('mouseleave', 'implementation-areas-outline', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    clearImplementationAreaHover();
+                });
+
+                // Layer toggle: show/hide the Implementation Area outlines. Clears any active
+                // hover state when hiding so a tooltip can't linger over the hidden layer.
+                this.$watch('showImplementationAreas', (visible) => {
+                    if (!this.map.getLayer('implementation-areas-outline')) return;
+                    if (visible) loadImplementationAreas();
+                    this.map.setLayoutProperty(
+                        'implementation-areas-outline',
+                        'visibility',
+                        visible ? 'visible' : 'none'
+                    );
+                    if (!visible) {
+                        this.map.getCanvasContainer().style.cursor = '';
+                        clearImplementationAreaHover();
                     }
                 });
             }

@@ -3,13 +3,24 @@ import uuid
 from collections import defaultdict
 from itertools import chain
 
+import httpx
+from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.mail import EmailMessage
 from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Min, Q, Sum, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
+from django.utils.timezone import now
 from django_tables2.export.export import TableExport
 
 from commcare_connect.connect_id_client.main import fetch_user_analytics
 from commcare_connect.opportunity.models import CompletedWorkStatus, OpportunityAccess
+from commcare_connect.reports.delivery_stats_export import (
+    build_delivery_stats_csv,
+    describe_filters,
+    get_eligible_recipients,
+    get_filter_values,
+    previous_month_filters,
+)
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import User
 from config import celery_app
@@ -149,3 +160,52 @@ def export_invoice_report_task(filters_data, user_id):
     filename = f"invoice-report-{uuid.uuid4()}.csv"
     content = exporter.export()
     return ExportS3Boto3Storage().save(filename, ContentFile(content.encode("utf-8")))
+
+
+# Building the CSV calls ConnectID (fetch_user_counts), so an outage raises httpx errors before any email is
+# sent; retrying is safe and avoids losing the month's email. Backoff 60s doubling, capped at 30 min.
+EXPORT_RETRY_OPTIONS = {
+    "autoretry_for": (httpx.HTTPError,),
+    "retry_kwargs": {"max_retries": 5},
+    "retry_backoff": 60,
+    "retry_backoff_max": 1800,
+    "retry_jitter": True,
+}
+
+
+@celery_app.task(**EXPORT_RETRY_OPTIONS)
+def send_delivery_stats_export():
+    recipients = get_eligible_recipients()
+    if not recipients:
+        logger.info("No eligible recipients for the monthly Delivery Stats export; skipping.")
+        return
+    # Bcc so recipients don't see each other's addresses.
+    _send_export_email(previous_month_filters(now().date()), monthly=True, bcc=[user.email for user in recipients])
+
+
+@celery_app.task(**EXPORT_RETRY_OPTIONS)
+def email_delivery_stats_export(user_id, filter_data):
+    """Email the Delivery Stats CSV to one user. filter_data=None sends the monthly export."""
+    user = User.objects.get(pk=user_id)
+    if not user.email:
+        logger.info("User %s has no email; not sending the Delivery Stats export.", user_id)
+        return
+    if filter_data is None:
+        _send_export_email(previous_month_filters(now().date()), monthly=True, to=[user.email])
+    else:
+        _send_export_email(get_filter_values(filter_data), monthly=False, to=[user.email])
+
+
+def _send_export_email(filters, monthly, to=None, bcc=None):
+    if monthly:
+        month = filters["from_date"]
+        subject = f"Delivery Stats — {month:%B %Y}"
+        filename = f"delivery-stats-{month:%Y-%m}.csv"
+        body = f"Attached is the platform-wide Delivery Stats report for {month:%B %Y}."
+    else:
+        subject = "Delivery Stats export"
+        filename = f"delivery-stats-export-{now().date():%Y-%m-%d}.csv"
+        body = "Attached is the Delivery Stats report with these filters:\n\n" + "\n".join(describe_filters(filters))
+    message = EmailMessage(subject, body, settings.DEFAULT_FROM_EMAIL, to=to, bcc=bcc)
+    message.attach(filename, build_delivery_stats_csv(filters), "text/csv")
+    message.send()

@@ -11,6 +11,10 @@ updates:
       day: monday
       time: '09:00'
     open-pull-requests-limit: 5
+    # Wait a week after a release before proposing it, so a compromised or broken release is likely pulled
+    # first. Security updates ignore this.
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
     # Group all minor/patch bumps into one PR to cut noise; major bumps get
@@ -33,9 +37,18 @@ updates:
       day: monday
       time: '09:00'
     open-pull-requests-limit: 5
+    # Wait a week after a release before proposing it, so a compromised or broken release is likely pulled
+    # first. Security updates ignore this.
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
     groups:
+      # Babel's core and presets peer on each other's major version, so bumping one alone breaks
+      # `npm ci`. Listed first so every @babel/* update, major included, lands in this group.
+      babel:
+        patterns:
+          - '@babel/*'
       npm-non-major:
         update-types:
           - minor
@@ -47,5 +60,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Wait a week after a release before proposing it, so a compromised or broken release is likely pulled
+    # first. Security updates ignore this.
+    cooldown:
+      default-days: 7
     labels:
       - dependencies

@@ -2,13 +2,8 @@ import datetime
 
 from django.core.management import call_command
 
-from commcare_connect.opportunity.models import (
-    InvoiceStatus,
-)
-from commcare_connect.opportunity.tests.factories import (
-    OpportunityFactory,
-    PaymentInvoiceFactory,
-)
+from commcare_connect.opportunity.models import InvoiceStatus
+from commcare_connect.opportunity.tests.factories import OpportunityFactory, PaymentInvoiceFactory
 
 
 class ArchivePendingInvoicesTest:

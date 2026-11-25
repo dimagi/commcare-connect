@@ -73,7 +73,7 @@ DJANGO_APPS = [
     "django.contrib.sites",
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
-    "django.contrib.staticfiles",
+    "config.apps.StaticFilesConfig",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
     "django.contrib.gis",
@@ -96,6 +96,7 @@ THIRD_PARTY_APPS = [
     "pghistory",
     "pgtrigger",  # added for pghistory
     "vectortiles",
+    "health_check",
 ]
 
 LOCAL_APPS = [
@@ -111,6 +112,7 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.program",
     "commcare_connect.reports",
+    "commcare_connect.solicitation",
     "commcare_connect.users",
     "commcare_connect.web",
     "commcare_connect.microplanning",
@@ -150,15 +152,18 @@ AUTH_PASSWORD_VALIDATORS = [
 # MIDDLEWARE
 # ------------------------------------------------------------------------------
 MIDDLEWARE = [
+    "commcare_connect.utils.middleware.SecurityHeadersMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "commcare_connect.utils.middleware.NoStoreCacheMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
     "commcare_connect.users.middleware.OrganizationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -184,6 +189,9 @@ WHITENOISE_MANIFEST_STRICT = False  # don't 500 on missing staticfiles
 # ------------------------------------------------------------------------------
 MEDIA_ROOT = str(APPS_DIR / "media")
 MEDIA_URL = "/media/"
+# Largest request body Django will load into memory. DRF 3.18 reads JSON and form bodies through
+# request.body, so this also caps API payloads such as work area bulk uploads and HQ form submissions.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 # TEMPLATES
 # ------------------------------------------------------------------------------
@@ -207,6 +215,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
                 "commcare_connect.web.context_processors.session_tracking_context",
+                "commcare_connect.web.context_processors.hubspot_context",
             ],
         },
     }
@@ -225,6 +234,7 @@ FIXTURE_DIRS = (str(APPS_DIR / "fixtures"),)
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
+CSRF_FAILURE_VIEW = "config.views.csrf_failure"
 X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
@@ -284,12 +294,22 @@ LOGGING = {
     },
 }
 
+# Health checks
+# ------------------------------------------------------------------------------
+# Tokens accepted by /status/ as an Authorization: Bearer header or ?token=. Empty leaves the endpoint
+# open. See commcare_connect/health/README.md.
+HEALTH_CHECK_TOKENS = env.list("HEALTH_CHECK_TOKENS", default=[])
+
 # Celery
 # ------------------------------------------------------------------------------
 if USE_TZ:
     CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_keepalive": True,
+    "health_check_interval": 30,
+}
 CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
 CELERY_RESULT_BACKEND_MAX_RETRIES = 10
@@ -306,9 +326,8 @@ CELERY_TASK_TRACK_STARTED = True
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
-ACCOUNT_AUTHENTICATION_METHOD = "username_email"
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_LOGIN_METHODS = {"username", "email"}
+ACCOUNT_SIGNUP_FIELDS = ["username", "email*", "password1*", "password2*"]
 # ensures that user display is resolved from the user.__str__ method
 ACCOUNT_USER_DISPLAY = str
 ACCOUNT_USER_MODEL_USERNAME_FIELD = "username"
@@ -318,6 +337,18 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+# Bots that fill in this off-screen signup field get the "verification sent" page and no account.
+ACCOUNT_SIGNUP_FORM_HONEYPOT_FIELD = "website"
+# Never mail an address that has no account (anyone can type any address into the reset form).
+ACCOUNT_EMAIL_UNKNOWN_ACCOUNTS = False
+# Merged over allauth's defaults. One action can't carry two limits on the same key (they share a cache entry),
+# hence the extra "send_mail" action, which AccountAdapter.send_mail applies to every account mail.
+ACCOUNT_RATE_LIMITS = {
+    "reset_password": "20/m/ip,3/h/key",
+    "send_mail": "10/d/key",
+}
+# Proxies that append to X-Forwarded-For before Django; 0 keys allauth's per-IP limits on REMOTE_ADDR instead.
+ALLAUTH_TRUSTED_PROXY_COUNT = env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=0)
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
@@ -327,8 +358,12 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # No BrowsableAPIRenderer outside local dev: its pages load DRF's bundled Bootstrap 3, which is end-of-life.
+    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
+    # DRF 3.18 reports many=True errors as {index: errors}; keep the list shape API clients rely on.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0", "2.0"],
     "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
@@ -397,6 +432,11 @@ OAUTH2_PROVIDER = {
     },
     "OAUTH2_VALIDATOR_CLASS": "commcare_connect.users.oauth2_validator.CustomOAuth2Validator",
     "OIDC_ENABLED": True,
+    # PEM private key for signing RS256 ID tokens; /o/.well-known/jwks.json publishes its public key.
+    # Env files can't hold multi-line values, so newlines may be written as a literal "\n".
+    # Without it, RS256 applications can't be issued ID tokens: flows that would issue one return
+    # invalid_scope. Requesting openid for /o/userinfo/ still works.
+    "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", default="", multiline=True),
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
@@ -408,6 +448,15 @@ TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
 MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
+
+# Jira Service Management: Finance payment requests are raised on the dimagi-operations site
+# by an Atlassian service account using an OAuth 2.0 client credential.
+JIRA_SERVICE_DESK_CLIENT_ID = env("JIRA_SERVICE_DESK_CLIENT_ID", default=None)
+JIRA_SERVICE_DESK_CLIENT_SECRET = env("JIRA_SERVICE_DESK_CLIENT_SECRET", default=None)
+JIRA_SERVICE_DESK_CLOUD_ID = env("JIRA_SERVICE_DESK_CLOUD_ID", default="811411a5-569c-4f1d-be86-7a1333077196")
+# Local development only (see local.py): fake the service desk instead of raising real tickets.
+JIRA_SERVICE_DESK_DRY_RUN = ""
+JIRA_SERVICE_DESK_DRY_RUN_DELAY = 0
 
 # Waffle Settings
 WAFFLE_FLAG_MODEL = "flags.Flag"
@@ -425,3 +474,10 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 
 # LiveSession Settings
 LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
+
+# HubSpot Settings
+HUBSPOT_API_ID = env("HUBSPOT_API_ID", default="")
+
+# Marketing site: only the production load balancer routes /public/* to it, so the old
+# marketing URLs here redirect there only when this is on (see prelogin/urls.py).
+MARKETING_SITE_ENABLED = env.bool("MARKETING_SITE_ENABLED", default=False)

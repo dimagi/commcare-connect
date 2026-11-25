@@ -1,7 +1,6 @@
 from collections import defaultdict
 
-from django.db.models import F, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models import Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -19,7 +18,7 @@ class CompletedWorkUpdater:
     """Recalculates status and payment for a batch of CompletedWork records.
 
     Prepares deliver/payment unit mappings, counts completed and approved visits
-    per work item, updates statuses based on auto-approval and managed opportunity
+    per work item, updates statuses based on auto-approval and program manager review
     rules, and caches payment amounts (local currency + USD).
     """
 
@@ -136,8 +135,8 @@ class CompletedWorkUpdater:
         """Set CompletedWork status based on visit statuses and approval rules.
 
         When auto_approve_payments is enabled: rejected if any visit is rejected,
-        approved if all visits are approved. For managed opportunities, approval
-        is downgraded to pending unless all visits have review_status=agree.
+        approved if all visits are approved. Approval
+        is then downgraded to pending unless all visits have review_status=agree.
         """
         updated = False
         if self.opportunity.auto_approve_payments:
@@ -178,7 +177,7 @@ class CompletedWorkUpdater:
         """Cache payment amounts on the CompletedWork record.
 
         Calculates local currency and USD amounts for approved work using
-        the exchange rate at the time of status change. For managed opportunities,
+        the exchange rate at the time of status change. It
         also calculates the organization's payment portion.
         """
         updated = False
@@ -291,88 +290,3 @@ def update_work_payment_date(access: OpportunityAccess):
 
     if works_to_update:
         CompletedWork.objects.bulk_update(works_to_update, ["payment_date"])
-
-
-def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=None):
-    query = CompletedWork.objects.filter(
-        opportunity_access__opportunity=opportunity,
-        status=CompletedWorkStatus.approved,
-        invoice__isnull=True,
-    )
-
-    if start_date:
-        query = query.filter(status_modified_date__date__gte=start_date)
-    if end_date:
-        query = query.filter(status_modified_date__date__lte=end_date)
-
-    return query
-
-
-def get_invoiced_visit_items(payment_invoice):
-    completed_works_qs = CompletedWork.objects.filter(invoice=payment_invoice)
-    return get_invoice_items(completed_works_qs)
-
-
-def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
-    completed_works_qs = get_uninvoiced_completed_works_qs(opportunity, start_date, end_date)
-    return get_invoice_items(completed_works_qs)
-
-
-def get_invoice_items(completed_works_qs):
-    from commcare_connect.opportunity.visit_import import get_exchange_rate
-
-    monthly_pu_records = (
-        completed_works_qs.annotate(
-            month_approved=TruncMonth("status_modified_date"),
-        )
-        .values("payment_unit", "month_approved")
-        .annotate(
-            payment_unit_name=F("payment_unit__name"),
-            record_count=Sum("saved_approved_count"),
-            currency=F("opportunity_access__opportunity__currency__code"),
-            flw_amount_local=Sum("saved_payment_accrued"),
-            org_amount_local=Sum("saved_org_payment_accrued"),
-            flw_amount_usd=Sum("saved_payment_accrued_usd"),
-            org_amount_usd=Sum("saved_org_payment_accrued_usd"),
-        )
-        .order_by("month_approved")
-    )
-
-    exchange_rates_by_month = {}
-    invoice_items = []
-    for record in monthly_pu_records:
-        month = record["month_approved"]
-        currency = record["currency"]
-        exchange_rate_cache_key = (currency, month)
-
-        if exchange_rate_cache_key not in exchange_rates_by_month:
-            exchange_rates_by_month[exchange_rate_cache_key] = get_exchange_rate(currency, month)
-        exchange_rate = exchange_rates_by_month[exchange_rate_cache_key]
-
-        flw_local = record["flw_amount_local"] or 0
-        org_local = record["org_amount_local"] or 0
-        flw_usd = record["flw_amount_usd"] or 0
-        org_usd = record["org_amount_usd"] or 0
-
-        invoice_items.append(
-            {
-                "month": month,
-                "payment_unit_name": record["payment_unit_name"],
-                "number_approved": record["record_count"],
-                "flw_amount_local": flw_local,
-                "org_amount_local": org_local,
-                "total_amount_local": flw_local + org_local,
-                "flw_amount_usd": flw_usd,
-                "org_amount_usd": org_usd,
-                "total_amount_usd": flw_usd + org_usd,
-                "exchange_rate": exchange_rate,
-                "currency": currency,
-            }
-        )
-
-    return invoice_items
-
-
-def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):
-    completed_works_qs = get_uninvoiced_completed_works_qs(invoice.opportunity, start_date, end_date)
-    completed_works_qs.update(invoice=invoice)

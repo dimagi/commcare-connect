@@ -1,70 +1,183 @@
 import django_tables2 as tables
-from django.utils.html import format_html
+from django.db.models import F
+from django.template.loader import render_to_string
+from django.utils.functional import lazy
+from django.utils.safestring import SafeString
+from django.utils.translation import gettext_lazy as _
 from django_tables2 import columns
 
-from commcare_connect.opportunity.tables import IndexColumn
-from commcare_connect.organization.models import OrganizationInvite, UserOrganizationMembership
+from commcare_connect.opportunity.tables import STAT_COLUMN_ATTRS
+from commcare_connect.organization.models import (
+    ORGANIZATION_STATUS_DEFINITIONS,
+    Contact,
+    Organization,
+    OrganizationInvite,
+    PrimarySector,
+    UserOrganizationMembership,
+)
+from commcare_connect.utils.tables import (
+    DMYTColumn,
+    IndexColumn,
+    ManagedOptionTable,
+    SpreadsheetSafeColumn,
+    select_column,
+)
+
+ACTION_COLUMN_ATTRS = {"th": {"class": "col-action"}, "td": {"class": "col-action"}}
+ROLE_BADGE_TEMPLATE = "organization/role_badge.html"
 
 
 class OrgMemberTable(tables.Table):
-    select = tables.CheckBoxColumn(
-        accessor="pk",
-        attrs={
-            "th__input": {
-                "@click": "toggleSelectAll()",
-                "x-model": "selectAll",
-                "name": "select_all",
-                "type": "checkbox",
-                "class": "checkbox",
-            },
-            "td__input": {
-                "x-model": "selected",
-                "@click.stop": "",  # used to stop click propagation
-                "name": "row_select",
-                "type": "checkbox",
-                "class": "checkbox",
-                "value": lambda record: record.pk,
-                "id": lambda record: f"row_checkbox_{record.pk}",
-                ":disabled": lambda record: f"currentUserMembershipId === '{record.pk}'",
-            },
-        },
+    select = select_column(
+        td_extra={":disabled": lambda record: f"currentUserMembershipId === '{record.pk}'"},
     )
     use_view_url = True
     index = IndexColumn()
-    user = columns.Column(verbose_name="member", accessor="user__email")
-    role = tables.Column()
+    user = columns.Column(verbose_name=_("Member"), accessor="user__email")
+    role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    accepted_at = DMYTColumn(verbose_name=_("Accepted On"))
 
     class Meta:
         model = UserOrganizationMembership
-        fields = ("role", "user")
-        sequence = ("select", "index", "user", "role")
-
-    def render_role(self, value):
-        return format_html("<div class=' underline underline-offset-4'>{}</div>", value)
+        fields = ("role", "user", "accepted_at")
+        sequence = ("select", "index", "user", "role", "accepted_at")
 
 
 class PendingInviteTable(tables.Table):
+    # This table is rendered as an htmx fragment, so sort links must be built from the
+    # hosting page's URL (the referer) rather than from the fragment endpoint's own path.
+    use_view_url = True
     index = IndexColumn()
-    email = tables.Column()
-    role = tables.Column()
-    date_modified = columns.DateColumn(verbose_name="Invited on")
-    revoke = columns.TemplateColumn(
+    email = tables.Column(verbose_name=_("Email"))
+    role = columns.TemplateColumn(verbose_name=_("Role"), template_name=ROLE_BADGE_TEMPLATE)
+    date_modified = DMYTColumn(verbose_name=_("Invited on"))
+    expiry_date = DMYTColumn(verbose_name=_("Expires on"), orderable=False)
+    actions = columns.TemplateColumn(
         verbose_name="",
         orderable=False,
-        template_code="""
-            {% load i18n %}
-            <button type="button" class="button button-sm outline-style text-red-600"
-                hx-post="{% url 'organization:revoke_invite' record.organization.slug record.pk %}"
-                hx-target="#pending_invites_container" hx-swap="innerHTML">
-                {% translate "Revoke" %}
-            </button>
-        """,
+        attrs=ACTION_COLUMN_ATTRS,
+        template_name="organization/pending_invite_actions.html",
     )
 
     class Meta:
         model = OrganizationInvite
         fields = ("email", "role", "date_modified")
-        sequence = ("index", "email", "role", "date_modified", "revoke")
+        sequence = ("index", "email", "role", "date_modified", "expiry_date", "actions")
+        empty_text = _("No pending invites.")
+        # The organization page hosts this table alongside OrgMemberTable and feeds both
+        # from one query string, so prefix these params to keep sorting and paging
+        # on the two tables independent.
+        prefix = "invites-"
 
-    def render_role(self, record):
-        return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())
+
+def _status_column_header():
+    definitions_html = render_to_string(
+        "organization/directory/status_definitions.html",
+        {"definitions": ORGANIZATION_STATUS_DEFINITIONS.items()},
+    )
+    return render_to_string("organization/directory/status_header.html", {"definitions_html": definitions_html})
+
+
+# Lists of countries, regions and sectors wrap rather than widening the table.
+WRAPPING_COLUMN_ATTRS = {"td": {"class": "whitespace-normal"}}
+
+
+class DirectoryTable(tables.Table):
+    """A table of an LLO Directory listing."""
+
+    # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL
+    # instead of the referer's.
+    use_view_url = False
+
+
+class OrganizationDirectoryTable(DirectoryTable):
+    name = columns.Column(verbose_name=_("Name"))
+    status = columns.TemplateColumn(
+        # Lazy so the template isn't rendered at import time.
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        template_name="organization/directory/status_badge.html",
+        extra_context=lambda record: {"status": record.status},
+    )
+    countries = columns.ManyToManyColumn(verbose_name=_("Countries"), attrs=WRAPPING_COLUMN_ATTRS)
+    # Free text listing several regions, so it sorts no more meaningfully than countries.
+    regions = columns.Column(verbose_name=_("Regions"), attrs=WRAPPING_COLUMN_ATTRS, orderable=False)
+    primary_sectors = columns.ManyToManyColumn(verbose_name=_("Primary Sectors"), attrs=WRAPPING_COLUMN_ATTRS)
+    # Team size is stored as a bracket ("11-50"), which doesn't sort meaningfully as text.
+    team_size = columns.Column(verbose_name=_("Org Team Size"), orderable=False)
+    flws_managed = columns.Column(verbose_name=_("FLWs Managed"))
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        model = Organization
+        fields = ("name", "status", "countries", "regions", "primary_sectors", "team_size", "flws_managed")
+        sequence = (*fields, "actions")
+        default = "—"
+        empty_text = _("No organizations found.")
+
+    def order_flws_managed(self, queryset, is_descending):
+        # Organizations that haven't said how many FLWs they manage sort last in either direction, and
+        # the primary key keeps equal counts in a stable order across pages.
+        flws_managed = F("flws_managed")
+        ordering = flws_managed.desc(nulls_last=True) if is_descending else flws_managed.asc(nulls_last=True)
+        return queryset.order_by(ordering, "pk"), True
+
+
+class ContactDirectoryTable(DirectoryTable):
+    name = columns.Column(verbose_name=_("Name"))
+    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
+    organization_status = columns.TemplateColumn(
+        verbose_name=lazy(_status_column_header, SafeString)(),
+        accessor="organization__status",
+        template_name="organization/directory/status_badge.html",
+        extra_context=lambda record: {"status": record.organization.status},
+    )
+    title = columns.Column(verbose_name=_("Role / Title"))
+    is_main_poc = columns.TemplateColumn(
+        verbose_name=_("Point of Contact"),
+        template_name="organization/directory/main_poc_badge.html",
+        orderable=False,
+    )
+    email = columns.TemplateColumn(verbose_name=_("Email"), template_name="organization/directory/email_link.html")
+    phone = columns.Column(verbose_name=_("Phone"), orderable=False)
+    active = columns.Column(verbose_name=_("Active"), accessor="is_archived")
+    actions = columns.TemplateColumn(
+        verbose_name=_("Actions"),
+        template_name="organization/directory/contact_row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        model = Contact
+        fields = ("name", "organization", "organization_status", "title", "is_main_poc", "email", "phone", "active")
+        sequence = (*fields, "actions")
+        default = "—"
+        empty_text = _("No contacts found.")
+
+    def render_active(self, value):
+        return _("No") if value else _("Yes")
+
+
+class ContactExportTable(tables.Table):
+    name = SpreadsheetSafeColumn(verbose_name=_("Contact Name"))
+    organization = SpreadsheetSafeColumn(verbose_name=_("Organization"), accessor="organization__name")
+    title = SpreadsheetSafeColumn(verbose_name=_("Role / Title"))
+    is_main_poc = columns.Column(verbose_name=_("Main Point of Contact"))
+    email = SpreadsheetSafeColumn(verbose_name=_("Email"))
+    phone = SpreadsheetSafeColumn(verbose_name=_("Phone"))
+    notes = SpreadsheetSafeColumn(verbose_name=_("Notes"))
+
+    def value_is_main_poc(self, value):
+        return _("Yes") if value else _("No")
+
+
+class PrimarySectorTable(ManagedOptionTable):
+    organization_count = columns.Column(verbose_name=_("Organizations"), attrs=STAT_COLUMN_ATTRS)
+
+    class Meta(ManagedOptionTable.Meta):
+        model = PrimarySector

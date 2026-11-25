@@ -155,11 +155,14 @@ class WorkAreaGrouper:
                     ward=ward,
                     name=group_id,
                 )
+
                 WorkArea.objects.filter(
                     id__in=work_area_ids,
                     opportunity=self.opportunity_id,
                     work_area_group__isnull=True,
                 ).update(work_area_group=work_area_group)
+
+                work_area_group.update_centroid()
 
         logger.info(
             "Opportunity %s: clustering complete, created %d groups",

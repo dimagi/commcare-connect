@@ -1,5 +1,31 @@
 from django.contrib.auth.models import Permission
-from django.test import Client
+from django.test import Client, RequestFactory
+from django.utils.functional import SimpleLazyObject
+
+from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.program.utils import opportunity_access_level_from_request
+from commcare_connect.users.models import User
+
+
+def make_request(user, org=None, membership=None, opportunity=None):
+    """A request carrying only what the access functions read: the user, the org, the role in it,
+    and the opportunity access level.
+    """
+    request = RequestFactory().get("/")
+    request.user = user
+    request.org = org
+    request.org_membership = membership
+    request.opp_access_level = SimpleLazyObject(lambda: opportunity_access_level_from_request(request, opportunity))
+    return request
+
+
+def make_membership(organization, user, role):
+    return UserOrganizationMembership.objects.create(organization=organization, user=user, role=role)
+
+
+def grant_all_org_access(user):
+    user.user_permissions.add(Permission.objects.get(codename="all_org_access"))
+    return User.objects.get(pk=user.pk)  # re-fetch to clear the cached perm set
 
 
 def check_basic_permissions(user, url, permission_codename, status_code=403):

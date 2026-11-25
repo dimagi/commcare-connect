@@ -5,6 +5,7 @@ from commcare_connect.data_export import views
 app_name = "data_export"
 urlpatterns = [
     path("opp_org_program_list/", views.ProgramOpportunityOrganizationDataView.as_view(), name="opp_org_program_list"),
+    path("opportunity_access/", views.OpportunityAccessCheckView.as_view(), name="opportunity_access"),
     path("opportunity/<int:opp_id>/", views.SingleOpportunityDataView.as_view(), name="opportunity_data"),
     path("opportunity/<int:opp_id>/user_data/", views.OpportunityUserDataView.as_view(), name="opportunity_user_data"),
     path("opportunity/<int:opp_id>/user_visits/", views.UserVisitDataView.as_view(), name="user_visit_data"),
@@ -20,9 +21,21 @@ urlpatterns = [
         name="completed_module_data",
     ),
     path(
+        "opportunity/<int:opp_id>/attachment/",
+        views.AttachmentView.as_view(),
+        name="attachment_export",
+    ),
+    # Kept for callers written before the endpoint served audio as well as images; both
+    # paths resolve any attachment by blob_id.
+    path(
         "opportunity/<int:opp_id>/image/",
-        views.ImageView.as_view(),
+        views.AttachmentView.as_view(),
         name="image_export",
+    ),
+    path(
+        "opportunity/<int:opp_id>/attachment_signed_url/",
+        views.AttachmentSignedUrlView.as_view(),
+        name="attachment_signed_url",
     ),
     path(
         "opportunity/<int:opp_id>/app_structure/",
@@ -49,10 +62,40 @@ urlpatterns = [
     ),
     path("opportunity/<int:opp_id>/assigned_tasks/", views.AssignedTaskDataView.as_view(), name="assigned_task_data"),
     path(
+        "opportunity/<int:opp_id>/assigned_tasks/create/",
+        views.AssignedTaskCreateView.as_view(),
+        name="assigned_task_create",
+    ),
+    path(
         "opportunity/<int:opp_id>/work_area_groups/",
         views.WorkAreaGroupDataView.as_view(),
         name="work_area_group_data",
     ),
     path("opportunity/<int:opp_id>/work_areas/", views.WorkAreaDataView.as_view(), name="work_area_data"),
     path("llo_entity/", views.LLOEntityDataView.as_view(), name="llo_entity_data"),
+    path(
+        "opportunity/<int:opp_id>/work_area_groups/write/",
+        views.WorkAreaGroupWriteView.as_view(),
+        name="work_area_group_write",
+    ),
+    path(
+        "opportunity/<int:opp_id>/work_areas/bulk_update/",
+        views.WorkAreaBulkUpdateView.as_view(),
+        name="work_area_bulk_update",
+    ),
+    path(
+        "opportunity/<int:opp_id>/work_areas/bulk_create/",
+        views.WorkAreaBulkCreateView.as_view(),
+        name="work_area_bulk_create",
+    ),
+    path(
+        "opportunity/<int:opp_id>/implementation_areas/bulk_create/",
+        views.ImplementationAreaBulkCreateView.as_view(),
+        name="implementation_area_bulk_create",
+    ),
+    path(
+        "opportunity/<int:opp_id>/implementation_areas/",
+        views.ImplementationAreaDataView.as_view(),
+        name="implementation_area_data",
+    ),
 ]

@@ -1,0 +1,18 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+{# A row deleted on a submit that then failed validation stays hidden. #}
+<div class="card_bg"
+     x-data="{ removed: {{ form.cleaned_data.DELETE|yesno:'true,false' }} }"
+     x-show="!removed">
+  {% if not solicitation.structure_locked %}
+    <div class="flex justify-end">
+      <button type="button"
+              class="button-icon negative-light"
+              aria-label="{% translate "Remove" %}"
+              @click="removed = true">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </div>
+  {% endif %}
+  <div class="grid grid-cols-2 gap-2">{% crispy form %}</div>
+</div>

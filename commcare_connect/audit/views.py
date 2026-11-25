@@ -1,10 +1,11 @@
 from datetime import timedelta
 
-from django.db import transaction
+from django.db.models import F
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 from django_tables2 import RequestConfig
@@ -17,7 +18,9 @@ from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import AssignedTask, TaskType
-from commcare_connect.organization.decorators import opportunity_required, org_member_required
+from commcare_connect.organization.decorators import opp_standard_access_required, opportunity_required
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 DEFAULT_PAGE_SIZE = 25
 DEFAULT_TASK_DUE_DAYS = 7
@@ -28,14 +31,15 @@ def _require_feature_flag(opportunity):
         flag = Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT)
     except Flag.DoesNotExist:
         raise Http404("Weekly performance report is not enabled.")
-    enabled = flag.opportunities.filter(pk=opportunity.pk).exists() or (
-        opportunity.program_id is not None and flag.programs.filter(pk=opportunity.program_id).exists()
+    enabled = (
+        flag.opportunities.filter(pk=opportunity.pk).exists()
+        or flag.programs.filter(pk=opportunity.program_id).exists()
     )
     if not enabled:
         raise Http404("Weekly performance report is not enabled for this opportunity.")
 
 
-@org_member_required
+@opp_standard_access_required
 @opportunity_required
 def audit_report_list(request, org_slug, opp_id):
     opportunity = request.opportunity
@@ -73,18 +77,22 @@ def audit_report_list(request, org_slug, opp_id):
 
 
 @opportunity_required
-@org_member_required
+@opp_standard_access_required
 def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity
     _require_feature_flag(opportunity)
     report = get_object_or_404(AuditReport, audit_report_id=audit_report_id, opportunity=opportunity)
 
     all_entries = list(
-        report.entries.select_related("opportunity_access__user").order_by("opportunity_access__user__name")
+        report.entries.select_related("opportunity_access__user")
+        .annotate(status=F("opportunity_access__userinvite__status"))
+        .order_by("opportunity_access__user__name")
     )
     columns_spec = column_specs(all_entries)
 
-    worker_filter_choices = [(str(e.opportunity_access_id), e.opportunity_access.user.name) for e in all_entries]
+    worker_filter_choices = [
+        (str(e.opportunity_access_id), e.opportunity_access.user.display_name_with_username()) for e in all_entries
+    ]
 
     selected_workers = request.GET.getlist("worker")
     if selected_workers:
@@ -137,16 +145,22 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
         "org_slug": org_slug,
     }
 
-    template = (
-        "audit/audit_report_body.html"
-        if request.headers.get("HX-Request") == "true"
-        else "audit/audit_report_detail.html"
-    )
-    return render(request, template, context)
+    response = render(request, _detail_template(request), context)
+    # The same URL serves the full page or just the body, so caches must not mix them up.
+    patch_vary_headers(response, ("HX-Request", "HX-History-Restore-Request"))
+    return response
+
+
+def _detail_template(request):
+    # The worker filter pushes its URL to history. Going back to one whose snapshot htmx no longer
+    # has re-requests it over htmx, and htmx then replaces the whole <body>, so it needs the full page.
+    if request.htmx and not request.htmx.history_restore_request:
+        return "audit/audit_report_body.html"
+    return "audit/audit_report_detail.html"
 
 
 @opportunity_required
-@org_member_required
+@opp_standard_access_required
 def audit_report_task_modal(request, org_slug, opp_id, audit_report_id, entry_id):
     opportunity = request.opportunity
     _require_feature_flag(opportunity)
@@ -175,7 +189,7 @@ def audit_report_task_modal(request, org_slug, opp_id, audit_report_id, entry_id
 
 
 @opportunity_required
-@org_member_required
+@opp_standard_access_required
 @require_POST
 def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_id):
     opportunity = request.opportunity
@@ -193,20 +207,9 @@ def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_i
         task_type_ids = request.POST.getlist("task_type_ids")
         task_types = TaskType.objects.filter(pk__in=task_type_ids, opportunity=opportunity)
         due_date = timezone.now().date() + timedelta(days=DEFAULT_TASK_DUE_DAYS)
-        try:
-            with transaction.atomic():
-                for task_type in task_types:
-                    AssignedTask.assign(
-                        task_type=task_type,
-                        opportunity_access=entry.opportunity_access,
-                        due_date=due_date,
-                        assigned_by=request.user,
-                    )
-        except TaskAlreadyAssignedError:
-            return HttpResponseBadRequest(
-                _("Task assignment not completed: '%(name)s' is already assigned to this worker.")
-                % {"name": task_type.name}
-            )
+        assigned, failed = _assign_audit_tasks(task_types, entry.opportunity_access, request.user, due_date)
+        if failed:
+            return HttpResponseBadRequest(_assignment_result_message(assigned, failed))
         entry.review_action = AuditReportEntry.ReviewAction.TASKS_ASSIGNED
     elif action == "none":
         entry.review_action = AuditReportEntry.ReviewAction.NONE
@@ -221,8 +224,41 @@ def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_i
     return response
 
 
+def _assign_audit_tasks(task_types, opportunity_access, assigned_by, due_date):
+    assigned = []
+    failed = []
+    for task_type in task_types:
+        try:
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=opportunity_access,
+                due_date=due_date,
+                assigned_by=assigned_by,
+            )
+        except TaskAlreadyAssignedError:
+            # Already assigned is the desired end state — treat it as success
+            assigned.append(task_type.name)
+        except OcsApiError:
+            failed.append((task_type.name, _("Chatbot session could not be started")))
+        except CommCareHQAPIException:
+            failed.append((task_type.name, _("CommCare HQ update failed")))
+        else:
+            assigned.append(task_type.name)
+    return assigned, failed
+
+
+def _assignment_result_message(assigned, failed):
+    parts = []
+    if assigned:
+        parts.append(_("Assigned: %(names)s.") % {"names": ", ".join(assigned)})
+    if failed:
+        details = ", ".join(f"{name} ({reason})" for name, reason in failed)
+        parts.append(_("Could not assign: %(details)s.") % {"details": details})
+    return " ".join(parts)
+
+
 @opportunity_required
-@org_member_required
+@opp_standard_access_required
 @require_POST
 def audit_report_complete(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity
@@ -243,7 +279,7 @@ def audit_report_complete(request, org_slug, opp_id, audit_report_id):
 
 
 @opportunity_required
-@org_member_required
+@opp_standard_access_required
 @require_GET
 def export_audit_report(request, org_slug, opp_id, audit_report_id):
     opportunity = request.opportunity

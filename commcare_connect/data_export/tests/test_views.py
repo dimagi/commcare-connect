@@ -1,25 +1,62 @@
 import datetime
+import itertools
+import json
+import uuid
+from unittest import mock
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.opportunity.models import LabsRecord
-from commcare_connect.opportunity.tests.factories import AssignedTaskFactory, OpportunityAccessFactory, TaskTypeFactory
-from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
+from commcare_connect.data_export.const import OPPORTUNITY_ACCESS_CHECK_MAX_IDS
+from commcare_connect.data_export.tests.helpers import add_export_credentials, add_export_only_credentials
+from commcare_connect.data_export.views import ImplementationAreaBulkCreateView, WorkAreaBulkCreateView
+from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.flags.models import Flag
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.microplanning.tests.factories import (
+    ImplementationAreaFactory,
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+    square,
+)
+from commcare_connect.microplanning.tests.test_views import BaseMicroplanningFlagTest
+from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, LabsRecord, TaskTypeModeChoices
+from commcare_connect.opportunity.tests.factories import (
+    AssignedTaskFactory,
+    AudioAttachmentFactory,
+    BlobMetaFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentUnitFactory,
+    TaskTypeFactory,
+    UserVisitFactory,
+)
+from commcare_connect.users.tests.factories import MembershipFactory, OrgWithUsersFactory
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.oauth_tokens import SocialTokenMissingError, TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError
+from commcare_connect.utils.tests.api import add_token_credentials
 
 
-def _add_export_credentials(api_client, user):
-    token, _ = user.oauth2_provider_accesstoken.get_or_create(
-        token="export-token",
-        scope="read write export",
-        defaults={"expires": now() + datetime.timedelta(hours=1)},
-    )
-    api_client.credentials(**{**getattr(api_client, "_credentials", {}), "Authorization": f"Bearer {token}"})
+def _patch_json(client, url, payload):
+    return client.patch(url, data=json.dumps(payload), content_type="application/json")
+
+
+def _post_json(client, url, payload):
+    return client.post(url, data=json.dumps(payload), content_type="application/json")
+
+
+def _assert_rejected(response, expected_error):
+    """Assert a 400 whose errors mention `expected_error`, case-insensitively."""
+    assert response.status_code == 400
+    assert expected_error in " ".join(response.json()["errors"]).lower()
 
 
 def _add_v2_header(api_client):
@@ -30,7 +67,16 @@ def _add_v2_header(api_client):
 
 @pytest.fixture
 def v2_export_client(api_client, org_user_member):
-    _add_export_credentials(api_client, org_user_member)
+    add_export_credentials(api_client, org_user_member)
+    _add_v2_header(api_client)
+    return api_client
+
+
+@pytest.fixture
+def v2_write_client(api_client, org_user_admin):
+    """Write endpoints additionally require org-admin (mirroring opp_manage_access_required on the
+    equivalent htmx views), so member-level v2_export_client isn't enough for them."""
+    add_export_credentials(api_client, org_user_admin)
     _add_v2_header(api_client)
     return api_client
 
@@ -38,7 +84,7 @@ def v2_export_client(api_client, org_user_member):
 @pytest.mark.django_db
 class TestTaskTypeDataView:
     def test_returns_task_list(self, v2_export_client, opportunity):
-        task = TaskTypeFactory(opportunity=opportunity)
+        task = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity)
         url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -47,9 +93,19 @@ class TestTaskTypeDataView:
         result = data["results"][0]
         assert result["id"] == task.id
         assert result["name"] == task.name
+        assert result["mode"] == task.mode
+
+    def test_lists_deliver_app_task_types_without_opportunity(self, v2_export_client, opportunity):
+        """Task types created before TaskType.opportunity existed have it NULL; the create-task
+        UI still offers them, so the export must too."""
+        legacy = TaskTypeFactory(app=opportunity.deliver_app, opportunity=None)
+        TaskTypeFactory()  # another app's task type
+        url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert [r["id"] for r in response.json()["results"]] == [legacy.id]
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:task_type_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
@@ -74,11 +130,185 @@ class TestAssignedTaskDataView:
         assert result["username"] == opp_access.user.username
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:assigned_task_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestAssignedTaskCreateView:
+    @pytest.fixture
+    def pm_client(self, api_client, program_manager_org_user_admin):
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        return api_client
+
+    @pytest.fixture
+    def access(self, pm_opportunity):
+        return OpportunityAccessFactory(opportunity=pm_opportunity, accepted=True)
+
+    @pytest.fixture
+    def task_type(self, pm_opportunity):
+        return TaskTypeFactory(app=pm_opportunity.deliver_app, case_property="relearn_module_1")
+
+    @pytest.fixture
+    def ocs_task_type(self, pm_opportunity):
+        return TaskTypeFactory(app=pm_opportunity.deliver_app, mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="bot-1")
+
+    def url(self, opportunity):
+        return reverse("data_export:assigned_task_create", kwargs={"opp_id": opportunity.id})
+
+    def payload(self, task_type, access, **overrides):
+        return {
+            "task_type_id": str(task_type.task_type_id),
+            "username": access.user.username,
+            "due_date": (timezone.localdate() + datetime.timedelta(days=7)).isoformat(),
+            **overrides,
+        }
+
+    def test_assigns_task_and_updates_hq(
+        self,
+        pm_client,
+        pm_opportunity,
+        access,
+        task_type,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
+    ):
+        with (
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
+            mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+
+        assert response.status_code == 201, response.json()
+        task = AssignedTask.objects.get(opportunity_access=access)
+        assert task.task_type == task_type
+        assert task.assigned_by == program_manager_org_user_admin
+        assert task.status == AssignedTaskStatus.ASSIGNED
+        assert response.json()["assigned_task_id"] == str(task.assigned_task_id)
+        assert response.json()["username"] == access.user.username
+        mock_hq.assert_called_once_with({access: {"properties": {"relearn_module_1": "1"}}})
+        mock_notify.assert_called_once_with(task.pk)
+
+    def test_requires_write_scope(self, api_client, pm_opportunity, access, task_type, program_manager_org_user_admin):
+        add_export_only_credentials(api_client, program_manager_org_user_admin)
+        response = _post_json(api_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("caller", ["delivery_org_admin", "pm_org_member", "unrelated_admin"])
+    def test_non_pm_admin_gets_404(
+        self, api_client, pm_opportunity, access, task_type, program_manager_org_user_member, caller
+    ):
+        """Only PM admins see the Create Task button in the UI, so only they can use the API."""
+        if caller == "delivery_org_admin":
+            user = pm_opportunity.organization.memberships.filter(role="admin").first().user
+        elif caller == "pm_org_member":
+            user = program_manager_org_user_member
+        else:
+            user = OrgWithUsersFactory().memberships.filter(role="admin").first().user
+        add_export_credentials(api_client, user)
+        response = _post_json(api_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 404
+        assert not AssignedTask.objects.exists()
+
+    @pytest.mark.parametrize(
+        "case,field",
+        [
+            ("unknown_task_type", "task_type_id"),
+            ("inactive_task_type", "task_type_id"),
+            ("other_app_task_type", "task_type_id"),
+            ("unknown_username", "username"),
+            ("not_accepted", "username"),
+            ("suspended", "username"),
+            ("other_opportunity_worker", "username"),
+            ("past_due_date", "due_date"),
+        ],
+    )
+    def test_rejects_invalid_input(self, pm_client, pm_opportunity, access, task_type, case, field):
+        overrides = {}
+        if case == "unknown_task_type":
+            overrides["task_type_id"] = str(uuid.uuid4())
+        elif case == "inactive_task_type":
+            task_type.is_active = False
+            task_type.save()
+        elif case == "other_app_task_type":
+            overrides["task_type_id"] = str(TaskTypeFactory().task_type_id)
+        elif case == "unknown_username":
+            overrides["username"] = "nobody"
+        elif case == "not_accepted":
+            access.accepted = False
+            access.save()
+        elif case == "suspended":
+            access.suspended = True
+            access.save()
+        elif case == "other_opportunity_worker":
+            overrides["username"] = OpportunityAccessFactory(accepted=True).user.username
+        elif case == "past_due_date":
+            overrides["due_date"] = (timezone.localdate() - datetime.timedelta(days=1)).isoformat()
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq:
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access, **overrides))
+
+        assert response.status_code == 400
+        assert field in response.json()
+        mock_hq.assert_not_called()
+        assert not AssignedTask.objects.exists()
+
+    def test_already_assigned_returns_409(self, pm_client, pm_opportunity, access, task_type):
+        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases"):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 409
+        assert AssignedTask.objects.count() == 1
+
+    def test_hq_failure_returns_502_and_creates_nothing(self, pm_client, pm_opportunity, access, task_type):
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases", side_effect=CommCareHQAPIException("down")
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(task_type, access))
+        assert response.status_code == 502
+        assert not AssignedTask.objects.exists()
+
+    def test_ocs_task_requires_connected_ocs_account(self, pm_client, pm_opportunity, access, ocs_task_type):
+        with mock.patch("commcare_connect.utils.ocs_api.trigger_bot") as mock_trigger:
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(ocs_task_type, access))
+        assert response.status_code == 400
+        assert "task_type_id" in response.json()
+        mock_trigger.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error,expected_status",
+        [
+            (None, 201),
+            (OcsApiError("boom"), 502),
+            (SocialTokenMissingError("no token"), 400),
+            (TokenRefreshError("expired"), 400),
+        ],
+    )
+    def test_ocs_task_with_connected_account(
+        self, pm_client, pm_opportunity, access, ocs_task_type, error, expected_status
+    ):
+        with (
+            mock.patch("commcare_connect.data_export.serializer.user_has_connected_ocs", return_value=True),
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                return_value=("session-1", "channel-1"),
+                side_effect=error,
+            ) as mock_trigger,
+        ):
+            response = _post_json(pm_client, self.url(pm_opportunity), self.payload(ocs_task_type, access))
+
+        assert response.status_code == expected_status
+        mock_trigger.assert_called_once()
+        if expected_status == 201:
+            task = AssignedTask.objects.get()
+            assert task.ocs_session_id == "session-1"
+            assert task.connect_channel_id == "channel-1"
+        else:
+            assert not AssignedTask.objects.exists()
 
 
 @pytest.mark.django_db
@@ -95,7 +325,7 @@ class TestWorkAreaGroupDataView:
         assert result["name"] == group.name
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:work_area_group_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
@@ -106,7 +336,8 @@ class TestWorkAreaGroupDataView:
 class TestWorkAreaDataView:
     def test_returns_work_area_list(self, v2_export_client, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
-        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
         url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -117,13 +348,23 @@ class TestWorkAreaDataView:
         assert result["slug"] == area.slug
         assert result["work_area_group"] == group.id
         assert result["work_area_group_name"] == group.name
+        assert result["username"] == access.user.username
         assert result["centroid"]["type"] == "Point"
         assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
         assert result["boundary"]["type"] == "Polygon"
         assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
 
+    def test_returns_null_username_for_unassigned_work_area(self, v2_export_client, opportunity):
+        area = WorkAreaFactory(opportunity=opportunity, opportunity_access=None)
+        url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        result = response.json()["results"][0]
+        assert result["id"] == area.id
+        assert result["username"] is None
+
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:work_area_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
@@ -131,22 +372,193 @@ class TestWorkAreaDataView:
 
 
 @pytest.mark.django_db
+class TestImplementationAreaDataView:
+    def test_returns_implementation_area_list(self, v2_export_client, opportunity):
+        area = ImplementationAreaFactory(opportunity=opportunity)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = v2_export_client.get(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 1
+        result = data["results"][0]
+        assert result["id"] == area.id
+        assert result["name"] == area.name
+        assert result["centroid"]["type"] == "Point"
+        assert result["centroid"]["coordinates"] == [area.centroid.x, area.centroid.y]
+        assert result["boundary"]["type"] == "Polygon"
+        assert result["boundary"]["coordinates"] == [[list(coord) for coord in ring] for ring in area.boundary.coords]
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        url = reverse("data_export:implementation_area_data", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url)
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestProgramOpportunityOrganizationDataView:
+    def test_includes_is_test(self, api_client, organization, org_user_member):
+        live_opp = OpportunityFactory(organization=organization, is_test=False)
+        test_opp = OpportunityFactory(organization=organization, is_test=True)
+        add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:opp_org_program_list")
+        response = api_client.get(url)
+        assert response.status_code == 200
+        is_test_by_id = {opp["id"]: opp["is_test"] for opp in response.json()["opportunities"]}
+        assert is_test_by_id[live_opp.id] is False
+        assert is_test_by_id[test_opp.id] is True
+
+
+@pytest.mark.django_db
+class TestSingleOpportunityDataView:
+    def test_includes_payment_units(self, api_client, opportunity, org_user_member):
+        payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+        add_export_credentials(api_client, org_user_member)
+        response = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": opportunity.id}))
+        assert response.status_code == 200
+        assert {unit["id"] for unit in response.json()["payment_units"]} == {unit.id for unit in payment_units}
+
+
+@pytest.mark.django_db
+class TestOpportunityAccessCheckView:
+    URL = reverse("data_export:opportunity_access")
+
+    def _check(self, api_client, opportunity_ids):
+        return _post_json(api_client, self.URL, {"opportunity_ids": opportunity_ids})
+
+    def test_grants_via_org_membership(self, api_client, opportunity, org_user_member):
+        add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(opportunity.id): True}}
+
+    def test_grants_via_managing_program_org(self, api_client, pm_opportunity, program_manager_org_user_member):
+        add_export_credentials(api_client, program_manager_org_user_member)
+        response = self._check(api_client, [pm_opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(pm_opportunity.id): True}}
+
+    @pytest.mark.parametrize(
+        "relationship,expected",
+        [
+            ("delivery", True),
+            ("supervisor", True),
+            ("program_org", True),
+            ("funder", True),
+            ("watcher", False),
+            ("unrelated", False),
+        ],
+    )
+    def test_matches_single_opportunity_endpoint(
+        self, api_client, opp_orgs, pm_opportunity, user, relationship, expected
+    ):
+        MembershipFactory(organization=opp_orgs[relationship], user=user, role="member")
+        add_export_credentials(api_client, user)
+        response = self._check(api_client, [pm_opportunity.id])
+        assert response.status_code == 200
+        assert response.json()["opportunities"] == {str(pm_opportunity.id): expected}
+        single = api_client.get(reverse("data_export:opportunity_data", kwargs={"opp_id": pm_opportunity.id}))
+        assert single.status_code == (200 if expected else 404)
+
+    def test_denies_without_membership(self, api_client, opportunity, user):
+        add_export_credentials(api_client, user)
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {str(opportunity.id): False}}
+
+    def test_nonexistent_id_is_false(self, api_client, org_user_member):
+        add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [999999999])
+        assert response.status_code == 200
+        assert response.json() == {"opportunities": {"999999999": False}}
+
+    def test_mixed_batch(self, api_client, opportunity, org_user_member):
+        other_opportunity = OpportunityFactory()
+        add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, [opportunity.id, other_opportunity.id, 999999999, opportunity.id])
+        assert response.status_code == 200
+        assert response.json() == {
+            "opportunities": {
+                str(opportunity.id): True,
+                str(other_opportunity.id): False,
+                "999999999": False,
+            }
+        }
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"opportunity_ids": []},
+            {"opportunity_ids": "1,2"},
+            {"opportunity_ids": ["abc"]},
+            {"opportunity_ids": [1.5]},
+            {"opportunity_ids": [None]},
+            {"opportunity_ids": [0]},
+            {"opportunity_ids": [-1]},
+            {"opportunity_ids": list(range(1, OPPORTUNITY_ACCESS_CHECK_MAX_IDS + 2))},
+        ],
+        ids=["missing", "empty", "not_a_list", "non_int", "float", "null", "zero", "negative", "too_many"],
+    )
+    def test_rejects_invalid_payload(self, api_client, org_user_member, payload):
+        add_export_credentials(api_client, org_user_member)
+        response = _post_json(api_client, self.URL, payload)
+        assert response.status_code == 400
+
+    def test_accepts_max_ids(self, api_client, org_user_member):
+        add_export_credentials(api_client, org_user_member)
+        response = self._check(api_client, list(range(1, OPPORTUNITY_ACCESS_CHECK_MAX_IDS + 1)))
+        assert response.status_code == 200
+
+    def test_requires_authentication(self, api_client, opportunity):
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 401
+
+    def test_requires_export_scope(self, api_client, opportunity, org_user_member):
+        add_token_credentials(api_client, org_user_member, token="no-export-token", scope="read write")
+        response = self._check(api_client, [opportunity.id])
+        assert response.status_code == 403
+
+    def test_query_count_is_independent_of_batch_size(self, api_client, organization, org_user_member):
+        opportunity_ids = [OpportunityFactory(organization=organization).id for _ in range(5)]
+        add_export_credentials(api_client, org_user_member)
+        self._check(api_client, opportunity_ids[:1])  # warm per-process caches
+
+        with CaptureQueriesContext(connection) as single:
+            assert self._check(api_client, opportunity_ids[:1]).status_code == 200
+        with CaptureQueriesContext(connection) as batch:
+            response = self._check(api_client, opportunity_ids + list(range(10**9, 10**9 + 50)))
+
+        assert response.status_code == 200
+        assert all(response.json()["opportunities"][str(opp_id)] for opp_id in opportunity_ids)
+        assert len(batch) == len(single)
+
+
+@pytest.mark.django_db
 class TestLLOEntityDataView:
-    def test_returns_llo_entity_list(self, api_client, user):
-        entity = LLOEntityFactory(short_name="TST")
-        permission = Permission.objects.get(codename="workspace_entity_management_access")
+    def test_returns_organization_profiles(self, api_client, user):
+        org = OrgWithUsersFactory(
+            short_name="TST",
+            verified=True,
+            year_of_establishment=2005,
+            contact_emails="one@example.com",
+        )
+        permission = Permission.objects.get(codename="llo_entity_internal_access")
         user.user_permissions.add(permission)
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:llo_entity_data")
         response = api_client.get(url)
         assert response.status_code == 200
         data = response.json()
-        assert len(data["results"]) == 1
-        result = data["results"][0]
-        assert result["id"] == entity.id
-        assert result["name"] == entity.name
+        result = next(row for row in data["results"] if row["id"] == org.id)
+        assert result["name"] == org.name
         assert result["short_name"] == "TST"
+        assert result["verified"] is True
+        assert result["year_of_establishment"] == 2005
+        assert result["contact_emails"] == "one@example.com"
+        assert sorted(result["members"]) == sorted(org.get_member_emails())
 
     def test_requires_export_scope(self, api_client, user):
         _add_v2_header(api_client)
@@ -154,8 +566,8 @@ class TestLLOEntityDataView:
         response = api_client.get(url)
         assert response.status_code == 401
 
-    def test_requires_entity_management_permission(self, api_client, user):
-        _add_export_credentials(api_client, user)
+    def test_requires_internal_access_permission(self, api_client, user):
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:llo_entity_data")
         response = api_client.get(url)
@@ -205,7 +617,7 @@ class TestAuditReportDataView:
         assert len(response.json()["results"]) == 1
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:audit_report_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
@@ -275,7 +687,7 @@ class TestAuditReportEntryDataView:
         assert response.json()["results"] == []
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
-        _add_export_credentials(api_client, user)
+        add_export_credentials(api_client, user)
         _add_v2_header(api_client)
         url = reverse("data_export:audit_report_entry_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
@@ -289,27 +701,27 @@ class TestLabsRecordDataViewAuthorization:
     def test_delete_cross_org_record_by_bare_id_returns_404(self, organization, api_client, org_user_member):
         other_org = OrgWithUsersFactory()
         record = LabsRecord.objects.create(experiment="test", organization=other_org, type="test", data={})
-        _add_export_credentials(api_client, org_user_member)
+        add_export_credentials(api_client, org_user_member)
         response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": record.id}], format="json")
         assert response.status_code == 404
         assert LabsRecord.objects.filter(pk=record.pk).exists(), "Cross-org record must not be deleted"
 
     def test_delete_own_org_record_by_bare_id_succeeds(self, organization, api_client, org_user_member):
         record = LabsRecord.objects.create(experiment="test", organization=organization, type="test", data={})
-        _add_export_credentials(api_client, org_user_member)
+        add_export_credentials(api_client, org_user_member)
         response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": record.id}], format="json")
         assert response.status_code == 200
         assert not LabsRecord.objects.filter(pk=record.pk).exists()
 
     def test_delete_nonexistent_id_returns_404(self, api_client, org_user_member):
-        _add_export_credentials(api_client, org_user_member)
+        add_export_credentials(api_client, org_user_member)
         response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": 999999}], format="json")
         assert response.status_code == 404
 
     def test_post_cross_org_record_by_bare_id_returns_404(self, organization, api_client, org_user_member):
         other_org = OrgWithUsersFactory()
         record = LabsRecord.objects.create(experiment="original", organization=other_org, type="test", data={})
-        _add_export_credentials(api_client, org_user_member)
+        add_export_credentials(api_client, org_user_member)
         response = api_client.post(
             self.LABS_RECORD_URL,
             data=[{"id": record.id, "experiment": "hijacked", "type": "x", "data": {}}],
@@ -318,3 +730,743 @@ class TestLabsRecordDataViewAuthorization:
         assert response.status_code == 404
         record.refresh_from_db()
         assert record.experiment == "original", "Cross-org record must not be overwritten"
+
+
+def _attach_image(visit):
+    return BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+
+
+def _attach_audio(visit):
+    return AudioAttachmentFactory(user_visit=visit)
+
+
+# Images are BlobMeta rows keyed by the form, audio is an AudioAttachment row keyed by the
+# visit, and every endpoint below resolves either from the blob_id alone.
+ATTACHMENT_FACTORIES = [_attach_image, _attach_audio]
+ATTACHMENT_URL_NAMES = [
+    "data_export:attachment_export",
+    # The legacy name for the same view, kept for callers written before it served audio.
+    "data_export:image_export",
+    "data_export:attachment_signed_url",
+]
+
+
+@pytest.mark.django_db
+class TestAttachmentView:
+    def test_returns_image_bytes(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
+        add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"imagebytes"
+
+    def test_returns_image_for_form_with_multiple_visits(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        UserVisitFactory(opportunity=opportunity, opportunity_access=visit.opportunity_access, xform_id=visit.xform_id)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        storages["default"].save(blob_meta.blob_id, ContentFile(b"imagebytes"))
+        add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"imagebytes"
+
+    @pytest.mark.parametrize("has_blob_meta", [True, False])
+    def test_missing_blob_or_visit_returns_404(self, api_client, opportunity, org_user_member, has_blob_meta):
+        blob_id = BlobMetaFactory(parent_id="no-such-form").blob_id if has_blob_meta else "no-such-blob"
+        add_export_credentials(api_client, org_user_member)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_id})
+        assert response.status_code == 404
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id, content_type="image/jpeg")
+        add_export_credentials(api_client, user)
+        url = reverse("data_export:image_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    # Audio is an AudioAttachment row rather than a BlobMeta, so it is resolved by a
+    # separate lookup; the legacy "image" path serves it too.
+    @pytest.mark.parametrize("url_name", ["data_export:attachment_export", "data_export:image_export"])
+    def test_returns_audio_bytes(self, api_client, opportunity, org_user_member, url_name):
+        visit = UserVisitFactory(opportunity=opportunity)
+        audio = AudioAttachmentFactory(user_visit=visit, name="q1.m4a")
+        storages["default"].save(audio.blob_id, ContentFile(b"audiobytes"))
+        add_export_credentials(api_client, org_user_member)
+        url = reverse(url_name, kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"audiobytes"
+        assert response["Content-Type"] == "audio/mp4"
+        assert "q1.m4a" in response["Content-Disposition"]
+
+    def test_non_member_audio_returns_404(self, api_client, opportunity, user):
+        audio = AudioAttachmentFactory(user_visit=UserVisitFactory(opportunity=opportunity))
+        add_export_credentials(api_client, user)
+        url = reverse("data_export:attachment_export", kwargs={"opp_id": opportunity.id})
+        response = api_client.get(url, {"blob_id": audio.blob_id})
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ATTACHMENT_URL_NAMES)
+@pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+def test_attachment_from_other_accessible_opportunity_returns_404(
+    api_client, opportunity, org_user_member, url_name, attach
+):
+    other_visit = UserVisitFactory(opportunity__organization=opportunity.organization)
+    attachment = attach(other_visit)
+    add_export_credentials(api_client, org_user_member)
+    url = reverse(url_name, kwargs={"opp_id": opportunity.id})
+    response = api_client.get(url, {"blob_id": attachment.blob_id})
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestAttachmentSignedUrlView:
+    def _url(self, opportunity):
+        return reverse("data_export:attachment_signed_url", kwargs={"opp_id": opportunity.id})
+
+    def test_requires_export_scope(self, api_client, opportunity):
+        response = api_client.get(self._url(opportunity), {"blob_id": "any"})
+        assert response.status_code == 401
+
+    def test_non_member_returns_404(self, api_client, opportunity, user):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        add_export_credentials(api_client, user)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_foreign_org_blob_returns_404(self, api_client, opportunity, org_user_member):
+        foreign_visit = UserVisitFactory(opportunity__organization=OrgWithUsersFactory())
+        blob_meta = BlobMetaFactory(parent_id=foreign_visit.xform_id)
+        add_export_credentials(api_client, org_user_member)
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 404
+
+    def test_returns_501_when_no_s3_backend(self, api_client, opportunity, org_user_member):
+        visit = UserVisitFactory(opportunity=opportunity)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+        add_export_credentials(api_client, org_user_member)
+        # The test environment uses FileSystemStorage, which cannot produce a portable URL.
+        response = api_client.get(self._url(opportunity), {"blob_id": blob_meta.blob_id})
+        assert response.status_code == 501
+
+    @pytest.mark.parametrize("attach", ATTACHMENT_FACTORIES, ids=["image", "audio"])
+    def test_returns_signed_url(self, api_client, opportunity, org_user_member, attach):
+        attachment = attach(UserVisitFactory(opportunity=opportunity))
+        add_export_credentials(api_client, org_user_member)
+        with (
+            mock.patch("commcare_connect.data_export.views._default_storage_supports_signed_urls", return_value=True),
+            mock.patch("commcare_connect.data_export.views._get_attachment_signed_url", return_value="https://signed"),
+        ):
+            response = api_client.get(self._url(opportunity), {"blob_id": attachment.blob_id})
+        assert response.status_code == 200
+        assert response.json() == {"attachment_signed_url": "https://signed"}
+
+
+class _FakeSignedStorage:
+    """Storage stand-in that records how ``url()`` is invoked.
+
+    Used because django-storages (the real S3 backend) is a production-only dependency and
+    is absent from the test environment. ``location`` is a class default; a per-instance
+    override models config a *resolved* storage carries, so this verifies the copy retains
+    it rather than falling back to bare class defaults.
+    """
+
+    location = "class-default"
+
+    def __init__(self):
+        self.querystring_auth = False
+
+    def url(self, name, expire, http_method):
+        return f"https://signed/{self.location}/{name}?auth={self.querystring_auth}&method={http_method}"
+
+
+def test_get_attachment_signed_url_preserves_resolved_storage_config():
+    from commcare_connect.data_export.views import _get_attachment_signed_url
+
+    storage = _FakeSignedStorage()
+    storage.location = "configured/prefix"  # instance-level config, e.g. a STORAGES OPTIONS override
+    with mock.patch("commcare_connect.data_export.views.storages", {"default": storage}):
+        url = _get_attachment_signed_url("blob123")
+    # The signed URL reflects the resolved instance's config (not the class default), opts
+    # querystring_auth in, and is scoped to GET; the original instance is left untouched.
+    assert url == "https://signed/configured/prefix/blob123?auth=True&method=GET"
+    assert storage.querystring_auth is False
+
+
+@pytest.mark.django_db
+class TestWorkAreaGroupWriteView(BaseMicroplanningFlagTest):
+    """Upsert endpoint: POST with no `id` creates, POST with `id` updates."""
+
+    def url(self, opp_id):
+        return reverse("data_export:work_area_group_write", kwargs={"opp_id": opp_id})
+
+    def test_creates_group_when_id_omitted(self, v2_write_client, opportunity):
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"name": "new-group", "ward": "ward-a"},
+        )
+        assert response.status_code == 201
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.ward == "ward-a"
+        assert group.centroid is None
+
+    def test_centroid_in_payload_is_ignored(self, v2_write_client, opportunity):
+        """centroid is derived from member WorkAreas' boundaries, never client-writable."""
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"name": "new-group", "ward": "ward-a", "centroid": "36.8219 -1.2921"},
+        )
+        assert response.status_code == 201
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.centroid is None
+
+    def test_updates_name_and_ward_when_id_present(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="old-name")
+        response = v2_write_client.post(
+            self.url(opportunity.id),
+            data={"id": group.id, "name": "new-name", "ward": "new-ward"},
+        )
+        assert response.status_code == 200
+        group.refresh_from_db()
+        assert group.name == "new-name"
+        assert group.ward == "new-ward"
+
+    def test_duplicate_name_returns_400(self, v2_write_client, opportunity):
+        WorkAreaGroupFactory(opportunity=opportunity, name="taken")
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="mine")
+        response = v2_write_client.post(self.url(opportunity.id), data={"id": group.id, "name": "taken"})
+        assert response.status_code == 400
+
+    def test_same_name_on_same_instance_is_allowed(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="mine")
+        response = v2_write_client.post(
+            self.url(opportunity.id), data={"id": group.id, "name": "mine", "ward": "new-ward"}
+        )
+        assert response.status_code == 200
+
+    def test_unknown_id_returns_404(self, v2_write_client, opportunity):
+        response = v2_write_client.post(self.url(opportunity.id), data={"id": 999999, "name": "new-name"})
+        assert response.status_code == 404
+
+    def test_requires_write_scope(self, api_client, opportunity, user):
+        add_export_only_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 403
+
+    def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
+        add_export_credentials(api_client, user)
+        _add_v2_header(api_client)
+        response = api_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 404
+
+    def test_member_role_returns_404(self, v2_export_client, opportunity):
+        """Mirrors opp_manage_access_required on the equivalent htmx flows: plain membership isn't enough."""
+        response = v2_export_client.post(self.url(opportunity.id), data={"name": "new-name", "ward": "ward-a"})
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestWorkAreaBulkUpdateView(BaseMicroplanningFlagTest):
+    @pytest.fixture(autouse=True)
+    def setup_flag_for_opportunity(self, pm_opportunity):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(pm_opportunity)
+        flag.flush()
+
+    def url(self, opp_id):
+        return reverse("data_export:work_area_bulk_update", kwargs={"opp_id": opp_id})
+
+    def test_updates_multiple_fields_independently_across_items(self, v2_write_client, opportunity):
+        area_a = WorkAreaFactory(opportunity=opportunity, expected_visit_count=5, target_population=10)
+        area_b = WorkAreaFactory(opportunity=opportunity, expected_visit_count=7, target_population=20)
+
+        payload = [
+            {"id": area_a.id, "expected_visit_count": 50},
+            {"id": area_b.id, "target_population": 200},
+        ]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        area_a.refresh_from_db()
+        area_b.refresh_from_db()
+        assert area_a.expected_visit_count == 50
+        assert area_a.target_population == 10  # untouched by area_b's update in the same bulk_update call
+        assert area_b.target_population == 200
+        assert area_b.expected_visit_count == 7  # untouched by area_a's update in the same bulk_update call
+
+    def test_moving_between_groups_recomputes_both_centroids(self, v2_write_client, opportunity):
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        new_group = WorkAreaGroupFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group)
+
+        payload = [{"id": area.id, "work_area_group": new_group.id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        old_group.refresh_from_db()
+        new_group.refresh_from_db()
+        assert old_group.centroid is None  # no work areas left in the old group
+        assert new_group.centroid is not None
+
+    def test_boundary_edit_recomputes_group_centroid_without_group_change(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        group.update_centroid()
+        old_centroid = group.centroid.wkt
+
+        payload = [{"id": area.id, "boundary": "POLYGON((50 10, 51 10, 51 11, 50 11, 50 10))"}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+
+        group.refresh_from_db()
+        assert group.centroid.wkt != old_centroid
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"centroid": "not-a-point"}, {"boundary": "not-wkt"}],
+        ids=["invalid_centroid", "invalid_boundary"],
+    )
+    def test_rejects_invalid_field_values(self, v2_write_client, opportunity, overrides):
+        area = WorkAreaFactory(opportunity=opportunity)
+        payload = [{"id": area.id, **overrides}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert list(overrides.keys())[0] in response.json()[0]
+
+    @pytest.mark.parametrize("field_name", ["work_area_group", "opportunity_access"])
+    def test_rejects_foreign_key_from_other_opportunity(self, v2_write_client, opportunity, field_name):
+        other_opportunity = OpportunityFactory()
+        area = WorkAreaFactory(opportunity=opportunity)
+        foreign_id = (
+            WorkAreaGroupFactory(opportunity=other_opportunity).id
+            if field_name == "work_area_group"
+            else OpportunityAccessFactory(opportunity=other_opportunity).id
+        )
+        payload = [{"id": area.id, field_name: foreign_id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert field_name in response.json()[0]
+
+    def test_rejects_work_area_id_from_other_opportunity(self, v2_write_client, opportunity):
+        other_area = WorkAreaFactory(opportunity=OpportunityFactory(), target_population=1)
+        payload = [{"id": other_area.id, "target_population": 5}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        other_area.refresh_from_db()
+        assert other_area.target_population == 1
+
+    def test_org_admin_without_pm_role_cannot_assign(self, v2_write_client, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 404
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+
+    def test_org_admin_without_pm_role_can_edit_other_fields(self, v2_write_client, opportunity):
+        area = WorkAreaFactory(opportunity=opportunity, target_population=1)
+        payload = [{"id": area.id, "target_population": 99}]
+        response = _patch_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 200
+        area.refresh_from_db()
+        assert area.target_population == 99
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_pm_admin_assign_flips_status_syncs_hq_and_notifies(
+        self,
+        mock_hq_sync,
+        api_client,
+        pm_opportunity,
+        program_manager_org_user_admin,
+        django_capture_on_commit_callbacks,
+    ):
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        with (
+            mock.patch(
+                "commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"
+            ) as mock_notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
+
+        assert response.status_code == 200
+        area.refresh_from_db()
+        assert area.opportunity_access_id == access.id
+        assert area.status == WorkAreaStatus.NOT_VISITED
+        mock_hq_sync.assert_called_once()
+        mock_notify.assert_called_once_with(access.id)
+
+    @pytest.mark.parametrize(
+        "org_role,expected",
+        [
+            ("program_owner", True),
+            ("supervising", True),
+            ("funder", True),
+            ("delivery", False),
+            ("unrelated", False),
+        ],
+    )
+    def test_assign_access_by_org_role(
+        self, api_client, pm_opportunity, program_manager_org_user_admin, org_role, expected
+    ):
+        """Every org relationship that grants ADMIN access to the opportunity from the program
+        side (program owner, supervising, funder) can assign work areas; the delivery org and an
+        unrelated org cannot."""
+        if org_role == "program_owner":
+            admin = program_manager_org_user_admin
+        elif org_role == "delivery":
+            admin = pm_opportunity.organization.memberships.filter(role="admin").first().user
+        else:
+            org = OrgWithUsersFactory()
+            if org_role == "supervising":
+                pm_opportunity.supervising_organization = org
+                pm_opportunity.save()
+            elif org_role == "funder":
+                pm_opportunity.program.funder = org
+                pm_opportunity.program.save()
+            admin = org.memberships.filter(role="admin").first().user
+
+        add_export_credentials(api_client, admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        with (
+            mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas"),
+            mock.patch("commcare_connect.data_export.serializer.send_work_area_assignment_notification.delay"),
+        ):
+            response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
+
+        area.refresh_from_db()
+        if expected:
+            assert response.status_code == 200
+            assert area.opportunity_access_id == access.id
+        else:
+            assert response.status_code == 404
+            assert area.opportunity_access_id is None
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases_by_work_areas")
+    def test_hq_failure_during_assignment_rolls_back(
+        self, mock_hq_sync, api_client, pm_opportunity, program_manager_org_user_admin
+    ):
+        mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, status=WorkAreaStatus.UNASSIGNED)
+
+        payload = [{"id": area.id, "opportunity_access": access.id}]
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
+
+        assert response.status_code == 502
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+        assert area.status == WorkAreaStatus.UNASSIGNED
+
+    @mock.patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_explicit_null_opportunity_access_unassigns(
+        self, mock_hq_unassign, api_client, pm_opportunity, program_manager_org_user_admin
+    ):
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(
+            opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
+        )
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["unassign_skipped"] == 0
+        assert body["unassign_failed_ids"] == []
+        area.refresh_from_db()
+        assert area.opportunity_access_id is None
+        assert area.status == WorkAreaStatus.UNASSIGNED
+
+    def test_explicit_null_opportunity_access_skips_ineligible_work_area(
+        self, api_client, pm_opportunity, program_manager_org_user_admin
+    ):
+        add_export_credentials(api_client, program_manager_org_user_admin)
+        _add_v2_header(api_client)
+        access = OpportunityAccessFactory(opportunity=pm_opportunity)
+        area = WorkAreaFactory(opportunity=pm_opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED)
+
+        payload = [{"id": area.id, "opportunity_access": None}]
+        response = _patch_json(api_client, self.url(pm_opportunity.id), payload)
+
+        assert response.status_code == 200
+        assert response.json()["unassign_skipped"] == 1
+        area.refresh_from_db()
+        assert area.opportunity_access_id == access.id
+        assert area.status == WorkAreaStatus.VISITED
+
+
+@pytest.mark.parametrize(
+    "view_class, sample_item",
+    [
+        (
+            WorkAreaBulkCreateView,
+            {
+                "slug": "s",
+                "ward": "w",
+                "centroid": "c",
+                "boundary": "b",
+                "building_count": 1,
+                "expected_visit_count": 1,
+                "target_population": 1,
+                "lga": "l",
+                "state": "st",
+                "work_area_group_name": "g",
+                "implementation_area_name": "i",
+            },
+        ),
+        (ImplementationAreaBulkCreateView, {"name": "n", "centroid": "c", "boundary": "b"}),
+    ],
+    ids=["WorkAreaBulkCreateView", "ImplementationAreaBulkCreateView"],
+)
+def test_row_from_item_keys_match_get_fieldnames(view_class, sample_item):
+    """Ensures row_from_item() stays in sync with get_fieldnames(). If a field is
+    added, renamed, or removed in the importer headers but not updated in
+    row_from_item(), csv.DictWriter silently writes an empty value instead of
+    raising an error.This test fails loudly the moment the two drift apart, instead of a mystery blank column."""
+    view = view_class()
+    assert set(view.row_from_item(sample_item)) == set(view.get_fieldnames())
+
+
+@pytest.mark.django_db
+class TestWorkAreaBulkCreateView(BaseMicroplanningFlagTest):
+    def url(self, opp_id):
+        return reverse("data_export:work_area_bulk_create", kwargs={"opp_id": opp_id})
+
+    # Each item gets its own square, so items in one payload never overlap each other.
+    _boundary_offsets = itertools.count()
+
+    def _item(self, **overrides):
+        item = {
+            "slug": "area-1",
+            "ward": "ward-a",
+            "centroid": "36.8 -1.29",
+            "boundary": square(36.8 + 0.05 * next(self._boundary_offsets), -1.3, 0.02).wkt,
+            "building_count": 5,
+            "expected_visit_count": 10,
+            "target_population": 100,
+            "lga": "lga-1",
+            "state": "state-1",
+        }
+        item.update(overrides)
+        return item
+
+    def test_creates_work_areas(self, v2_write_client, opportunity):
+        payload = [self._item(slug="area-1"), self._item(slug="area-2")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+        assert response.json() == {"created": 2}
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.ward == "ward-a"
+        assert area.centroid.wkt == "POINT (36.8 -1.29)"
+        assert area.building_count == 5
+        assert area.expected_visit_count == 10
+        assert area.target_population == 100
+        assert area.case_properties == {"lga": "lga-1", "state": "state-1"}
+
+    def test_resolves_existing_work_area_group_by_name(self, v2_write_client, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        payload = [self._item(work_area_group_name="group-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.work_area_group_id == group.id
+        assert WorkAreaGroup.objects.filter(opportunity=opportunity, name="group-a").count() == 1
+
+    @mock.patch("commcare_connect.microplanning.tasks.sync_work_area_group_cases.delay")
+    def test_adding_to_existing_group_queues_hq_sync(
+        self, sync_delay, v2_write_client, opportunity, django_capture_on_commit_callbacks
+    ):
+        group = WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-a")
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, boundary=square(36.0, -1.3, 0.02))
+        group.update_centroid()
+        payload = [self._item(work_area_group_name="group-a")]
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = _post_json(client=v2_write_client, url=self.url(opportunity.id), payload=payload)
+
+        assert response.status_code == 201
+        sync_delay.assert_called_once_with(opportunity_id=opportunity.id, work_area_group_ids=[group.pk])
+
+    def test_existing_group_in_another_ward_rejected(self, v2_write_client, opportunity):
+        WorkAreaGroupFactory(opportunity=opportunity, name="group-a", ward="ward-b")
+        payload = [self._item(work_area_group_name="group-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group group-a is in ward ward-b, but these rows give ward ward-a. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_new_group_spanning_wards_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group", ward="ward-a"),
+            self._item(slug="area-2", work_area_group_name="new-group", ward="ward-b"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area Group new-group is in ward ward-a, but these rows give ward ward-b. "
+            "Correct the ward, or use a different group name."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+
+    def test_creates_missing_work_area_group_by_name(self, v2_write_client, opportunity):
+        payload = [self._item(work_area_group_name="new-group", ward="ward-b")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        group = WorkAreaGroup.objects.get(opportunity=opportunity, name="new-group")
+        assert group.ward == "ward-b"
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.work_area_group_id == group.id
+
+    def test_partial_group_names_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(slug="area-1", work_area_group_name="group-a"), self._item(slug="area-2")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert "required for all Work Areas" in response.json()["errors"][0]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_duplicate_slug_in_payload_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(slug="dup"), self._item(slug="dup")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        _assert_rejected(response, expected_error="duplicate")
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_existing_slug_in_db_rejected(self, v2_write_client, opportunity):
+        WorkAreaFactory(opportunity=opportunity, slug="taken")
+        payload = [self._item(slug="taken")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        _assert_rejected(response, expected_error="already exists")
+
+    def test_invalid_centroid_format_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(centroid="not-a-point")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        _assert_rejected(response, expected_error="lon lat")
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_links_to_existing_implementation_area_by_name(self, v2_write_client, opportunity):
+        implementation_area = ImplementationAreaFactory(opportunity=opportunity, name="zone-a")
+        payload = [self._item(implementation_area_name="zone-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.implementation_area_id == implementation_area.id
+
+    def test_stores_implementation_area_name_when_not_yet_created(self, v2_write_client, opportunity):
+        payload = [self._item(implementation_area_name="not-created-yet")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = WorkArea.objects.get(opportunity=opportunity, slug="area-1")
+        assert area.implementation_area_id is None
+        assert area.implementation_area_name == "not-created-yet"
+
+    def test_overlapping_items_rejected(self, v2_write_client, opportunity):
+        payload = [
+            self._item(slug="area-1", boundary=square(36.8, -1.3, 0.02).wkt),
+            self._item(slug="area-2", boundary=square(36.81, -1.3, 0.02).wkt),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Areas area-1 and area-2 overlap each other by 50.0%. "
+            "Correct one boundary or remove one work area, then upload again."
+        ]
+        assert not WorkArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_item_overlapping_existing_work_area_rejected(self, v2_write_client, opportunity):
+        existing = WorkAreaFactory(opportunity=opportunity, slug="existing", boundary=square(36.8, -1.3, 0.02))
+        payload = [
+            self._item(slug="area-1", work_area_group_name="new-group"),
+            self._item(slug="area-2", boundary=square(36.8, -1.3, 0.02).wkt, work_area_group_name="new-group"),
+        ]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            "Work Area area-2 overlaps existing Work Area existing by 100.0%. "
+            "Correct the boundary or remove the work area, then upload again."
+        ]
+        assert list(WorkArea.objects.filter(opportunity=opportunity)) == [existing]
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
+class TestImplementationAreaBulkCreateView(BaseMicroplanningFlagTest):
+    def url(self, opp_id):
+        return reverse("data_export:implementation_area_bulk_create", kwargs={"opp_id": opp_id})
+
+    def _item(self, **overrides):
+        item = {
+            "name": "zone-a",
+            "centroid": "36.8 -1.29",
+            "boundary": "POLYGON((36.8 -1.29, 36.82 -1.29, 36.82 -1.30, 36.8 -1.29))",
+        }
+        item.update(overrides)
+        return item
+
+    def test_creates_implementation_areas(self, v2_write_client, opportunity):
+        payload = [self._item(name="zone-a"), self._item(name="zone-b")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+        assert response.json() == {"created": 2}
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        assert area.centroid.wkt == "POINT (36.8 -1.29)"
+        assert area.boundary.wkt.startswith("POLYGON")
+
+    def test_duplicate_name_in_payload_rejected(self, v2_write_client, opportunity):
+        payload = [self._item(name="dup"), self._item(name="dup")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        _assert_rejected(response, expected_error="duplicate")
+        assert not ImplementationArea.objects.filter(opportunity=opportunity).exists()
+
+    def test_existing_name_in_db_rejected(self, v2_write_client, opportunity):
+        ImplementationAreaFactory(opportunity=opportunity, name="taken")
+        payload = [self._item(name="taken")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        _assert_rejected(response, expected_error="already exists")
+
+    def test_links_pending_work_areas_by_stored_name(self, v2_write_client, opportunity):
+        pending = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-a")
+        other = WorkAreaFactory(opportunity=opportunity, implementation_area=None, implementation_area_name="zone-b")
+
+        payload = [self._item(name="zone-a")]
+        response = _post_json(v2_write_client, self.url(opportunity.id), payload)
+        assert response.status_code == 201
+
+        area = ImplementationArea.objects.get(opportunity=opportunity, name="zone-a")
+        pending.refresh_from_db()
+        other.refresh_from_db()
+        assert pending.implementation_area_id == area.id
+        assert other.implementation_area_id is None

@@ -1,0 +1,22 @@
+{
+  "include": ["**/test_*.py"],
+  "exclude": [
+    "commcare_connect/templates/prelogin/home.html",
+    "commcare_connect/templates/prelogin/in-action.html"
+  ],
+  "rules": [
+    {
+      "path": "**/migrations/*.py",
+      "rule": ".opencodereview/rules/django_migrations.md"
+    },
+    {
+      "path": "commcare_connect/**/models.py",
+      "rule": ".opencodereview/rules/django_models.md",
+      "merge_system_rule": true
+    },
+    {
+      "path": "commcare_connect/templates/**/*.html",
+      "rule": ".opencodereview/rules/django_templates.md"
+    }
+  ]
+}

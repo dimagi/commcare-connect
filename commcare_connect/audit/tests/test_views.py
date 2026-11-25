@@ -1,11 +1,16 @@
+from datetime import date, timedelta
+from unittest import mock
+
 import pytest
 from django.urls import reverse
+from django_htmx.middleware import HtmxDetails
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
+from commcare_connect.audit.views import _assign_audit_tasks, _detail_template
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.models import AssignedTask
+from commcare_connect.opportunity.models import AssignedTask, TaskTypeModeChoices
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -15,6 +20,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.tests.factories import OrgWithUsersFactory
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.fixture
@@ -26,10 +32,10 @@ def audit_opp(program_manager_org):
 
 
 @pytest.fixture
-def nm_audit_opp(managed_opportunity):
+def nm_audit_opp(pm_opportunity):
     flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
-    flag.opportunities.add(managed_opportunity)
-    return managed_opportunity
+    flag.opportunities.add(pm_opportunity)
+    return pm_opportunity
 
 
 @pytest.mark.django_db
@@ -43,7 +49,7 @@ def nm_audit_opp(managed_opportunity):
 )
 def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_opp):
     """Audit access for the network manager (the opportunity's delivery org) follows
-    @org_member_required: members and admins are allowed, viewers are denied. The same
+    @opp_standard_access_required: members and admins are allowed, viewers are denied. The same
     decorator gates all audit views, so the role behaviour is asserted once here."""
     user = UserFactory()
     UserOrganizationMembership.objects.create(user=user, organization=nm_audit_opp.organization, role=role)
@@ -61,7 +67,7 @@ def test_nm_audit_list_access_by_role(client, role, expected_status, nm_audit_op
 def test_unrelated_org_admin_cannot_access_audit(client, nm_audit_opp):
     """An admin of an org unrelated to the opportunity is denied both ways: via the
     opportunity's slug (not a member of that org) and via their own org's slug (the
-    opportunity doesn't belong to it, so opportunity_required rejects it)."""
+    opportunity does not belong to it)."""
     other_org = OrgWithUsersFactory()
     other_admin = other_org.memberships.filter(role="admin").first().user
     client.force_login(other_admin)
@@ -262,6 +268,9 @@ def test_detail_lists_all_workers_in_one_table(client, program_manager_org_user_
     assert rendered_rows[0] == flagged_entry.opportunity_access.user.name
     # Progress indicator "0 of 1 workers reviewed" — only flagged rows are counted.
     assert "0 of 1" in html
+    # The same URL serves the full page or just the body, so caches must not mix them up.
+    assert "HX-Request" in response["Vary"]
+    assert "HX-History-Restore-Request" in response["Vary"]
 
 
 @pytest.mark.django_db
@@ -323,10 +332,10 @@ def test_detail_filter_limits_table_server_side(client, program_manager_org_user
     assert response.status_code == 200
     rendered_rows = [e.opportunity_access.user.name for e in response.context["table"].page.object_list.data]
     assert rendered_rows == ["Alice Smith"]
-    # Both workers remain available as filter options.
+    # Both workers remain available as filter options, labelled "name (username)".
     option_names = [name for _, name in response.context["worker_filter_choices"]]
-    assert "Alice Smith" in option_names
-    assert "Bob Jones" in option_names
+    assert f"Alice Smith ({alice_access.user.username})" in option_names
+    assert f"Bob Jones ({bob_access.user.username})" in option_names
 
 
 @pytest.mark.django_db
@@ -430,6 +439,7 @@ def test_modal_submit_assigns_tasks(client, program_manager_org_user_admin, audi
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
     assert response.status_code == 200
+    assert response.headers["HX-Trigger"] == "refreshDetail"
     entry.refresh_from_db()
     assert entry.reviewed is True
     assert entry.review_action == AuditReportEntry.ReviewAction.TASKS_ASSIGNED
@@ -445,6 +455,7 @@ def test_modal_submit_no_action(client, program_manager_org_user_admin, audit_op
 
     response = client.post(_action_url(audit_opp, report, entry), data={"action": "none"})
     assert response.status_code == 200
+    assert response.headers["HX-Trigger"] == "refreshDetail"
     entry.refresh_from_db()
     assert entry.reviewed is True
     assert entry.review_action == AuditReportEntry.ReviewAction.NONE
@@ -490,12 +501,14 @@ def test_modal_submit_rejects_already_reviewed(client, program_manager_org_user_
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
     assert response.status_code == 400
+    assert "HX-Trigger" not in response.headers
     assert AssignedTask.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_modal_submit_returns_400_when_task_already_assigned(client, program_manager_org_user_admin, audit_opp):
-    """Re-assigning an already-assigned task type returns 400 with a user-friendly message."""
+def test_modal_submit_already_assigned_is_idempotent(client, program_manager_org_user_admin, audit_opp):
+    """Re-assigning an already-assigned task type is idempotent: it reviews the entry with no duplicate,
+    so a partially-succeeded batch never wedges on retry."""
     client.force_login(program_manager_org_user_admin)
     report = AuditReportFactory(opportunity=audit_opp)
     entry = _entry(report, audit_opp, flagged=True)
@@ -508,7 +521,7 @@ def test_modal_submit_returns_400_when_task_already_assigned(client, program_man
     )
     assert AssignedTask.objects.filter(task_type=task_type).count() == 1
 
-    # Reset entry so the guard checks pass, then try to assign the same task again.
+    # Reset entry so the guard checks pass, then submit the same (already-assigned) task again.
     entry.reviewed = False
     entry.review_action = None
     entry.save(update_fields=["reviewed", "review_action"])
@@ -517,11 +530,80 @@ def test_modal_submit_returns_400_when_task_already_assigned(client, program_man
         _action_url(audit_opp, report, entry),
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
-    assert response.status_code == 400
-    assert "already assigned" in response.content.decode()
-    assert "not completed" in response.content.decode()
-    # No duplicate task created.
+    assert response.status_code == 200
+    # No duplicate task, and the entry is reviewed rather than stuck.
     assert AssignedTask.objects.filter(task_type=task_type).count() == 1
+    entry.refresh_from_db()
+    assert entry.reviewed is True
+
+
+@pytest.mark.django_db
+def test_assign_audit_tasks_treats_already_assigned_as_success(audit_opp):
+    """An already-assigned task type is idempotent success, not a failure — the goal (task assigned) holds."""
+    access = OpportunityAccessFactory(opportunity=audit_opp, accepted=True)
+    assigner = UserFactory()
+    ok_type = TaskTypeFactory(opportunity=audit_opp, name="OK")
+    dup_type = TaskTypeFactory(opportunity=audit_opp, name="Dup")
+    AssignedTask.assign(task_type=dup_type, opportunity_access=access, due_date=date.today())
+
+    assigned, failed = _assign_audit_tasks([ok_type, dup_type], access, assigner, date.today() + timedelta(days=7))
+
+    assert assigned == ["OK", "Dup"]
+    assert failed == []
+    assert AssignedTask.objects.filter(task_type=ok_type, opportunity_access=access).count() == 1
+
+
+@pytest.mark.django_db
+def test_assign_audit_tasks_isolates_ocs_failure(audit_opp):
+    """An OCS trigger failure on one task must roll back only that task, not sibling assignments."""
+    access = OpportunityAccessFactory(opportunity=audit_opp, accepted=True)
+    access.user.phone_number = "+15551234567"
+    access.user.save()
+    assigner = UserFactory()
+    ocs_type = TaskTypeFactory(opportunity=audit_opp, name="OCS", mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="exp")
+    relearn_type = TaskTypeFactory(opportunity=audit_opp, name="Relearn")
+
+    with mock.patch("commcare_connect.utils.ocs_api.trigger_bot", side_effect=OcsApiError("boom")):
+        assigned, failed = _assign_audit_tasks(
+            [ocs_type, relearn_type], access, assigner, date.today() + timedelta(days=7)
+        )
+
+    assert assigned == ["Relearn"]
+    assert failed == [("OCS", "Chatbot session could not be started")]
+    assert not AssignedTask.objects.filter(task_type=ocs_type).exists()
+    assert AssignedTask.objects.filter(task_type=relearn_type).count() == 1
+
+
+@pytest.mark.django_db
+def test_modal_submit_partial_failure_keeps_successes_and_returns_400(
+    client, program_manager_org_user_admin, audit_opp
+):
+    """A genuine failure (OCS trigger) returns 400 and leaves the entry unreviewed, but the sibling
+    that succeeded is committed."""
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+    entry.opportunity_access.user.phone_number = "+15551234567"
+    entry.opportunity_access.user.save()
+    new_type = TaskTypeFactory(opportunity=audit_opp, name="New")
+    ocs_type = TaskTypeFactory(opportunity=audit_opp, name="OCS", mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="exp")
+
+    with mock.patch("commcare_connect.utils.ocs_api.trigger_bot", side_effect=OcsApiError("boom")):
+        response = client.post(
+            _action_url(audit_opp, report, entry),
+            data={"action": "tasks_assigned", "task_type_ids": [str(new_type.pk), str(ocs_type.pk)]},
+        )
+
+    assert response.status_code == 400
+    assert "HX-Trigger" not in response.headers
+    body = response.content.decode()
+    assert "New" in body
+    assert "OCS" in body and "Chatbot session could not be started" in body
+    # The relearn task persisted; the OCS one rolled back; the entry is left unreviewed.
+    assert AssignedTask.objects.filter(task_type=new_type, opportunity_access=entry.opportunity_access).count() == 1
+    assert not AssignedTask.objects.filter(task_type=ocs_type, opportunity_access=entry.opportunity_access).exists()
+    entry.refresh_from_db()
+    assert entry.reviewed is False
 
 
 @pytest.mark.django_db
@@ -600,3 +682,19 @@ def test_export_404_when_flag_disabled(client, program_manager_org_user_admin, a
     )
     response = client.get(url)
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "headers, template",
+    [
+        ({}, "audit/audit_report_detail.html"),
+        ({"HX-Request": "true"}, "audit/audit_report_body.html"),
+        # Going back to a filtered URL whose snapshot htmx no longer has needs the whole page.
+        ({"HX-Request": "true", "HX-History-Restore-Request": "true"}, "audit/audit_report_detail.html"),
+    ],
+)
+def test_detail_template_for_request(rf, headers, template):
+    request = rf.get("/", headers=headers)
+    request.htmx = HtmxDetails(request)
+
+    assert _detail_template(request) == template

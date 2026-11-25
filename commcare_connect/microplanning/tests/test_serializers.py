@@ -21,6 +21,7 @@ def test_work_area_case_serializer():
         },
         centroid=Point(77, 29, srid=SRID),
     )
+    group.update_centroid()
 
     data = WorkAreaCaseSerializer(work_area).data
 
@@ -43,5 +44,6 @@ def test_work_area_case_serializer():
             "work_area_group_id": str(group.id),
             "lga": "LGA1",
             "state": "State1",
+            "wag_centroid": "28.50000 77.50000",
         },
     }

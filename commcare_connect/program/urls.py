@@ -1,27 +1,34 @@
 from django.urls import path
 
 from commcare_connect.program.views import (
-    ManagedOpportunityInit,
-    ManagedOpportunityInitUpdate,
-    ManagedOpportunityList,
-    ProgramCreateOrUpdate,
+    ProgramCreate,
+    ProgramOpportunityInit,
+    ProgramOpportunityInitUpdate,
+    ProgramOpportunityList,
+    ProgramUpdate,
     apply_or_decline_application,
     invite_organization,
     manage_application,
+    opportunity_api_key_options,
     program_home,
 )
 
 app_name = "program"
 urlpatterns = [
     path("", view=program_home, name="home"),
-    path("init/", view=ProgramCreateOrUpdate.as_view(), name="init"),
-    path("<slug:pk>/edit", view=ProgramCreateOrUpdate.as_view(), name="edit"),
-    path("<slug:pk>/view", view=ManagedOpportunityList.as_view(), name="opportunity_list"),
-    path("<slug:pk>/opportunity-init", view=ManagedOpportunityInit.as_view(), name="opportunity_init"),
+    path("init/", view=ProgramCreate.as_view(), name="init"),
+    path("<slug:pk>/edit", view=ProgramUpdate.as_view(), name="edit"),
+    path("<slug:pk>/view", view=ProgramOpportunityList.as_view(), name="opportunity_list"),
+    path("<slug:pk>/opportunity-init", view=ProgramOpportunityInit.as_view(), name="opportunity_init"),
     path(
         "<slug:pk>/opportunity/<slug:opp_id>/init/edit/",
-        view=ManagedOpportunityInitUpdate.as_view(),
+        view=ProgramOpportunityInitUpdate.as_view(),
         name="opportunity_init_edit",
+    ),
+    path(
+        "<slug:pk>/opportunity/<slug:opp_id>/api_key_options/",
+        view=opportunity_api_key_options,
+        name="opportunity_api_key_options",
     ),
     path("<slug:pk>/invite", view=invite_organization, name="invite_organization"),
     path("application/<slug:application_id>/<str:action>", manage_application, name="manage_application"),

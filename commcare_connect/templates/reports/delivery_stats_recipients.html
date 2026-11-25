@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+{% block title %}
+  {% translate "Delivery Stats Monthly Export" %}
+{% endblock %}
+{% block content %}
+  <div class="container">
+    <h2 class="title mb-2">{% translate "Delivery Stats Monthly Export" %}</h2>
+    <p class="card_description mb-4">
+      {% blocktranslate %}On the 1st of each month, last month's platform-wide Delivery Stats row is emailed as a CSV to these users. Only users with access to the Delivery Stats report receive it.{% endblocktranslate %}
+    </p>
+    <div class="card_bg mb-4">
+      <h3 class="card_title mb-2">{% translate "Add recipient" %}</h3>
+      <form method="post" class="flex items-end gap-4">
+        {% csrf_token %}
+        <div class="flex-1">{{ form.email|as_crispy_field }}</div>
+        <button type="submit" class="button button-md primary-dark">{% translate "Add" %}</button>
+      </form>
+    </div>
+    <div class="card_bg">
+      <h3 class="card_title mb-2">{% translate "Recipients" %}</h3>
+      {% if recipients %}
+        <table class="base-table">
+          <thead>
+            <tr>
+              <th>{% translate "Name" %}</th>
+              <th>{% translate "Email" %}</th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user, eligible in recipients %}
+              <tr>
+                <td>{{ user.name }}</td>
+                <td>{{ user.email|default:"—" }}</td>
+                <td>
+                  {% if not eligible %}
+                    <span class="badge"
+                          title="{% translate 'Inactive, has no email or lacks access to the Delivery Stats report' %}">{% translate "Won't receive" %}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <form method="post"
+                        action="{% url 'reports:remove_delivery_stats_recipient' user.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button button-md outline-style">{% translate "Remove" %}</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="card_description">{% translate "No recipients yet." %}</p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock content %}

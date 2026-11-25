@@ -5,8 +5,11 @@ from functools import cached_property
 
 import django_tables2 as tables
 from django.utils.timezone import is_aware, localtime  # For timezone handling
+from django.utils.translation import gettext_lazy as _
 from django_tables2.data import TableQuerysetData
 from django_tables2.rows import BoundRow
+
+from commcare_connect.utils.file import neutralize_formula
 
 STOP_CLICK_PROPAGATION_ATTR = {"td": {"@click.stop": ""}}
 TEXT_CENTER_ATTR = {"td": {"class": "text-center"}}
@@ -68,6 +71,13 @@ def get_duration_min(total_seconds):
         parts.append(f"{minutes} min")
 
     return " ".join(parts)
+
+
+class SpreadsheetSafeColumn(tables.Column):
+    """A column whose exported text can't be run as a spreadsheet formula."""
+
+    def value(self, **kwargs):
+        return neutralize_formula(super().value(**kwargs))
 
 
 class DurationColumn(tables.Column):
@@ -225,3 +235,34 @@ def select_column(th_extra=None, td_extra=None):
         accessor="pk",
         attrs={"th__input": th_attrs, "td__input": td_attrs},
     )
+
+
+class ManagedOptionTable(tables.Table):
+    """Lists a model's options on its Internal Features page (see users/managed_options.py).
+
+    Subclasses set `Meta.model` and add their usage-count columns, which `sequence` places before the actions.
+    """
+
+    # Rendered with the page rather than fetched by htmx, so sort links build on this request's URL.
+    use_view_url = False
+    name = tables.Column(verbose_name=_("Name"))
+    slug = tables.Column(verbose_name=_("Slug"))
+    # Free text of up to 255 chars: wraps rather than widening the table past the page.
+    description = tables.Column(
+        verbose_name=_("Description"), orderable=False, attrs={"td": {"class": "whitespace-normal"}}
+    )
+    actions = tables.TemplateColumn(
+        verbose_name="",
+        template_name="users/managed_options/row_actions.html",
+        orderable=False,
+        empty_values=(),
+    )
+
+    class Meta:
+        fields = ("name", "slug", "description")
+        sequence = (*fields, "...", "actions")
+        default = ""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.empty_text = _("No %(options)s yet.") % {"options": self._meta.model._meta.verbose_name_plural}
