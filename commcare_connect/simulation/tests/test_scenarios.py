@@ -2,6 +2,7 @@ import datetime
 from collections import Counter
 
 import pytest
+from django.urls import reverse
 from django.utils.timezone import now
 from waffle.testutils import override_switch
 
@@ -56,7 +57,7 @@ def test_solicitations_shows_every_state(sim):
     scenario.build(sim, small=True)
 
     solicitations = Solicitation.objects.filter(organization__name__in=scenario.ORG_NAMES)
-    listed = solicitations.open().filter(public=True)
+    listed = solicitations.public()
     assert _values(listed, "type") == {Solicitation.Type.RFP, Solicitation.Type.EOI}
     assert len(_values(listed, "country")) == len(_values(listed, "delivery_type")) == 2
     private = solicitations.open().get(public=False)
@@ -64,6 +65,7 @@ def test_solicitations_shows_every_state(sim):
     assert solicitations.filter(status=Solicitation.Status.DRAFT).count() == 1
     assert solicitations.expired().count() == 1
     assert solicitations.filter(status=Solicitation.Status.CLOSED).count() == 1
+    assert ("Solicitations Marketplace", reverse("marketplace:list")) in sim.links
 
 
 def test_delivery_review_shows_every_review_state(sim):

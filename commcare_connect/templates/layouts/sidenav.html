@@ -54,6 +54,14 @@
           {% endif %}
         </div>
       {% endif %}
+      {# Not tied to an organization: a user with none can browse it, and create one when they apply. #}
+      {% switch "solicitations" %}
+        <div {% if not request.org %}class="mt-5"{% endif %}>
+          {% url 'marketplace:list' as marketplace_url %}
+          {% trans "Marketplace" as marketplace_name %}
+          {% include "components/sidenav-items.html" with name=marketplace_name icon="store" target=marketplace_url namespace="marketplace" %}
+        </div>
+      {% endswitch %}
       {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}
         {% url 'organization_directory:list' as organization_directory_url %}

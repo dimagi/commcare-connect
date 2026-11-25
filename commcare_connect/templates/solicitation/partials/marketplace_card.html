@@ -1,0 +1,40 @@
+{% load i18n humanize %}
+<article class="card_bg flex flex-col gap-3 h-full">
+  <div class="flex items-start justify-between gap-2">
+    <h2 class="card_title">{{ solicitation.title }}</h2>
+    <span class="badge badge-sm {% if solicitation.type == "eoi" %}badge-teal{% else %}badge-indigo{% endif %}"
+          title="{{ solicitation.get_type_display }}">{{ solicitation.type|upper }}</span>
+  </div>
+  <p class="card_description">{{ solicitation.organization.name }}</p>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+    {% if solicitation.country %}
+      <dt class="text-gray-500">{% translate "Country" %}</dt>
+      <dd>
+        {{ solicitation.country.name }}
+      </dd>
+    {% endif %}
+    {% if solicitation.delivery_type %}
+      <dt class="text-gray-500">{% translate "Delivery type" %}</dt>
+      <dd>
+        {{ solicitation.delivery_type.name }}
+      </dd>
+    {% endif %}
+    {% if solicitation.budget_min is not None or solicitation.budget_max is not None %}
+      <dt class="text-gray-500">{% translate "Budget" %}</dt>
+      <dd>
+        {{ solicitation.currency_id }}
+        {% if solicitation.budget_min is not None and solicitation.budget_max is not None %}
+          {{ solicitation.budget_min|intcomma }} – {{ solicitation.budget_max|intcomma }}
+        {% elif solicitation.budget_min is not None %}
+          {% blocktranslate with amount=solicitation.budget_min|intcomma %}from {{ amount }}{% endblocktranslate %}
+        {% else %}
+          {% blocktranslate with amount=solicitation.budget_max|intcomma %}up to {{ amount }}{% endblocktranslate %}
+        {% endif %}
+      </dd>
+    {% endif %}
+    <dt class="text-gray-500">{% translate "Deadline" %}</dt>
+    <dd>
+      <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i" }} UTC</time>
+    </dd>
+  </dl>
+</article>

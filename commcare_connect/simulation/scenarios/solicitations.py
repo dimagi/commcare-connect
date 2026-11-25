@@ -2,6 +2,8 @@
 countries, delivery types and deadlines), private with an invited organization, a draft, one past its deadline that
 the hourly task hasn't closed yet, and one it has closed."""
 
+from django.urls import reverse
+
 from commcare_connect.simulation.steps import SolicitationSpec
 from commcare_connect.simulation.steps.solicitations import require_solicitations_switch
 from commcare_connect.solicitation.models import Solicitation
@@ -82,3 +84,4 @@ def build(sim, *, small):
         sim.solicitation(
             pm_org, SolicitationSpec(title="Draft: maternal health", deadline=open_deadline), publish=False
         )
+    sim.link("Solicitations Marketplace", reverse("marketplace:list"))
