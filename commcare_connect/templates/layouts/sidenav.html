@@ -39,13 +39,6 @@
             {% include "components/sidenav-items.html" with name="Opportunities" icon="table-cells-large" target=opportunity_url namespace="opportunity" %}
             {% url 'program:home' request.org.slug as program_home_url %}
             {% include "components/sidenav-items.html" with name="Programs" icon="table-columns" target=program_home_url namespace="program" %}
-            {% switch "solicitations" %}
-              {% if request.user|is_pm_org_admin:request.org %}
-                {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
-                {% trans "Solicitations" as solicitations_name %}
-                {% include "components/sidenav-items.html" with name=solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
-              {% endif %}
-            {% endswitch %}
           {% endif %}
           {% if request.org_access_level.has_admin or perms.users.org_management_settings_access %}
             {% url 'organization:home' request.org.slug as organization_home_url %}
@@ -54,13 +47,30 @@
           {% endif %}
         </div>
       {% endif %}
-      {# Not tied to an organization: a user with none can browse it, and create one when they apply. #}
       {% switch "solicitations" %}
-        <div {% if not request.org %}class="mt-5"{% endif %}>
-          {% url 'marketplace:list' as marketplace_url %}
-          {% trans "Marketplace" as marketplace_name %}
-          {% include "components/sidenav-items.html" with name=marketplace_name icon="store" target=marketplace_url namespace="marketplace" %}
-        </div>
+        {% with namespaces=request.resolver_match.namespaces %}
+          <div {% if not request.org %}class="mt-5"{% endif %} x-data="{ open:
+            {% if 'solicitation' in namespaces or 'marketplace' in namespaces %}
+              true
+            {% else %}
+              false
+            {% endif %}
+            }">
+            {% translate "Solicitations" as solicitations_name %}
+            {% include "components/sidenav-group-header.html" with name=solicitations_name icon="file-signature" %}
+            <div x-show="open || !sidebarOpen"
+                 :class="sidebarOpen && 'ml-3 border-l border-white/30'">
+              {% if request.org and request.org_access_level.has_view and request.user|is_pm_org_admin:request.org %}
+                {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
+                {% translate "My solicitations" as my_solicitations_name %}
+                {% include "components/sidenav-items.html" with name=my_solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
+              {% endif %}
+              {% url 'marketplace:list' as marketplace_url %}
+              {% translate "Marketplace" as marketplace_name %}
+              {% include "components/sidenav-items.html" with name=marketplace_name icon="store" target=marketplace_url namespace="marketplace" %}
+            </div>
+          </div>
+        {% endwith %}
       {% endswitch %}
       {% if request.user.show_admin_sidenav %}
         {% url 'users:internal_features' as internal_features_url %}
