@@ -148,18 +148,20 @@ def _fetch_hq_list(api_key, path, *, action, parse_item, timeout, denied_status_
 
 @async_to_sync
 async def _get_within_deadline(hq_server_url, auth_header, path, action, timeout):
-    async with httpx.AsyncClient(
-        timeout=timeout, headers={"Authorization": auth_header}, base_url=hq_server_url
-    ) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, headers={"Authorization": auth_header}, base_url=hq_server_url
+        ) as client:
             # httpx's timeout applies to each phase (connect, then each read) separately, so a slow server that
             # keeps trickling data in would outlast the proxies. This bounds the whole request.
             async with asyncio.timeout(timeout):
                 return await client.get(path)
-        except httpx.RequestError as e:
-            raise CommCareHQAPIException(f"{action}: {e}")
-        except TimeoutError:
-            raise CommCareHQAPIException(f"{action}: no answer within {timeout}s")
+    # A malformed server URL fails outside RequestError: InvalidURL for a bad host (raised as the client parses
+    # it), OverflowError for a port out of range.
+    except (httpx.RequestError, httpx.InvalidURL, OverflowError) as e:
+        raise CommCareHQAPIException(f"{action}: {e}")
+    except TimeoutError:
+        raise CommCareHQAPIException(f"{action}: no answer within {timeout}s")
 
 
 def _application_option(application):
