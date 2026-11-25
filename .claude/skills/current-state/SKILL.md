@@ -58,7 +58,7 @@ Don't design the fix. One line on the direction a fix would take is enough; the 
 
 Save it as `docs/design/<YYYY-MM-DD>-<area>-current-state.md` and add it to the `nav` in `zensical.toml` next to the other design docs. Use this structure:
 
-```markdown
+```text
 # <Area>: current state
 
 !!! info "Status: current-state analysis"
