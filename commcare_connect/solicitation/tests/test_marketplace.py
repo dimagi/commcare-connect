@@ -297,6 +297,14 @@ def test_detail_shows_scope_but_not_questions_or_criteria(client):
     assert "Past performance" not in content
 
 
+@pytest.mark.parametrize(
+    "solicitation_type, label",
+    [(Solicitation.Type.RFP, "Submit proposal"), (Solicitation.Type.EOI, "Express interest")],
+)
+def test_apply_label_is_named_for_the_type(solicitation_type, label):
+    assert Solicitation(type=solicitation_type).apply_label == label
+
+
 def invite(solicitation, organization, invited):
     """Invites ``organization`` to ``solicitation``, or another organization when ``invited`` is False."""
     SolicitationInvitationFactory(

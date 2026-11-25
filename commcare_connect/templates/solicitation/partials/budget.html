@@ -1,6 +1,6 @@
 {% load i18n humanize %}
 {% if solicitation.budget_min is not None or solicitation.budget_max is not None %}
-  <dt class="text-gray-500">{% translate "Budget" %}</dt>
+  <dt>{% translate "Budget" %}</dt>
   <dd>
     {{ solicitation.currency_id }}
     {% if solicitation.budget_min is not None and solicitation.budget_max is not None %}

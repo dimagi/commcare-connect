@@ -139,6 +139,32 @@
   @apply text-sm font-semibold text-gray-900;
 }
 
+/* A dark banner at the top of a detail page: badges, title, a deadline box and a row of facts. */
+.hero {
+  @apply bg-brand-deep-purple flex flex-col gap-6 rounded-lg p-6 text-white shadow-sm lg:p-8;
+}
+
+.hero-title {
+  @apply text-2xl font-semibold lg:text-3xl;
+}
+
+.hero-deadline {
+  @apply shrink-0 rounded-lg border border-white/20 bg-white/10 px-5 py-4;
+}
+
+/* Facts in a hero-facts dl are tiles: each dt is a tile's top half and its dd the bottom half. */
+.hero-facts {
+  @apply empty:hidden;
+}
+
+.hero-facts dt {
+  @apply bg-brand-indigo rounded-t-lg px-4 pt-3 text-xs text-indigo-100;
+}
+
+.hero-facts dd {
+  @apply bg-brand-indigo rounded-b-lg px-4 pb-3 text-lg font-semibold;
+}
+
 /* The card is the wrapper rather than the fieldset itself: a legend is laid out over
    its fieldset's top border, which on a bordered card leaves the title hanging outside. */
 .form_section legend {

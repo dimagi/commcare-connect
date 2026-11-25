@@ -117,6 +117,11 @@ class Solicitation(BaseModel):
         return (self.application_deadline - now()).days
 
     @property
+    def apply_label(self):
+        """What the button that starts an application says."""
+        return _("Express interest") if self.type == self.Type.EOI else _("Submit proposal")
+
+    @property
     def is_editable(self):
         """Closed and cancelled solicitations are finished, so only drafts and open ones can be edited."""
         return self.status == self.Status.DRAFT or self.is_open
