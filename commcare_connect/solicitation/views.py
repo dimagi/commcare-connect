@@ -315,8 +315,9 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
 
 
 class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
-    """One open solicitation's scope, budget and deadline, without its questions or criteria. Private ones are
-    only found by members of the organization that posted them and of the organizations they invited."""
+    """One solicitation's scope, budget and deadline, without its questions or criteria. Private ones are
+    only found by members of the organization that posted them and of the organizations they invited. A closed
+    or cancelled one still shows, so a saved link says why it can't be applied to; drafts are never found."""
 
     waffle_switch = SOLICITATIONS
     template_name = "solicitation/marketplace_detail.html"
@@ -326,7 +327,7 @@ class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
 
     def get_queryset(self):
         return (
-            Solicitation.objects.open()
+            Solicitation.objects.exclude(status=Solicitation.Status.DRAFT)
             .visible_to(self.request.user)
             .select_related(*CARD_RELATED)
             .prefetch_related("attachments")

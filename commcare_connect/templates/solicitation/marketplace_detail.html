@@ -7,6 +7,12 @@
       <h1 class="title">{{ solicitation.title }}</h1>
       <p class="hint">{{ solicitation.organization.name }} · {{ solicitation.get_type_display }}</p>
     </div>
+    {% if not solicitation.is_open %}
+      <div class="warning-banner" role="status">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <span>{% translate "This solicitation is no longer accepting applications." %}</span>
+      </div>
+    {% endif %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <section class="card_bg lg:col-span-2 flex flex-col gap-2">
         <h2 class="title-sm">{% translate "Scope of work" %}</h2>
@@ -56,7 +62,7 @@
           </dd>
         </dl>
         {% with attachments=solicitation.attachments.all %}
-          {% if attachments %}
+          {% if attachments and solicitation.is_open %}
             <h3 class="title-sm">{% translate "Attachments" %}</h3>
             <ul class="flex flex-col gap-1 text-sm">
               {% for attachment in attachments %}
