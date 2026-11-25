@@ -327,7 +327,7 @@ class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
         return (
             Solicitation.objects.open()
             .visible_to(self.request.user)
-            .select_related(*CARD_RELATED, "currency")
+            .select_related(*CARD_RELATED)
             .prefetch_related("attachments")
         )
 
