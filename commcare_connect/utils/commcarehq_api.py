@@ -111,10 +111,7 @@ async def _app_access_error(client, url):
 
 
 def _app_fetch_error(response) -> CommCareHQAPIException:
-    message = f"Failed to fetch app structure ({response.status_code}): {response.text}"
-    if response.status_code in DOMAIN_ACCESS_DENIED_STATUS_CODES:
-        return CommCareHQAccessDenied(message)
-    return CommCareHQAPIException(message)
+    return _response_error(response, "Failed to fetch app structure", DOMAIN_ACCESS_DENIED_STATUS_CODES)
 
 
 def _app_path(cc_domain, cc_app_id):
@@ -129,9 +126,7 @@ def _fetch_hq_list(api_key, path, *, action, parse_item, timeout, denied_status_
     """GET an HQ list endpoint and return `parse_item` of each of its `objects`. Every failure raises
     CommCareHQAPIException, including an answer that isn't the list HQ's API gives, such as a maintenance page
     served with a 200. A status in `denied_status_codes` raises CommCareHQAccessDenied."""
-    response = _get_within_deadline(
-        api_key.hq_server.url, f"ApiKey {api_key.user.email}:{api_key.api_key}", path, action, timeout
-    )
+    response = _get_within_deadline(api_key.hq_server.url, _auth_header(api_key), path, action, timeout)
     if not response.is_success:
         raise _response_error(response, action, denied_status_codes)
     try:
