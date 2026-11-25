@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 from django.utils.timezone import now
 
+from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.processor import (
     ASSESSMENT_JSONPATH,
     _get_matching_blocks,
@@ -333,3 +334,11 @@ def test_get_or_create_learn_module_skips_estimates_for_existing_module(caplog):
 
     assert get_or_create_learn_module(module.app, module_data) == module
     assert caplog.text == ""
+
+
+@pytest.mark.django_db
+def test_get_or_create_learn_module_requires_a_time_estimate():
+    module_data = LearnModuleJsonFactory(time_estimate=None, time_estimate_minutes=None).json["module"]
+
+    with pytest.raises(ProcessingError, match="has no time estimate"):
+        get_or_create_learn_module(CommCareAppFactory(), module_data)

@@ -113,6 +113,8 @@ def get_or_create_learn_module(app, module_data):
     hours, minutes = resolve_time_estimate(
         module_data.get("time_estimate"), module_data.get("time_estimate_minutes"), slug
     )
+    if hours is None:
+        raise ProcessingError(f"Learn module {slug} has no time estimate")
     module, _ = LearnModule.objects.get_or_create(
         app=app,
         slug=slug,

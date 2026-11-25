@@ -217,7 +217,7 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 `ProcessingError` messages, grouped by where they are raised:
 
 - **Routing:** the token's OAuth app has no `HQServer` (detail is the generic "A server error occurred."); `Commcare User <username> not found`; `CommCare App <id> not found on <server>`; `Multiple active opportunities found for CommCare app <id>.`
-- **Learn:** `User score must be an integer`; `Learn Assessment is already completed`.
+- **Learn:** `User score must be an integer`; `Learn Assessment is already completed`; `Learn module <slug> has no time estimate`.
 - **Deliver:** `User does not have access to opportunity …`; `Payment unit is not configured for the deliver unit …`; `User has not claimed opportunity …`; `User has no claim limit for payment unit …`; `Invalid work area case id specified …`; `Work area not found`.
 - **Work area update:** pending request already exists; user not assigned to the work area; invalid status or transition; missing `reason` / `photo_evidence`; photo attachment not found on the form.
 
