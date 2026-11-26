@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, DeliveryType
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication
 from commcare_connect.utils.datetime import DateRanges
 from commcare_connect.utils.filters import CSRFExemptForm, PresetDateRangeFilter
 
@@ -74,6 +74,16 @@ class TableFilterSet(django_filters.FilterSet):
             field.widget.attrs.setdefault("class", "base-input base-input-sm")
 
 
+def application_status_filter():
+    # The lists only show responses, so drafts and withdrawn applications are never there to filter for.
+    choices = [
+        (value, label)
+        for value, label in SolicitationApplication.Status.choices
+        if value not in SolicitationApplication.NON_RESPONSE_STATUSES
+    ]
+    return django_filters.ChoiceFilter(label=_("Status"), choices=choices, empty_label=_("All statuses"))
+
+
 def shortlisted_only_filter():
     return django_filters.BooleanFilter(
         label=_("Shortlisted only"),
@@ -89,4 +99,5 @@ class ReceivedApplicationFilterSet(TableFilterSet):
         to_field_name="solicitation_id",
         empty_label=_("All solicitations"),
     )
+    status = application_status_filter()
     shortlisted = shortlisted_only_filter()

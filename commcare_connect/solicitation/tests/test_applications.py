@@ -149,7 +149,25 @@ class TestReceivedApplicationsView:
         rows = response.context["table"].rows
         assert sorted(row.record.shortlisted for row in rows) == sorted(expected_shortlisted)
 
-    @pytest.mark.parametrize("query, applied", [("", False), ("?shortlisted=on", True)])
+    @pytest.mark.parametrize(
+        "query, expected_statuses",
+        [("", {Status.SUBMITTED, Status.UNDER_REVIEW}), ("?status=under_review", {Status.UNDER_REVIEW})],
+    )
+    def test_status_filter(self, pm_client, solicitation, query, expected_statuses):
+        for status in (Status.SUBMITTED, Status.UNDER_REVIEW):
+            SolicitationApplicationFactory(solicitation=solicitation, status=status)
+
+        response = pm_client.get(received_url(solicitation.organization) + query)
+
+        assert {row.record.status for row in response.context["table"].rows} == expected_statuses
+
+    def test_status_filter_offers_only_response_statuses(self, pm_client, solicitation):
+        response = pm_client.get(received_url(solicitation.organization))
+
+        choices = {value for value, _ in response.context["filter"].form.fields["status"].choices if value}
+        assert choices == {Status.SUBMITTED, Status.UNDER_REVIEW, Status.AWARDED, Status.REJECTED}
+
+    @pytest.mark.parametrize("query, applied", [("", False), ("?shortlisted=on", True), ("?status=awarded", True)])
     def test_clear_filters_is_enabled_only_when_filters_apply(self, pm_client, solicitation, query, applied):
         response = pm_client.get(received_url(solicitation.organization) + query)
 
