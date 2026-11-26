@@ -18,11 +18,7 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
-from commcare_connect.solicitation.filters import (
-    MarketplaceFilterSet,
-    ReceivedApplicationFilterSet,
-    SolicitationApplicationFilterSet,
-)
+from commcare_connect.solicitation.filters import MarketplaceFilterSet, ReceivedApplicationFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -379,27 +375,6 @@ class ReceivedApplicationsView(WaffleSwitchMixin, FiltersAppliedMixin, SingleTab
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
-
-
-class SolicitationApplicationsView(SolicitationPageMixin, ReceivedApplicationsView):
-    """The same list for one solicitation."""
-
-    filterset_class = SolicitationApplicationFilterSet
-    template_name = "solicitation/solicitation_applications.html"
-    title = _("Applications")
-
-    @cached_property
-    def solicitation(self):
-        return get_object_or_404(
-            Solicitation, organization=self.request.org, solicitation_id=self.kwargs["solicitation_id"]
-        )
-
-    def get_queryset(self):
-        return super().get_queryset().filter(solicitation=self.solicitation)
-
-    def get_table_kwargs(self):
-        # Every row is from the same solicitation, which the page's title names.
-        return {"exclude": ("solicitation",)}
 
 
 # Public marketplace ---------------------------------------------------------------------------------------------

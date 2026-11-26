@@ -82,14 +82,11 @@ def shortlisted_only_filter():
     )
 
 
-class SolicitationApplicationFilterSet(TableFilterSet):
-    shortlisted = shortlisted_only_filter()
-
-
 class ReceivedApplicationFilterSet(TableFilterSet):
     solicitation = django_filters.ModelChoiceFilter(
         label=_("Solicitation"),
         queryset=lambda request: Solicitation.objects.filter(organization=request.org).order_by("title"),
+        to_field_name="solicitation_id",
         empty_label=_("All solicitations"),
     )
     shortlisted = shortlisted_only_filter()

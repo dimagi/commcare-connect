@@ -14,7 +14,6 @@ from commcare_connect.solicitation.tests.factories import (
     SolicitationFactory,
     SolicitationReviewerFactory,
 )
-from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
 Status = SolicitationApplication.Status
 Recommendation = SolicitationApplicationReview.Recommendation
@@ -23,12 +22,6 @@ Recommendation = SolicitationApplicationReview.Recommendation
 @pytest.fixture
 def solicitation(program_manager_org):
     return SolicitationFactory(organization=program_manager_org)
-
-
-def applications_url(solicitation, org_slug=None):
-    return reverse(
-        "solicitation:applications", args=(org_slug or solicitation.organization.slug, solicitation.solicitation_id)
-    )
 
 
 @pytest.mark.django_db
@@ -88,65 +81,6 @@ class TestApplicationQuerySet:
         assert progress == {reviewed.pk: (1, 1), other.pk: (0, 2)}
 
 
-@pytest.mark.django_db
-class TestSolicitationApplicationsView:
-    @pytest.mark.parametrize(
-        "query, expected_shortlisted",
-        [("", [True, False]), ("?shortlisted=on", [True])],
-    )
-    def test_shortlisted_toggle_shows_only_shortlisted(self, pm_client, solicitation, query, expected_shortlisted):
-        for shortlisted in (True, False):
-            SolicitationApplicationFactory(
-                solicitation=solicitation, status=Status.UNDER_REVIEW, shortlisted=shortlisted
-            )
-
-        response = pm_client.get(applications_url(solicitation) + query)
-
-        rows = response.context["table"].rows
-        assert sorted(row.record.shortlisted for row in rows) == sorted(expected_shortlisted)
-
-    @pytest.mark.parametrize("query, applied", [("", False), ("?shortlisted=on", True)])
-    def test_clear_filters_is_enabled_only_when_filters_apply(self, pm_client, solicitation, query, applied):
-        response = pm_client.get(applications_url(solicitation) + query)
-
-        assert response.context["filters_applied"] is applied
-        button = response.content.decode().split("Clear filters")[0].rsplit("<button", 1)[1]
-        assert ("disabled" not in button) is applied
-
-    def test_other_orgs_solicitation_not_found(self, pm_client, program_manager_org):
-        other = SolicitationFactory(organization=OrganizationFactory(program_manager=True))
-
-        response = pm_client.get(applications_url(other, org_slug=program_manager_org.slug))
-
-        assert response.status_code == HTTPStatus.NOT_FOUND
-
-    @pytest.mark.parametrize(
-        "org_kwargs, role, expected",
-        [
-            ({"program_manager": True}, "admin", HTTPStatus.OK),
-            ({"program_manager": True}, "member", HTTPStatus.NOT_FOUND),
-            ({}, "admin", HTTPStatus.NOT_FOUND),
-        ],
-    )
-    def test_pm_only(self, client, org_kwargs, role, expected):
-        membership = MembershipFactory(organization=OrganizationFactory(**org_kwargs), role=role)
-        solicitation = SolicitationFactory(organization=membership.organization)
-        client.force_login(membership.user)
-
-        with override_switch(SOLICITATIONS, active=True):
-            response = client.get(applications_url(solicitation))
-
-        assert response.status_code == expected
-
-    def test_closed_solicitation_breadcrumb_has_no_details_link(self, pm_client, program_manager_org):
-        closed = SolicitationFactory(organization=program_manager_org, status="closed")
-
-        response = pm_client.get(applications_url(closed))
-
-        assert response.context["path"][1] == {"title": closed.title, "url": None}
-        assert f"<span>{closed.title}</span>" in response.content.decode()
-
-
 def received_url(organization):
     return reverse("received_applications:list", args=(organization.slug,))
 
@@ -172,11 +106,24 @@ class TestReceivedApplicationsView:
         SolicitationApplicationFactory(solicitation=other_solicitation, status=Status.SUBMITTED)
         SolicitationFactory()
 
-        response = pm_client.get(f"{received_url(program_manager_org)}?solicitation={solicitation.pk}")
+        response = pm_client.get(f"{received_url(program_manager_org)}?solicitation={solicitation.solicitation_id}")
 
         assert [row.record.solicitation for row in response.context["table"].rows] == [solicitation]
         choices = response.context["filter"].form.fields["solicitation"].queryset
         assert set(choices) == {solicitation, other_solicitation}
+
+    def test_solicitation_filter_refuses_another_organizations_solicitation(self, pm_client, program_manager_org):
+        other = SolicitationApplicationFactory(status=Status.SUBMITTED).solicitation
+
+        response = pm_client.get(f"{received_url(program_manager_org)}?solicitation={other.solicitation_id}")
+
+        assert list(response.context["table"].rows) == []
+
+    def test_responses_link_preselects_the_solicitation(self, pm_client, solicitation):
+        response = pm_client.get(reverse("solicitation:list", args=(solicitation.organization.slug,)))
+
+        expected = f'href="{received_url(solicitation.organization)}?solicitation={solicitation.solicitation_id}"'
+        assert expected in response.content.decode()
 
     @pytest.mark.parametrize("user_fixture", ["program_manager_org_user_member", "org_user_admin"])
     def test_not_found_for_non_pm_admins(self, client, request, user_fixture):
@@ -186,6 +133,29 @@ class TestReceivedApplicationsView:
 
         with override_switch(SOLICITATIONS, active=True):
             assert client.get(received_url(organization)).status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "query, expected_shortlisted",
+        [("", [True, False]), ("?shortlisted=on", [True])],
+    )
+    def test_shortlisted_toggle_shows_only_shortlisted(self, pm_client, solicitation, query, expected_shortlisted):
+        for shortlisted in (True, False):
+            SolicitationApplicationFactory(
+                solicitation=solicitation, status=Status.UNDER_REVIEW, shortlisted=shortlisted
+            )
+
+        response = pm_client.get(received_url(solicitation.organization) + query)
+
+        rows = response.context["table"].rows
+        assert sorted(row.record.shortlisted for row in rows) == sorted(expected_shortlisted)
+
+    @pytest.mark.parametrize("query, applied", [("", False), ("?shortlisted=on", True)])
+    def test_clear_filters_is_enabled_only_when_filters_apply(self, pm_client, solicitation, query, applied):
+        response = pm_client.get(received_url(solicitation.organization) + query)
+
+        assert response.context["filters_applied"] is applied
+        button = response.content.decode().split("Clear filters")[0].rsplit("<button", 1)[1]
+        assert ("disabled" not in button) is applied
 
 
 @pytest.mark.django_db
