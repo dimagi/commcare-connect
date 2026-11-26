@@ -1,6 +1,6 @@
 from functools import wraps
 
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpRequest, HttpResponseRedirect
 from django.urls import reverse
 from rest_framework.permissions import BasePermission
 
@@ -12,7 +12,9 @@ from commcare_connect.program.utils import (
     opportunity_by_id,
     org_access_level_from_request,
     program_access_level_from_request,
+    user_access_for_org,
 )
+from commcare_connect.users.models import User
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
@@ -46,13 +48,18 @@ def org_is_program_manager(organization):
     return bool(organization and organization.program_manager)
 
 
-def can_edit_org_profile(request) -> bool:
-    """Org admins edit their own org's profile; ORG_MANAGEMENT_SETTINGS_ACCESS extends that to every org."""
+def can_edit_org_profile(request: HttpRequest) -> bool:
     if not request.org:
         return False
-    return request.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS) or org_access_level_from_request(request) >= (
-        AccessLevel.ADMIN
-    )
+    return user_can_edit_org_profile(request.user, request.org_membership)
+
+
+def user_can_edit_org_profile(user: User, membership: UserOrganizationMembership | None) -> bool:
+    """Org admins edit their own org's profile; ORG_MANAGEMENT_SETTINGS_ACCESS and ALL_ORG_ACCESS extend that
+    to every org."""
+    if user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS) or user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return user_access_for_org(membership).has_admin
 
 
 class IsProgramManagerOrgAdmin(BasePermission):
@@ -182,7 +189,7 @@ def opportunity_required(view_func):
 
         if getattr(request, "opportunity", None) is None:
             request.opportunity = get_object_by_uuid_or_int(
-                Opportunity.objects.all(), opp_id, uuid_field="opportunity_id"
+                Opportunity.objects.select_related("program"), opp_id, uuid_field="opportunity_id"
             )
         return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
