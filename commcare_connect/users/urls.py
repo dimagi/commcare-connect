@@ -66,6 +66,27 @@ urlpatterns = [
         views.DeliveryTypeDeleteView.as_view(),
         name="delivery_type_delete",
     ),
+    path("internal_features/billed_entities/", views.BilledEntityListView.as_view(), name="billed_entity_list"),
+    path(
+        "internal_features/billed_entities/add/",
+        views.BilledEntityCreateView.as_view(),
+        name="billed_entity_create",
+    ),
+    path(
+        "internal_features/billed_entities/<int:pk>/edit/",
+        views.BilledEntityUpdateView.as_view(),
+        name="billed_entity_update",
+    ),
+    path(
+        "internal_features/billed_entities/<int:pk>/delete/",
+        views.BilledEntityDeleteView.as_view(),
+        name="billed_entity_delete",
+    ),
+    path(
+        "internal_features/billed_entities/<int:pk>/make_default/",
+        views.BilledEntityMakeDefaultView.as_view(),
+        name="billed_entity_make_default",
+    ),
     path("permission_management/", view=views.permission_management, name="permission_management"),
     path(
         "permission_management_search/", view=views.permission_management_search, name="permission_management_search"

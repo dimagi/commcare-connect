@@ -276,6 +276,16 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
+class BilledEntityFactory(DjangoModelFactory):
+    name = Faker("company")
+    address = Faker("address")
+    is_active = True
+    is_default = False
+
+    class Meta:
+        model = "opportunity.BilledEntity"
+
+
 class InvoiceFinanceRequestFactory(DjangoModelFactory):
     invoice = SubFactory(PaymentInvoiceFactory)
     contracted_entity = "1"

@@ -33,8 +33,9 @@ from waffle.models import Switch
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.forms import DeliveryTypeForm
+from commcare_connect.opportunity.forms import BilledEntityForm, DeliveryTypeForm
 from commcare_connect.opportunity.models import (
+    BilledEntity,
     DeliveryType,
     HQApiKey,
     Opportunity,
@@ -42,7 +43,7 @@ from commcare_connect.opportunity.models import (
     UserInvite,
     UserInviteStatus,
 )
-from commcare_connect.opportunity.tables import DeliveryTypeTable
+from commcare_connect.opportunity.tables import BilledEntityTable, DeliveryTypeTable
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.organization.forms import PrimarySectorForm
 from commcare_connect.organization.models import PrimarySector
@@ -53,6 +54,7 @@ from commcare_connect.users.managed_options import (
     ManagedOptionCreateView,
     ManagedOptionDeleteView,
     ManagedOptionListView,
+    ManagedOptionMixin,
     ManagedOptionUpdateView,
 )
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
@@ -422,9 +424,73 @@ def internal_features(request):
             "description": "Manage the delivery type options for programs and opportunities.",
             "url": reverse("users:delivery_type_list"),
         },
+        {
+            "perm": ORG_MANAGEMENT_SETTINGS_ACCESS,
+            "name": "Invoice Billed Entities",
+            "description": "Manage the entities invoices can be billed to.",
+            "url": reverse("users:billed_entity_list"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
+
+
+class BilledEntityMixin:
+    model = BilledEntity
+    form_class = BilledEntityForm
+    url_prefix = "users:billed_entity"
+    in_use_message = _("'%(name)s' is the default or is used by invoices, so it can't be deleted.")
+    in_use_hint = _(
+        "The default, or used by invoices, so it can't be deleted. Deactivate it instead, after making another "
+        "entity the default if it's the default."
+    )
+
+    def form_valid(self, form):
+        email = self.request.user.email
+        form.instance.created_by = form.instance.created_by or email
+        form.instance.modified_by = email
+        return super().form_valid(form)
+
+
+class BilledEntityListView(BilledEntityMixin, ManagedOptionListView):
+    template_name = "users/billed_entities/list.html"
+    table_class = BilledEntityTable
+
+    def get_queryset(self):
+        return BilledEntity.objects.annotate(
+            invoice_count=Count("invoices"),
+            in_use=BilledEntity.in_use_condition(),
+        ).order_by("-is_default", "-is_active", "name")
+
+
+class BilledEntityUpdateView(BilledEntityMixin, ManagedOptionUpdateView):
+    def get_queryset(self):
+        # Locked so a first invoice using this entity can't commit between the form's in-use check and the save.
+        queryset = super().get_queryset()
+        return queryset.select_for_update() if self.request.method == "POST" else queryset
+
+
+class BilledEntityCreateView(BilledEntityMixin, ManagedOptionCreateView):
+    pass
+
+
+class BilledEntityDeleteView(BilledEntityMixin, ManagedOptionDeleteView):
+    pass
+
+
+class BilledEntityMakeDefaultView(BilledEntityMixin, ManagedOptionMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        # Locks every row (the table is tiny) so concurrent swaps queue instead of tripping the one-default constraint.
+        list(BilledEntity.objects.select_for_update().order_by("pk"))
+        entity = get_object_or_404(BilledEntity, pk=pk)
+        if not entity.is_active:
+            messages.error(request, _("'%(name)s' is inactive, so it can't be the default.") % {"name": entity.name})
+        else:
+            entity.make_default(modified_by=request.user.email)
+            messages.success(request, _("'%(name)s' is now the default billed entity.") % {"name": entity.name})
+        return redirect(self.url_name("list"))
 
 
 class PrimarySectorMixin:
