@@ -5,6 +5,7 @@ from django.http import Http404
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.program.models import Program
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
@@ -133,6 +134,28 @@ def orgs_ids_with_admin_access_to_opportunity(opportunity) -> set:
     if opportunity.program.funder_id:
         org_ids.add(opportunity.program.funder_id)
     return org_ids
+
+
+def user_is_opportunity_admin(user, opportunity):
+    """Admin of any org that has admin access to this opportunity."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity),
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+def user_is_opportunity_pm(user, opportunity):
+    """Admin of an org that manages this opportunity."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization_id__in=orgs_ids_with_admin_access_to_opportunity(opportunity) - {opportunity.organization_id},
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
 
 
 def opportunity_by_id(opp_id) -> Opportunity | None:
