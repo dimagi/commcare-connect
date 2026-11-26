@@ -21,6 +21,12 @@
       <h1 class="title">{{ solicitation.title }}</h1>
       <p class="hint">{{ view.hint }}</p>
     </div>
+    {% if view.scheduled_note %}
+      <div class="warning-banner" role="status">
+        <i class="fa-solid fa-calendar-check" aria-hidden="true"></i>
+        {{ view.scheduled_note }}
+      </div>
+    {% endif %}
     <div class="card_bg">
       <div class="flex gap-x-4 items-center justify-between mb-4">
         <h2 class="title-sm">{{ view.title }}</h2>

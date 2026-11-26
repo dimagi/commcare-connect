@@ -56,6 +56,17 @@ def test_unpublished_solicitation_stays_a_draft(sim, pm_org):
     assert not Solicitation.objects.open().exists()
 
 
+def test_solicitation_is_scheduled_to_go_live(sim, pm_org):
+    go_live = _in_days(7)
+
+    solicitation = sim.solicitation(
+        pm_org, SolicitationSpec(title="Scheduled", deadline=_in_days(30)), go_live=go_live
+    )
+
+    assert (solicitation.status, solicitation.go_live_date) == (Solicitation.Status.SCHEDULED, go_live)
+    assert not Solicitation.objects.open().exists()
+
+
 def test_solicitation_built_in_the_past_has_expired_by_now(sim, pm_org):
     # Worked out before moving the clock, so it is five days before the real now.
     deadline = _in_days(-5)

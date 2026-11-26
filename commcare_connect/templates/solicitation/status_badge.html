@@ -1,4 +1,5 @@
-{# An active solicitation counts as closed from its deadline, before the sweep task updates the stored status. #}
+{% load i18n %}
+{# A solicitation counts as active from its go-live date and closed from its deadline, before the sweep task updates the stored status. #}
 {% with status=record.effective_status %}
   {% if status == "active" %}
     <span class="badge badge-sm positive-light">{{ status.label }}</span>
@@ -6,6 +7,12 @@
     <span class="badge badge-sm primary-light">{{ status.label }}</span>
   {% elif status == "cancelled" %}
     <span class="badge badge-sm negative-light">{{ status.label }}</span>
+  {% elif status == "scheduled" %}
+    <span class="badge badge-sm warning-light">{{ status.label }}</span>
+    {% blocktranslate asvar go_live with date=record.go_live_date|date:"d M Y, H:i T" %}Goes live {{ date }}{% endblocktranslate %}
+    <i class="fa-solid fa-circle-info text-gray-400"
+       x-tooltip.raw="{{ go_live }}"
+       aria-label="{{ go_live }}"></i>
   {% else %}
     <span class="badge badge-sm label">{{ status.label }}</span>
   {% endif %}

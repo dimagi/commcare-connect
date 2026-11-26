@@ -21,11 +21,12 @@ QUESTIONS = (
 class SolicitationSteps:
     """RFPs and EOIs, created by submitting the program manager's solicitation pages as ``pm_admin``."""
 
-    def solicitation(self, pm_org, spec, *, publish=True):
+    def solicitation(self, pm_org, spec, *, publish=True, go_live=None):
         """Create a solicitation owned by ``pm_org``, filled in from ``spec``, through the "New solicitation" pages.
 
-        Submits the details, evaluation criteria and questions pages and, when ``publish`` is true, the review page's
-        Publish button; otherwise it stays a draft. Returns the ``Solicitation``.
+        Submits the details, evaluation criteria and questions pages and, when ``publish`` is true, the review page:
+        published now, or scheduled to go live at ``go_live`` when given. Otherwise it stays a draft. Returns the
+        ``Solicitation``.
         """
         require_solicitations_switch()
         browser = self.browser(self.pm_admin)
@@ -39,7 +40,7 @@ class SolicitationSteps:
             browser.post(reverse("solicitation:criteria", args=step_args), _criteria_data())
             browser.post(reverse("solicitation:questions", args=step_args), _questions_data(solicitation))
             if publish:
-                browser.post(reverse("solicitation:publish", args=step_args))
+                browser.post(reverse("solicitation:publish", args=step_args), _publish_data(go_live))
             solicitation.refresh_from_db()
             self.log(f"Created {solicitation.get_status_display().lower()} solicitation {solicitation.title}")
         self.link(f"Solicitations of {pm_org.name}", reverse("solicitation:list", args=(pm_org.slug,)))
@@ -57,7 +58,8 @@ class SolicitationSteps:
     def close_expired_solicitations(self):
         """Run the hourly task that closes solicitations whose deadline has passed, as Celery beat would.
 
-        Like the real task it closes every expired solicitation in the database, not only the scenario's.
+        Like the real task it closes every expired solicitation in the database, not only the scenario's, and takes
+        live every scheduled one whose go-live date has passed.
         """
         with self.step():
             update_solicitation_statuses()
@@ -99,6 +101,13 @@ def _details_data(spec):
     if spec.program:
         data["program"] = spec.program.pk
     return data
+
+
+def _publish_data(go_live):
+    """The review page's Schedule toggle, which posts only when on, with the go-live date in UTC like the deadline."""
+    if go_live is None:
+        return {}
+    return {"schedule": "on", "go_live_date": localtime(go_live).strftime(DEADLINE_FORMAT)}
 
 
 def _criteria_data():
