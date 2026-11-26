@@ -1,6 +1,8 @@
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
-from rest_framework import status
+from rest_framework import serializers, status
+from rest_framework.fields import get_error_detail
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +14,7 @@ from commcare_connect.opportunity.api.serializers.automation import (
     UserInviteSerializer,
 )
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.services.payment_units import create_payment_units
 from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.organization.decorators import user_is_org_admin
 
@@ -31,14 +34,17 @@ class OpportunityAPIView(APIView):
         return opportunity
 
 
-class PaymentUnitCreateView(OpportunityAPIView):
+class PaymentUnitCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, opportunity_id):
-        opportunity = self.get_opportunity()
-        serializer = PaymentUnitListCreateSerializer(
-            data=request.data, context={"request": request, "opportunity": opportunity}
-        )
+        opportunity = get_object_or_404(Opportunity.objects.select_related("program"), opportunity_id=opportunity_id)
+        serializer = PaymentUnitListCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment_units = serializer.save()
+        try:
+            payment_units = create_payment_units(request.user, opportunity, serializer.to_inputs())
+        except ValidationError as error:
+            raise serializers.ValidationError(get_error_detail(error))
         return Response(
             {"payment_units": PaymentUnitResponseSerializer(payment_units, many=True).data},
             status=status.HTTP_201_CREATED,

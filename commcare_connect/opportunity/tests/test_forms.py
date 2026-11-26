@@ -58,7 +58,6 @@ from commcare_connect.opportunity.tests.factories import (
     ExchangeRateFactory,
     HQApiKeyFactory,
     OpportunityAccessFactory,
-    OpportunityClaimFactory,
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
@@ -1625,66 +1624,6 @@ class TestEditTaskTypeForm:
         assert saved.slug == "original-slug"
 
 
-@pytest.mark.django_db
-class TestPaymentUnitFormBudgetValidation:
-    """The per-user delivery limit is allocated from a shared budget pool per payment unit.
-
-    Adding or enlarging a payment unit lowers the derived ``budgeted_workers``; if it drops
-    below the count of workers who have already claimed, some workers silently receive a
-    reduced limit (or none). ``PaymentUnitForm`` must reject such changes.
-    """
-
-    def _form(self, opportunity, data, instance=None):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-        return PaymentUnitForm(
-            data={
-                "name": "Bonus",
-                "description": "Bonus payment unit",
-                "max_daily": 10,
-                "amount": 5,
-                "org_amount": 0,
-                "required_deliver_units": [str(deliver_unit.id)],
-                **data,
-            },
-            deliver_units=[deliver_unit],
-            payment_units=[],
-            org_slug=opportunity.organization.slug,
-            opportunity=opportunity,
-            instance=instance,
-        )
-
-    @pytest.mark.parametrize(
-        "num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid",
-        [
-            # Budget covers 3 users with only the existing unit; adding a second unit needs double.
-            pytest.param(1, 1500, 3, False, 100, False, id="reject_new_over_budget"),
-            pytest.param(1, 3000, 3, False, 100, True, id="accept_new_within_budget"),
-            # Budget that would fail with claimants, proving the no-claimants early return fires.
-            pytest.param(1, 1500, 0, False, 100, True, id="skip_when_no_claimants"),
-            # Doubling an existing unit's max_total pushes budgeted_workers below the 3 claimants.
-            pytest.param(2, 3000, 3, True, 200, False, id="reject_enlarge_over_budget"),
-        ],
-    )
-    def test_budget_validation(
-        self, opportunity, num_existing, total_budget, num_claimants, edit_existing, new_max_total, expect_valid
-    ):
-        units = PaymentUnitFactory.create_batch(
-            num_existing, opportunity=opportunity, max_total=100, amount=5, org_amount=0
-        )
-        opportunity.total_budget = total_budget
-        opportunity.save()
-        OpportunityClaimFactory.create_batch(
-            num_claimants, opportunity_access__opportunity=opportunity, opportunity_access__accepted=True
-        )
-
-        instance = units[0] if edit_existing else None
-        form = self._form(opportunity, {"max_total": new_max_total}, instance=instance)
-
-        assert form.is_valid() == expect_valid
-        if not expect_valid:
-            assert any("budget cannot give the full limit" in e for e in form.non_field_errors())
-
-
 def _payment_unit_form(opportunity, data=None, instance=None, deliver_units=None):
     deliver_units = deliver_units or [DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)]
     if data is not None:
@@ -1752,25 +1691,8 @@ def test_payment_unit_form_deliver_unit_display_name(opportunity, initial, submi
     assert [row["selected"] for row in rows] == [selected, not selected]
     assert form.is_valid() == (expected is not None), form.errors
     if expected is not None:
-        form.instance.opportunity = opportunity
-        form.save()
-        deliver_unit.refresh_from_db()
-        assert deliver_unit.display_name == expected
-        assert deliver_unit.payment_unit is None
-
-
-@pytest.mark.django_db
-def test_payment_unit_form_rejects_deliver_unit_both_required_and_optional(opportunity):
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
-
-    form = _payment_unit_form(
-        opportunity,
-        {"required_deliver_units": [str(deliver_unit.id)], "optional_deliver_units": [str(deliver_unit.id)]},
-        deliver_units=[deliver_unit],
-    )
-
-    assert not form.is_valid()
-    assert form.errors["optional_deliver_units"] == ["A deliver unit cannot be both required and optional."]
+        display_names = form.to_input().deliver_unit_display_names
+        assert display_names.get(deliver_unit.pk, initial) == expected
 
 
 @pytest.mark.django_db

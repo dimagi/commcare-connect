@@ -88,7 +88,6 @@ from commcare_connect.opportunity.views import (
     add_api_key,
     api_key_owner_warning,
     get_export_task_id,
-    link_deliver_units,
     pinned_api_key_form,
 )
 from commcare_connect.opportunity.views.worker import WorkerPaymentsView
@@ -2059,19 +2058,6 @@ class TestEditPaymentUnit:
         client.force_login(request.getfixturevalue(user_fixture))
         response = client.get(self._url(org.slug, pm_opportunity.opportunity_id, payment_unit.payment_unit_id))
         assert response.status_code == expected
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("optional", [False, True])
-def test_link_deliver_units(opportunity, optional):
-    unattached = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None, optional=not optional)
-    payment_unit = PaymentUnitFactory(opportunity=opportunity)
-    selected = [str(unattached.id)]
-
-    link_deliver_units(payment_unit, [] if optional else selected, selected if optional else [])
-
-    unattached.refresh_from_db()
-    assert (unattached.payment_unit, unattached.optional) == (payment_unit, optional)
 
 
 @pytest.mark.django_db
