@@ -56,6 +56,8 @@ class Message:
     body: str = None
     data: dict = None
     fcm_options: dict = dataclasses.field(default_factory=lambda: {"analytics_label": FCM_ANALYTICS_LABEL})
+    # False makes ConnectID store the notification for the app's notification drawer without an FCM push.
+    send_push: bool = True
 
     def asdict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}

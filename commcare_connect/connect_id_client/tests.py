@@ -1,3 +1,4 @@
+import pytest
 from httpx import URL
 
 from .main import fetch_users, queue_message_bulk, send_message
@@ -32,17 +33,19 @@ def test_fetch_users(httpx_mock):
     assert URL(request.url).params.get_list("phone_numbers") == ["phone_number1", "phone_number2"]
 
 
-def test_send_message(httpx_mock):
+@pytest.mark.parametrize("send_push", [True, False])
+def test_send_message(httpx_mock, send_push):
     httpx_mock.add_response(
         method="POST",
         match_json={
             "usernames": ["user_name1"],
             "body": "test message",
             "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
+            "send_push": send_push,
         },
         json={"all_success": True, "responses": [{"username": "user_name1", "status": "success"}]},
     )
-    result = send_message(Message(usernames=["user_name1"], body="test message"))
+    result = send_message(Message(usernames=["user_name1"], body="test message", send_push=send_push))
     assert result.all_success is True
     assert len(result.responses) == 1
     assert result.responses[0].username == "user_name1"
@@ -57,6 +60,7 @@ def test_queue_message_bulk(httpx_mock):
                     "usernames": ["user_name1"],
                     "body": "test message1",
                     "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
+                    "send_push": True,
                 },
             ],
             "async": True,

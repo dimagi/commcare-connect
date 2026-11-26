@@ -165,21 +165,6 @@ def invite_user(user_id, opportunity_access_id):
             "status": UserInviteStatus.accepted if opportunity_access.accepted else UserInviteStatus.invited,
         },
     )
-    message = Message(
-        usernames=[user.username],
-        data={
-            "action": "ccc_opportunity_summary_page",
-            "opportunity_id": str(opportunity_access.opportunity.id),
-            "opportunity_uuid": str(opportunity_access.opportunity.opportunity_id),
-            "title": gettext(
-                f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
-            ),
-            "body": gettext(
-                f"You have been invited to a new job in Commcare Connect - {opportunity_access.opportunity.name}"
-            ),
-        },
-    )
-    send_message(message)
 
 
 @celery_app.task()
@@ -966,6 +951,7 @@ def send_task_completion_notification(assigned_task_id: int):
             "key": "task_completion",
             "session_endpoint_id": "cc_app_home",
         },
+        send_push=False,
     )
     send_message(message)
 
