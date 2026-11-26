@@ -74,7 +74,7 @@ class TableFilterSet(django_filters.FilterSet):
             field.widget.attrs.setdefault("class", "base-input base-input-sm")
 
 
-def application_status_filter():
+def _application_status_filter():
     # The lists only show responses, so drafts and withdrawn applications are never there to filter for.
     choices = [
         (value, label)
@@ -84,7 +84,7 @@ def application_status_filter():
     return django_filters.ChoiceFilter(label=_("Status"), choices=choices, empty_label=_("All statuses"))
 
 
-def shortlisted_only_filter():
+def _shortlisted_only_filter():
     return django_filters.BooleanFilter(
         label=_("Shortlisted only"),
         widget=forms.CheckboxInput(attrs={"class": CHECKBOX_CLASS}),
@@ -99,5 +99,5 @@ class ReceivedApplicationFilterSet(TableFilterSet):
         to_field_name="solicitation_id",
         empty_label=_("All solicitations"),
     )
-    status = application_status_filter()
-    shortlisted = shortlisted_only_filter()
+    status = _application_status_filter()
+    shortlisted = _shortlisted_only_filter()
