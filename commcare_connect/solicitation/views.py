@@ -5,7 +5,7 @@ from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
-from django.http import HttpResponseBadRequest
+from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -251,6 +251,9 @@ class SolicitationUnscheduleView(
         return Solicitation.objects.scheduled().filter(organization=self.request.org)
 
     def form_valid(self, form):
+        # Locked so the hourly task can't take it live between loading it and saving the draft.
+        if not Solicitation.objects.select_for_update().get(pk=self.object.pk).is_scheduled:
+            raise Http404
         form.instance.go_live_date = None
         return super().form_valid(form)
 
