@@ -18,16 +18,16 @@ class SolicitationQuerySet(models.QuerySet):
     """A solicitation goes live at its go-live date and closes at its deadline even before the sweep task updates
     its stored status, so check openness through open() / Solicitation.is_open, never by comparing status directly."""
 
-    def _active(self):
+    def _live(self):
         return self.filter(
             Q(status=Solicitation.Status.ACTIVE) | Q(status=Solicitation.Status.SCHEDULED, go_live_date__lte=Now())
         )
 
     def open(self):
-        return self._active().filter(application_deadline__gt=Now())
+        return self._live().filter(application_deadline__gt=Now())
 
     def expired(self):
-        return self._active().filter(application_deadline__lte=Now())
+        return self._live().filter(application_deadline__lte=Now())
 
     def scheduled(self):
         """Scheduled solicitations that haven't gone live yet."""
