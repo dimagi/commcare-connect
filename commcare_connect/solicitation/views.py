@@ -327,6 +327,7 @@ class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMix
     template_name = "solicitation/solicitation_participants.html"
     title = None
     hint = None
+    scheduled_note = None
     add_title = None
     add_submit = None
     added_message = None
@@ -421,11 +422,14 @@ class SolicitationInvitationsView(InvitationsMixin, SolicitationParticipantsView
                 "This solicitation is private: only invited organizations can apply. Each invited organization's "
                 "members get an email."
             )
+        return hint
+
+    @property
+    def scheduled_note(self):
         if not self.solicitation.is_scheduled:
-            return hint
+            return None
         go_live = date_format(localtime(self.solicitation.go_live_date), "d M Y, H:i T")
-        scheduled_note = _("It goes live on %(date)s, so the emails go out then.") % {"date": go_live}
-        return f"{hint} {scheduled_note}"
+        return _("It goes live on %(date)s, so the emails go out then.") % {"date": go_live}
 
     def form_valid(self, form):
         # Locked before the invitations are saved, so the solicitation can't go live in between and miss them.
