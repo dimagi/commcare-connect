@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.utils.timezone import now
-from factory import Faker, LazyFunction, Sequence, SubFactory, Trait
+from factory import Faker, LazyAttribute, LazyFunction, Sequence, SubFactory, Trait
 from factory.django import DjangoModelFactory
 
 from commcare_connect.program.tests.factories import _get_default_currency
@@ -11,8 +11,9 @@ from commcare_connect.solicitation.models import (
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
+    SolicitationReviewer,
 )
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
 
 class SolicitationFactory(DjangoModelFactory):
@@ -48,6 +49,15 @@ class SolicitationInvitationFactory(DjangoModelFactory):
 
     class Meta:
         model = SolicitationInvitation
+
+
+class SolicitationReviewerFactory(DjangoModelFactory):
+    solicitation = SubFactory(SolicitationFactory)
+    # Reviewers are picked from the posting organization's members.
+    user = LazyAttribute(lambda o: MembershipFactory(organization=o.solicitation.organization).user)
+
+    class Meta:
+        model = SolicitationReviewer
 
 
 class SolicitationEvaluationCriterionFactory(DjangoModelFactory):

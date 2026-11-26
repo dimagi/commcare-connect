@@ -1,0 +1,4 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+{{ solicitation.organization.name }} has given you the {{ assignment.get_role_display|lower }} role on "{{ solicitation.title }}" ({{ solicitation.get_type_display }}).{% endblock %}
