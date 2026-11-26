@@ -214,3 +214,12 @@ class TestSolicitationApplicationTable:
         )
 
         assert [row.record.average_score for row in table.rows] == expected
+
+    @pytest.mark.parametrize("column", ["solicitation", "organization", "submitted_date", "status", "shortlisted"])
+    @pytest.mark.parametrize("prefix", ["", "-"])
+    def test_sorting_keeps_ties_in_primary_key_order(self, column, prefix):
+        table = SolicitationApplicationTable(
+            SolicitationApplication.objects.with_review_summary(), order_by=f"{prefix}{column}"
+        )
+
+        assert table.data.data.query.order_by[-1] == f"{prefix}pk"

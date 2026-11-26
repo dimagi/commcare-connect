@@ -87,14 +87,24 @@ class SolicitationApplicationTable(tables.Table):
     Expects rows annotated by SolicitationApplicationQuerySet.with_review_summary.
     """
 
-    solicitation = columns.Column(verbose_name=_("Solicitation"), accessor="solicitation__title")
-    organization = columns.Column(verbose_name=_("Organization"), accessor="organization__name")
-    submitted_date = DMYTColumn(verbose_name=_("Submitted"))
+    # Each sortable column also orders by pk, so rows with equal values stay in the same order across pages.
+    solicitation = columns.Column(
+        verbose_name=_("Solicitation"), accessor="solicitation__title", order_by=("solicitation__title", "pk")
+    )
+    organization = columns.Column(
+        verbose_name=_("Organization"), accessor="organization__name", order_by=("organization__name", "pk")
+    )
+    submitted_date = DMYTColumn(verbose_name=_("Submitted"), order_by=("submitted_date", "pk"))
     status = columns.TemplateColumn(
-        verbose_name=_("Status"), template_name="solicitation/partials/application_status_badge.html"
+        verbose_name=_("Status"),
+        template_name="solicitation/partials/application_status_badge.html",
+        order_by=("status", "pk"),
     )
     shortlisted = columns.BooleanColumn(
-        verbose_name=_("Shortlisted"), yesno=(_("Yes"), _("No")), attrs=STAT_COLUMN_ATTRS
+        verbose_name=_("Shortlisted"),
+        yesno=(_("Yes"), _("No")),
+        attrs=STAT_COLUMN_ATTRS,
+        order_by=("shortlisted", "pk"),
     )
     average_score = columns.Column(verbose_name=_("Avg. score (/100)"), attrs=STAT_COLUMN_ATTRS)
     recommendations = columns.Column(verbose_name=_("Recommendations"), empty_values=(), orderable=False)
