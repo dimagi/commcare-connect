@@ -200,8 +200,7 @@ gh pr diff <N> --repo dimagi/commcare-connect --patch | diffstat 2>/dev/null \
   || gh pr diff <N> --repo dimagi/commcare-connect | head -40
 ```
 
-A single-package PR is often a two-line diff — just read it, and skip to (d). Roughly a
-third of this repo's open Dependabot queue is that shape.
+A single-package PR is often a two-line diff — just read it, and skip to (d).
 
 This heuristic holds only because a lockfile diff grows with the number of packages moved.
 Where there's no lockfile — an Actions bump, a bare requirement-specifier change — diff

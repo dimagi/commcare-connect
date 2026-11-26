@@ -12,17 +12,18 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import ENABLE_PROGRAM_ACCESS_REDESIGN
 from commcare_connect.opportunity.models import DeliverUnit, DeliverUnitFlagRules, DeliveryType, HQApiKey, Opportunity
 from commcare_connect.organization.forms import OrganizationChangeForm
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Contact, Organization
 from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.simulation.constants import SIM_DELIVER_APP_PREFIX, SIM_DOMAIN, SIM_LEARN_APP_PREFIX
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.permission_const import LLO_DIRECTORY_MANAGEMENT_ACCESS, ORG_MANAGEMENT_SETTINGS_ACCESS
 
 from .form_data import management_form
 from .types import PaymentUnitSpec
 
 SIM_HQ_URL = "https://hq.simulation.local"
 SIM_STAFF_USERNAME = "simulation-org-settings"
+SIM_DIRECTORY_STAFF_USERNAME = "simulation-llo-directory"
 LEARN_PASSING_SCORE = 70
 VERIFICATION_SAVED = "Verification rules saved successfully."
 # The verification page drops these fields when the opportunity verifies visits automatically.
@@ -44,8 +45,46 @@ class SetupSteps:
             organization = Organization.objects.get(slug=resolve(response.url).kwargs["org_slug"])
             if program_manager:
                 _enable_program_manager(self.browser(_org_settings_staff()), organization)
+                organization.refresh_from_db()
             self.log(f"Created organization {organization.slug}{' (program manager)' if program_manager else ''}")
         return organization
+
+    def org_profile(self, organization, *, admin, **changes):
+        """Save ``organization``'s profile on Organization Home as ``admin``, changing only ``changes``.
+
+        ``changes`` are ``OrganizationChangeForm`` fields, such as ``office_address``.
+        """
+        with self.step():
+            # The page posts the saved profile back, so start from it, not from a possibly stale instance.
+            organization.refresh_from_db()
+            _submit_org_home(self.browser(admin), organization, changes)
+            organization.refresh_from_db()
+            self.log(f"Updated {', '.join(changes)} of {organization.slug}")
+
+    def contact(self, organization, *, name, email, title="", phone="", main=False):
+        """Add a contact for ``organization`` in the LLO Directory. Returns the ``Contact``.
+
+        The directory is for Dimagi staff, so the form is submitted as the simulation's directory staff user.
+        ``main`` makes them the organization's main point of contact.
+        """
+        # The form saves the email stripped, so the contact is looked up by the stripped value.
+        email = email.strip()
+        data = {
+            "name": name,
+            "organization": organization.pk,
+            "title": title,
+            "is_main_poc": main,
+            "email": email,
+            "phone": phone,
+            "notes": "",
+        }
+        with self.step():
+            self.browser(_llo_directory_staff()).post(
+                reverse("organization_directory:contact_create"), data, htmx=True
+            )
+            contact = Contact.objects.get(email__iexact=email)
+            self.log(f"Added contact {contact.name} to {organization.slug}{' (main)' if main else ''}")
+        return contact
 
     def program(
         self,
@@ -172,24 +211,38 @@ class SetupSteps:
 
 def _enable_program_manager(browser, organization):
     """Submit Organization Home's profile form unchanged except for "Enable Program Manager"."""
+    _submit_org_home(browser, organization, {"program_manager": True})
+
+
+def _submit_org_home(browser, organization, changes):
+    """Submit Organization Home's profile form with its current values, except for ``changes``."""
     current = OrganizationChangeForm(instance=organization, user=browser.user)
-    data = {name: _checkbox(current[name].value()) for name in current.fields}
+    values = {name: current[name].value() for name in current.fields} | changes
+    data = {name: _checkbox(value) for name, value in values.items()}
     data = {name: value for name, value in data.items() if value is not None and value is not False}
-    data["program_manager"] = "on"
     browser.post(reverse("organization:home", args=(organization.slug,)), data)
 
 
 def _org_settings_staff():
-    """The Dimagi staff member who manages organization settings: a configuration user holding only
-    ``ORG_MANAGEMENT_SETTINGS_ACCESS``, with no memberships and no usable password, so get-or-created."""
+    """The Dimagi staff member who manages organization settings."""
+    return _staff_user(SIM_STAFF_USERNAME, "Simulation org settings", ORG_MANAGEMENT_SETTINGS_ACCESS)
+
+
+def _llo_directory_staff():
+    """The Dimagi staff member who manages the LLO Directory."""
+    return _staff_user(SIM_DIRECTORY_STAFF_USERNAME, "Simulation LLO directory", LLO_DIRECTORY_MANAGEMENT_ACCESS)
+
+
+def _staff_user(username, name, permission):
+    """A configuration user holding only ``permission``, with no memberships and no usable password, so
+    get-or-created."""
     staff, created = User.objects.get_or_create(
-        username=SIM_STAFF_USERNAME,
-        defaults={"email": f"{SIM_STAFF_USERNAME}@simulation.local", "name": "Simulation org settings"},
+        username=username, defaults={"email": f"{username}@simulation.local", "name": name}
     )
     if created:
         staff.set_unusable_password()
         staff.save()
-    app_label, codename = ORG_MANAGEMENT_SETTINGS_ACCESS.split(".")
+    app_label, codename = permission.split(".")
     staff.user_permissions.add(Permission.objects.get(content_type__app_label=app_label, codename=codename))
     return staff
 

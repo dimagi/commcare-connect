@@ -24,28 +24,42 @@ SHA_PIN = re.compile(r"^[0-9a-f]{40}$")
 USES = re.compile(r"uses:\s*['\"]?([^\s'\"@]+)@([^\s'\"#]+)['\"]?(?:\s*#\s*(\S+))?")
 
 
+TITLE = re.compile(r"(?:Bump|Update) ([\w./@-]+) (?:requirement )?from v?([\d.]+) to v?([\d.]+)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default="dimagi/commcare-connect")
     args = ap.parse_args()
 
+    inventory = main_inventory(args.repo)
+    rows = [classify(pr, inventory) for pr in sorted(dependabot_prs(args.repo), key=lambda p: -p["number"])]
+    print_table(rows)
+    print_summary(rows)
+
+
+def main_inventory(repo):
+    """Every package and action version on --repo's default branch, keyed by kind."""
     # Read --repo's default branch, not whatever `origin/main` this checkout has.
-    default = sh("gh", "repo", "view", args.repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name").strip()
-    main_sha = fetch(remote_for(args.repo), f"refs/heads/{default}")
+    default = sh("gh", "repo", "view", repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name").strip()
+    main_sha = fetch(remote_for(repo), f"refs/heads/{default}")
+    return {
+        "py": parse_uv_lock(blob(main_sha, "uv.lock")),
+        # Dependabot bumps the hoisted copy package.json declares; private copies
+        # nested under other packages would otherwise decide the comparison.
+        "npm": parse_npm_lock(blob(main_sha, "package-lock.json"), top_level_only=True),
+        "action": workflow_actions(main_sha),
+    }
 
-    python_pkgs = parse_uv_lock(blob(main_sha, "uv.lock"))
-    # Dependabot bumps the hoisted copy package.json declares; private copies
-    # nested under other packages would otherwise decide the comparison.
-    npm_pkgs = parse_npm_lock(blob(main_sha, "package-lock.json"), top_level_only=True)
-    actions = workflow_actions(main_sha)
 
-    prs = json.loads(
+def dependabot_prs(repo):
+    return json.loads(
         sh(
             "gh",
             "pr",
             "list",
             "--repo",
-            args.repo,
+            repo,
             "--author",
             "app/dependabot",
             "--state",
@@ -57,50 +71,51 @@ def main():
         )
     )
 
-    rows, review = [], []
-    for pr in sorted(prs, key=lambda p: -p["number"]):
-        n, title, created = pr["number"], pr["title"], pr["createdAt"][:10]
-        m = re.search(r"(?:Bump|Update) ([\w./@-]+) (?:requirement )?from v?([\d.]+) to v?([\d.]+)", title)
-        if not m:
-            rows.append((n, created, title[:40], "-", "-", "GROUPED - review in full"))
-            review.append(n)
-            continue
 
-        pkg, old, new = m.groups()
-        if pkg.lower() in python_pkgs:
-            kind, versions = "py", python_pkgs[pkg.lower()]
-        elif pkg in npm_pkgs:
-            kind, versions = "npm", npm_pkgs[pkg]
-        elif pkg in actions:
-            kind, versions = "action", actions[pkg]
-        else:
-            rows.append(
-                (n, created, pkg[:40], f"{old}->{new}", "ABSENT", "OBSOLETE - not on main; confirm deliberate removal")
-            )
-            continue
+def classify(pr, inventory):
+    """One table row: (number, opened, package, wanted, on main, status)."""
+    n, title, created = pr["number"], pr["title"], pr["createdAt"][:10]
+    m = TITLE.search(title)
+    if not m:
+        return (n, created, title[:40], "-", "-", "GROUPED - review in full")
 
-        if None in versions:
-            # A SHA pin with no version comment: the SHA's digits are not a
-            # version, so this cannot be compared automatically.
-            rows.append((n, created, pkg[:40], f"{old}->{new}", "SHA PIN", f"REVIEW ({kind}) - unversioned pin"))
-            review.append(n)
-            continue
-        # OBSOLETE only if *every* locked copy / call site is already at or past
-        # the target; one lagging copy is still something the PR would move.
-        cur = min(versions, key=version_key)
-        if version_key(cur) >= version_key(new):
-            rows.append((n, created, pkg[:40], f"{old}->{new}", cur, "OBSOLETE - main already at/past target"))
-        else:
-            rows.append((n, created, pkg[:40], f"{old}->{new}", cur, f"REVIEW ({kind})"))
-            review.append(n)
+    pkg, old, new = m.groups()
+    row = (n, created, pkg[:40], f"{old}->{new}")
+    found = lookup(pkg, inventory)
+    if not found:
+        return (*row, "ABSENT", "OBSOLETE - not on main; confirm deliberate removal")
+    kind, versions = found
+    if None in versions:
+        # A SHA pin with no version comment: the SHA's digits are not a
+        # version, so this cannot be compared automatically.
+        return (*row, "SHA PIN", f"REVIEW ({kind}) - unversioned pin")
+    # OBSOLETE only if *every* locked copy / call site is already at or past
+    # the target; one lagging copy is still something the PR would move.
+    cur = min(versions, key=version_key)
+    if version_key(cur) >= version_key(new):
+        return (*row, cur, "OBSOLETE - main already at/past target")
+    return (*row, cur, f"REVIEW ({kind})")
 
+
+def lookup(pkg, inventory):
+    """(kind, versions on main) for a package name, or None when main lacks it."""
+    for kind, key in (("py", pkg.lower()), ("npm", pkg), ("action", pkg)):
+        if key in inventory[kind]:
+            return kind, inventory[kind][key]
+    return None
+
+
+def print_table(rows):
     w = max([len(r[2]) for r in rows] + [10])
     print(f"{'PR':<7}{'opened':<12}{'package':<{w + 2}}{'PR wants':<18}{'on main':<12}status")
     print("-" * (55 + w))
     for n, created, pkg, want, cur, status in rows:
         print(f"#{n:<6}{created:<12}{pkg:<{w + 2}}{want:<18}{str(cur):<12}{status}")
 
+
+def print_summary(rows):
     obsolete = [r[0] for r in rows if r[5].startswith("OBSOLETE")]
+    review = [r[0] for r in rows if not r[5].startswith("OBSOLETE")]
     print(f"\n{len(rows)} open | {len(obsolete)} obsolete | {len(review)} need review")
     if obsolete:
         print("Obsolete: " + " ".join(f"#{n}" for n in obsolete))

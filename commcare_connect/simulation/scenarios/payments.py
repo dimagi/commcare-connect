@@ -1,5 +1,6 @@
 """Approved, agreed work paid to workers in full and in part, and invoiced in three rounds: one paid, one
-approved and ready to pay, and one waiting for the program manager's review."""
+approved and ready to pay, and one waiting for the program manager's review. The network manager has an office
+address and a main contact in the LLO Directory, which the invoice PDFs show."""
 
 from commcare_connect.opportunity.models import InvoiceStatus
 
@@ -17,8 +18,12 @@ LAST_ROUND_DAYS_AGO = 3
 ROUND_END_HOUR = 19
 
 
+NM_OFFICE_ADDRESS = "Plot 14, Ngong Road\nNairobi 00100, Kenya"
+
+
 def build(sim, *, small):
     opportunity, workers = _common.staffed_opportunity(sim, TITLE, 2 if small else 10)
+    _llo_details(sim, opportunity.organization)
 
     paid = _round(sim, opportunity, workers, FIRST_ROUND_DAYS_AGO, per_worker=2 if small else 8, over_days=10)
     with sim.at(_common.days_ago(FIRST_ROUND_DAYS_AGO - 2)):
@@ -40,6 +45,20 @@ def build(sim, *, small):
     with sim.at(_common.days_ago(LAST_ROUND_DAYS_AGO - 1, hour=15)):
         sim.invoice_status(pending, InvoiceStatus.PENDING_PM_REVIEW)
     _common.link_page(sim, opportunity, "invoices", "opportunity:invoice_list")
+
+
+def _llo_details(sim, nm_org):
+    """The network manager's address and main contact, which its invoices are issued under."""
+    with sim.at(_common.days_ago(FIRST_ROUND_DAYS_AGO)):
+        sim.org_profile(nm_org, admin=sim.nm_admin, office_address=NM_OFFICE_ADDRESS)
+        sim.contact(
+            nm_org,
+            name="Amina Okafor",
+            email=f"amina.okafor@{nm_org.slug}.example",
+            title="Programme Director",
+            phone="+254 700 123 456",
+            main=True,
+        )
 
 
 def _round(sim, opportunity, workers, delivered_days_ago, *, per_worker, over_days):

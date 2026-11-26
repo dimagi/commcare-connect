@@ -22,7 +22,7 @@ class ApplicationFactory(DictFactory):
 
 class CommCareAppFactory(DjangoModelFactory):
     organization = SubFactory(OrganizationFactory)
-    cc_domain = Faker("name")
+    cc_domain = Faker("slug")
     cc_app_id = Faker("uuid4")
     name = Faker("name")
     description = Faker("text")
@@ -119,16 +119,17 @@ class PaymentUnitFactory(DjangoModelFactory):
 
 
 def _deliver_unit_opportunity(unit):
-    """Roughly the opportunity migration 0155's backfill would give the unit.
+    """The opportunity a unit created without one most likely belongs to.
 
-    The payment unit's opportunity if it uses the unit's app, else the latest opportunity on the app.
-    Falls back to the payment unit's opportunity so units on a factory-made app still get one.
+    The payment unit's opportunity if it uses the unit's app, else the latest opportunity on the app,
+    else the payment unit's opportunity, else a new opportunity on the app.
     """
     payment_unit_opportunity = unit.payment_unit.opportunity if unit.payment_unit else None
     if payment_unit_opportunity and payment_unit_opportunity.deliver_app_id == unit.app.id:
         return payment_unit_opportunity
     latest_using_app = Opportunity.objects.filter(deliver_app=unit.app).order_by("-id").first()
-    return latest_using_app or payment_unit_opportunity
+    # Last resort, as a SubFactory default would be: DeliverUnit.opportunity is required
+    return latest_using_app or payment_unit_opportunity or OpportunityFactory(deliver_app=unit.app)
 
 
 class DeliverUnitFactory(DjangoModelFactory):

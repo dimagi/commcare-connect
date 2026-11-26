@@ -595,6 +595,61 @@
   }
 }
 
+/*--- tag input (static/js/tag_input.ts) ------- */
+@layer components {
+  .tag-input {
+    @apply focus-within:border-brand-indigo flex min-h-20 w-full cursor-text flex-wrap content-start items-center gap-1.5 rounded-lg border border-gray-300 bg-white p-2 text-xs text-gray-700;
+  }
+
+  .tag-input.tag-input-has-errors {
+    @apply border-red-600;
+  }
+
+  .tag-input-list {
+    @apply contents;
+  }
+
+  /* Matches `badge badge-sm primary-light`; an invalid tag matches `negative-light`. */
+  .tag-input-tag {
+    @apply inline-flex items-center gap-1 rounded-full bg-indigo-100 py-0.5 pl-2 pr-1 text-indigo-600;
+  }
+
+  .tag-input-tag-invalid {
+    @apply bg-red-100 text-red-600;
+  }
+
+  /* Every tag selected with Ctrl/Cmd+A. */
+  .tag-input-all-selected .tag-input-tag {
+    @apply outline-brand-indigo outline-2 outline-offset-1;
+  }
+
+  .tag-input-text {
+    @apply cursor-text;
+  }
+
+  /* The tag being edited in place: its text is swapped for an input sized to the text. */
+  .tag-input-tag-editing {
+    @apply outline-brand-indigo bg-white text-gray-700 outline outline-1;
+  }
+
+  .tag-input-edit {
+    @apply border-0 bg-transparent p-0 text-xs text-inherit outline-none focus:ring-0;
+  }
+
+  .tag-input-remove {
+    @apply inline-flex size-5 items-center justify-center rounded-full text-xs hover:bg-black/10;
+  }
+
+  .tag-input-field {
+    @apply min-w-32 flex-1 border-0 bg-transparent p-1 text-gray-900 outline-none focus:ring-0;
+  }
+
+  /* Matches crispy's field errors. */
+  .tag-input-error {
+    @apply mt-1 text-xs font-bold italic text-red-500;
+  }
+}
+
 /*--- simple textarea ------------------------- */
 @layer components {
   .simple-textarea {
