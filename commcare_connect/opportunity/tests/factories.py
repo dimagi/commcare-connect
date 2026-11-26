@@ -22,7 +22,7 @@ class ApplicationFactory(DictFactory):
 
 class CommCareAppFactory(DjangoModelFactory):
     organization = SubFactory(OrganizationFactory)
-    cc_domain = Faker("name")
+    cc_domain = Faker("slug")
     cc_app_id = Faker("uuid4")
     name = Faker("name")
     description = Faker("text")

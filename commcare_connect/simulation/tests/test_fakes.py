@@ -14,9 +14,9 @@ from commcare_connect.simulation.constants import (
     SIM_LEARN_APP_PREFIX,
 )
 from commcare_connect.simulation.fakes import local_fakes
-from commcare_connect.simulation.fakes.setup import fake_app_access_errors, fake_get_form_xml_for_app
+from commcare_connect.simulation.fakes.setup import fake_check_api_key_access, fake_get_form_xml_for_app
 from commcare_connect.utils.analytics import Event, send_bulk_events_to_ga
-from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied
+from commcare_connect.utils.commcarehq_api import CommCareHQAccessDenied, app_path
 
 
 @pytest.mark.django_db
@@ -40,12 +40,12 @@ def test_unknown_app_has_no_build():
 
 
 def test_only_simulated_apps_are_accessible():
-    learn_error, deliver_error, unknown_error = fake_app_access_errors(
+    learn_error, deliver_error, unknown_error = fake_check_api_key_access(
         None,
         [
-            ("sim-domain", f"{SIM_LEARN_APP_PREFIX}1"),
-            ("sim-domain", f"{SIM_DELIVER_APP_PREFIX}1"),
-            ("sim-domain", "some-real-hq-app"),
+            app_path("sim-domain", f"{SIM_LEARN_APP_PREFIX}1"),
+            app_path("sim-domain", f"{SIM_DELIVER_APP_PREFIX}1"),
+            app_path("sim-domain", "some-real-hq-app"),
         ],
     )
 

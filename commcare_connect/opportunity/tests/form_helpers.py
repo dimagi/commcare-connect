@@ -39,10 +39,19 @@ def mock_hq_app(httpx_mock, hq_server, cc_domain, cc_app_id, status=200):
     httpx_mock.add_response(url=url, status_code=status, json={})
 
 
-def mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200):
-    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps."""
+def mock_hq_mobile_workers(httpx_mock, hq_server, cc_domain, status=200):
+    """HQ answers `status` when the key reads the domain's mobile workers, as the check that it can create them."""
+    url = f"{hq_server.url}/a/{cc_domain}/api/v0.5/user/?limit=1"
+    httpx_mock.add_response(url=url, status_code=status, json={})
+
+
+def mock_hq_apps(httpx_mock, opportunity, learn_status=200, deliver_status=200, mobile_workers_status=200):
+    """HQ answers `learn_status` and `deliver_status` when asked for the opportunity's current apps, and
+    `mobile_workers_status` for each of their domains' mobile workers."""
     for app, status in ((opportunity.learn_app, learn_status), (opportunity.deliver_app, deliver_status)):
         mock_hq_app(httpx_mock, opportunity.hq_server, app.cc_domain, app.cc_app_id, status)
+    for domain in {opportunity.learn_app.cc_domain, opportunity.deliver_app.cc_domain}:
+        mock_hq_mobile_workers(httpx_mock, opportunity.hq_server, domain, mobile_workers_status)
 
 
 class OpportunityInitFormTestBase:
