@@ -1,0 +1,96 @@
+{% extends "solicitation/marketplace_base.html" %}
+{% load i18n %}
+{% block content %}
+  <div class="flex flex-col gap-4 w-full pb-10">
+    {% include "components/breadcrumbs.html" with path=path %}
+    <header class="hero">
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            {% include "solicitation/partials/type_badge.html" %}
+            {% if solicitation.delivery_type %}
+              <span class="badge badge-sm badge-amber">
+                <i class="fa-solid fa-briefcase-medical mr-1"></i>{{ solicitation.delivery_type.name }}
+              </span>
+            {% endif %}
+          </div>
+          <h1 class="hero-title">{{ solicitation.title }}</h1>
+          <p class="text-sm text-indigo-100">
+            {% blocktranslate with name=solicitation.organization.name %}Posted by <strong class="text-white">{{ name }}</strong>{% endblocktranslate %}
+            {% if solicitation.country %}· {{ solicitation.country.name }}{% endif %}
+          </p>
+        </div>
+        <div class="hero-deadline flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div>
+            <p class="text-xs text-indigo-200">{% translate "Applications close" %}</p>
+            <p class="text-2xl font-semibold">
+              {% with days=solicitation.days_until_deadline %}
+                {% if days == 0 %}
+                  {% translate "Today" %}
+                {% else %}
+                  {% blocktranslate count counter=days %}In {{ counter }} day{% plural %}In {{ counter }} days{% endblocktranslate %}
+                {% endif %}
+              {% endwith %}
+            </p>
+            <p class="text-xs text-indigo-100">
+              <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i T" }}</time>
+            </p>
+          </div>
+          {# Disabled until the apply flow exists. #}
+          <div class="flex flex-col items-center gap-1">
+            <button type="button"
+                    class="button button-md primary-dark"
+                    disabled
+                    aria-describedby="apply-coming-soon">{{ solicitation.apply_label }}</button>
+            <p id="apply-coming-soon" class="text-xs text-indigo-200">{% translate "Online applications coming soon" %}</p>
+          </div>
+        </div>
+      </div>
+      <dl class="facts-row hero-facts">
+        {% include "solicitation/partials/budget.html" %}
+        {% if solicitation.estimated_scale %}
+          <dt>{% translate "Estimated scale" %}</dt>
+          <dd>
+            {{ solicitation.estimated_scale }}
+          </dd>
+        {% endif %}
+        {% if solicitation.expected_start_date or solicitation.expected_end_date %}
+          <dt>{% translate "Expected timeline" %}</dt>
+          <dd>
+            {{ solicitation.expected_start_date|date:"j M Y"|default:"–" }} – {{ solicitation.expected_end_date|date:"j M Y"|default:"–" }}
+          </dd>
+        {% endif %}
+      </dl>
+    </header>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      <section class="card_bg lg:col-span-2 flex flex-col gap-2">
+        <h2 class="card_title">{% translate "Scope of work" %}</h2>
+        <div class="card_description">{{ solicitation.description|linebreaks }}</div>
+      </section>
+      <aside class="card_bg flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <h2 class="card_title">{% translate "Questions" %}</h2>
+          <p class="card_description">{% translate "Send questions about this solicitation to:" %}</p>
+          <a class="text-sm underline break-all"
+             href="mailto:{{ solicitation.contact_email }}">{{ solicitation.contact_email }}</a>
+        </div>
+        {% with attachments=solicitation.attachments.all %}
+          {% if attachments %}
+            <div class="flex flex-col gap-1 border-t border-gray-100 pt-4">
+              <h2 class="card_title">{% translate "Attachments" %}</h2>
+              <ul class="flex flex-col gap-1 text-sm">
+                {% for attachment in attachments %}
+                  <li>
+                    <i class="fa-regular fa-file mr-1 text-gray-400"></i>
+                    <a class="underline"
+                       href="{% url 'marketplace:attachment' solicitation.solicitation_id attachment.pk %}">{{ attachment.filename }}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        {% endwith %}
+      </aside>
+    </div>
+  </div>
+{% endblock content %}

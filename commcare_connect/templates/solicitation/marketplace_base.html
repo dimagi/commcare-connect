@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block has_sidebar %}
+  {{ request.user.is_authenticated|yesno:"true,false" }}
+{% endblock has_sidebar %}
+{% block sidenav %}
+  {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
+{% endblock sidenav %}
