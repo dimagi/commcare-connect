@@ -1,0 +1,9 @@
+{% if record.status == "withdrawn" or record.status == "rejected" %}
+  <span class="badge badge-sm negative-light">{{ record.get_status_display }}</span>
+{% elif record.status == "submitted" or record.status == "awarded" %}
+  <span class="badge badge-sm positive-light">{{ record.get_status_display }}</span>
+{% elif record.status == "draft" %}
+  <span class="badge badge-sm badge-amber">{{ record.get_status_display }}</span>
+{% else %}
+  <span class="badge badge-sm badge-indigo">{{ record.get_status_display }}</span>
+{% endif %}

@@ -18,7 +18,11 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
-from commcare_connect.solicitation.filters import MarketplaceFilterSet
+from commcare_connect.solicitation.filters import (
+    MarketplaceFilterSet,
+    ReceivedApplicationFilterSet,
+    SolicitationApplicationFilterSet,
+)
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -36,14 +40,16 @@ from commcare_connect.solicitation.models import (
     SolicitationInvitation,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
+from commcare_connect.solicitation.tables import (
+    SolicitationApplicationTable,
+    SolicitationInvitationTable,
+    SolicitationTable,
+)
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.file import stored_file_response
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
 
-# Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
-NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
 STEP_LABELS = {
     "details": _("Details"),
     "criteria": _("Evaluation criteria"),
@@ -67,7 +73,9 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
             # distinct, since counting two relations joins both and would multiply each count by the other.
             .annotate(
                 response_count=Count(
-                    "applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES), distinct=True
+                    "applications",
+                    filter=~Q(applications__status__in=SolicitationApplication.NON_RESPONSE_STATUSES),
+                    distinct=True,
                 ),
                 invited_count=Count("invitations", distinct=True),
             )
@@ -348,6 +356,50 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 
     def form_invalid(self, form):
         return HttpResponseBadRequest()
+
+
+@method_decorator(org_pm_required, name="dispatch")
+class ReceivedApplicationsView(WaffleSwitchMixin, FiltersAppliedMixin, SingleTableMixin, FilterView):
+    """Lists the applications to all of the organization's solicitations, newest first, with their average
+    score, recommendations and review progress."""
+
+    waffle_switch = SOLICITATIONS
+    table_class = SolicitationApplicationTable
+    filterset_class = ReceivedApplicationFilterSet
+    template_name = "solicitation/received_applications.html"
+
+    def get_queryset(self):
+        return (
+            SolicitationApplication.objects.responses()
+            .filter(solicitation__organization=self.request.org)
+            .with_review_summary()
+            .select_related("solicitation", "organization")
+            .newest_first()
+        )
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+
+class SolicitationApplicationsView(SolicitationPageMixin, ReceivedApplicationsView):
+    """The same list for one solicitation."""
+
+    filterset_class = SolicitationApplicationFilterSet
+    template_name = "solicitation/solicitation_applications.html"
+    title = _("Applications")
+
+    @cached_property
+    def solicitation(self):
+        return get_object_or_404(
+            Solicitation, organization=self.request.org, solicitation_id=self.kwargs["solicitation_id"]
+        )
+
+    def get_queryset(self):
+        return super().get_queryset().filter(solicitation=self.solicitation)
+
+    def get_table_kwargs(self):
+        # Every row is from the same solicitation, which the page's title names.
+        return {"exclude": ("solicitation",)}
 
 
 # Public marketplace ---------------------------------------------------------------------------------------------

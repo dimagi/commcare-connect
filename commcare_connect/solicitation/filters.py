@@ -2,6 +2,7 @@ import django_filters
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.opportunity.models import Country, DeliveryType
 from commcare_connect.solicitation.models import Solicitation
 from commcare_connect.utils.datetime import DateRanges
@@ -59,3 +60,36 @@ class MarketplaceFilterSet(django_filters.FilterSet):
     def _submitted(self, name):
         """Whether the request picked any value for the multi-select ``name``."""
         return any(forms.SelectMultiple().value_from_datadict(self.data, {}, name) or [])
+
+
+class TableFilterSet(django_filters.FilterSet):
+    """Filters shown in a row above a solicitation table, styled like the app's other inputs."""
+
+    class Meta:
+        form = CSRFExemptForm
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.form.fields.values():
+            field.widget.attrs.setdefault("class", "base-input base-input-sm")
+
+
+def shortlisted_only_filter():
+    return django_filters.BooleanFilter(
+        label=_("Shortlisted only"),
+        widget=forms.CheckboxInput(attrs={"class": CHECKBOX_CLASS}),
+        method=lambda queryset, name, value: queryset.filter(shortlisted=True) if value else queryset,
+    )
+
+
+class SolicitationApplicationFilterSet(TableFilterSet):
+    shortlisted = shortlisted_only_filter()
+
+
+class ReceivedApplicationFilterSet(TableFilterSet):
+    solicitation = django_filters.ModelChoiceFilter(
+        label=_("Solicitation"),
+        queryset=lambda request: Solicitation.objects.filter(organization=request.org).order_by("title"),
+        empty_label=_("All solicitations"),
+    )
+    shortlisted = shortlisted_only_filter()

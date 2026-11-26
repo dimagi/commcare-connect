@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load render_table from django_tables2 %}
+{% block title %}
+  {% translate "Applications" %}
+{% endblock title %}
+{% block content %}
+  <div id="application-list" class="flex flex-col gap-2 w-full">
+    <div class="flex flex-wrap items-center justify-between gap-3 w-full px-4 py-2 bg-slate-50 rounded-lg shadow-sm min-h-14">
+      <h1 class="text-sm text-brand-deep-purple">{% translate "Applications" %}</h1>
+      {% include "solicitation/partials/table_filter.html" with target="#application-list" %}
+    </div>
+    <div class="w-full rounded-lg shadow-xs">{% render_table table %}</div>
+  </div>
+{% endblock content %}

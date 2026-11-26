@@ -1,18 +1,20 @@
 from datetime import timedelta
 
 from django.utils.timezone import now
-from factory import Faker, LazyFunction, Sequence, SubFactory, Trait
+from factory import Faker, LazyAttribute, LazyFunction, Sequence, SubFactory, Trait
 from factory.django import DjangoModelFactory
 
 from commcare_connect.program.tests.factories import _get_default_currency
 from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
+    SolicitationApplicationReview,
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
+    SolicitationReviewer,
 )
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 
 class SolicitationFactory(DjangoModelFactory):
@@ -50,6 +52,14 @@ class SolicitationInvitationFactory(DjangoModelFactory):
         model = SolicitationInvitation
 
 
+class SolicitationReviewerFactory(DjangoModelFactory):
+    solicitation = SubFactory(SolicitationFactory)
+    user = LazyAttribute(lambda o: MembershipFactory(organization=o.solicitation.organization).user)
+
+    class Meta:
+        model = SolicitationReviewer
+
+
 class SolicitationEvaluationCriterionFactory(DjangoModelFactory):
     solicitation = SubFactory(SolicitationFactory)
     label = Sequence(lambda n: f"Criterion {n}")
@@ -66,3 +76,14 @@ class SolicitationQuestionFactory(DjangoModelFactory):
 
     class Meta:
         model = SolicitationQuestion
+
+
+class SolicitationApplicationReviewFactory(DjangoModelFactory):
+    application = SubFactory(SolicitationApplicationFactory)
+    reviewer = SubFactory(UserFactory)
+
+    class Params:
+        submitted = Trait(submitted_date=LazyFunction(now))
+
+    class Meta:
+        model = SolicitationApplicationReview
