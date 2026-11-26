@@ -75,6 +75,37 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
         )
 
 
+class FiltersAppliedMixin:
+    """Adds `filters_applied` to a FilterView's context, so the page can offer to clear them."""
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
+
+    def _filters_applied(self):
+        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
+        rather than the query string: a custom range with no dates, say, narrows nothing."""
+        form = self.filterset.form
+        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
+
+
+class SolicitationPageMixin:
+    """A page about one existing solicitation. Subclasses set title and a `solicitation` property."""
+
+    title = None
+
+    def get_context_data(self, **kwargs):
+        org_slug = self.request.org.slug
+        details_url = None  # closed and cancelled solicitations have no details page to link to
+        if self.solicitation.is_editable:
+            details_url = reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id])
+        path = [
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
+            {"title": self.solicitation.title, "url": details_url},
+            {"title": self.title, "url": self.request.path},
+        ]
+        return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
+
+
 @method_decorator(org_pm_required, name="dispatch")
 class EditableSolicitationMixin(WaffleSwitchMixin):
     """Looks up one of the org's solicitations that can still change; closed and cancelled ones are not found."""
@@ -271,9 +302,10 @@ class InvitationsMixin(WaffleSwitchMixin):
         return reverse("solicitation:invitations", args=[self.request.org.slug, self.solicitation.solicitation_id])
 
 
-class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
+class SolicitationInvitationsView(InvitationsMixin, SolicitationPageMixin, SingleTableMixin, FormView):
     """Lists the organizations invited to a solicitation and invites more."""
 
+    title = _("Invited organizations")
     form_class = SolicitationInvitationForm
     template_name = "solicitation/solicitation_invitations.html"
     table_class = SolicitationInvitationTable
@@ -285,18 +317,6 @@ class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
-
-    def get_context_data(self, **kwargs):
-        org_slug = self.request.org.slug
-        path = [
-            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
-            {
-                "title": self.solicitation.title,
-                "url": reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id]),
-            },
-            {"title": _("Invited organizations"), "url": self.request.path},
-        ]
-        return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
 
     def form_valid(self, form):
         email = self.request.user.email
@@ -335,7 +355,7 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 CARD_RELATED = ("organization", "country", "delivery_type")
 
 
-class MarketplaceListView(WaffleSwitchMixin, FilterView):
+class MarketplaceListView(WaffleSwitchMixin, FiltersAppliedMixin, FilterView):
     """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
     view here, open to visitors who aren't logged in."""
 
@@ -348,15 +368,6 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
     def get_queryset(self):
         # Soonest deadline first.
         return Solicitation.objects.public().select_related(*CARD_RELATED).order_by("application_deadline", "pk")
-
-    def get_context_data(self, **kwargs):
-        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
-
-    def _filters_applied(self):
-        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
-        rather than the query string: a custom range with no dates, say, narrows nothing."""
-        form = self.filterset.form
-        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
 
 
 class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
