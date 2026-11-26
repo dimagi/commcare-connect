@@ -505,6 +505,11 @@
     @apply text-xs;
   }
 
+  /* A crumb with no page to link to. */
+  .breadcrumb li span {
+    @apply cursor-default text-xs;
+  }
+
   .breadcrumb li i {
     @apply text-xs;
   }
