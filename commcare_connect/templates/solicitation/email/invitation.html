@@ -5,6 +5,9 @@
     {{ solicitation.organization.name }} has invited your organization to apply to "{{ solicitation.title }}" ({{ solicitation.get_type_display }}).
   </p>
   <p>
+    <a href="{{ solicitation_url }}">View the solicitation</a>
+  </p>
+  <p>
     Applications close on {{ solicitation.application_deadline|date:"F j, Y H:i T" }}. For questions, contact {{ solicitation.contact_email }}.
   </p>
 {% endblock %}

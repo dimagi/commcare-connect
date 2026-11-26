@@ -35,3 +35,9 @@ def pm_client(client, program_manager_org_user_admin):
     client.force_login(program_manager_org_user_admin)
     with override_switch(SOLICITATIONS, active=True):
         yield client
+
+
+@pytest.fixture
+def solicitations_on():
+    with override_switch(SOLICITATIONS, active=True):
+        yield

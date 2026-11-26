@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from django.utils.timezone import now
 
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.models import CLOSES_SOON_DAYS, Solicitation
 from commcare_connect.solicitation.tasks import update_solicitation_statuses
 from commcare_connect.solicitation.tests.factories import SolicitationFactory, SolicitationInvitationFactory
 from commcare_connect.users.tests.factories import MembershipFactory
@@ -90,3 +90,25 @@ def test_update_solicitation_statuses_takes_scheduled_live(
     # Invitations held back while it was scheduled are emailed once it goes live, and not if it closed unseen.
     sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
     assert sent_to == ([invited_org.get_member_emails()] if expected_status == Status.ACTIVE else [])
+
+
+@pytest.mark.parametrize(
+    "status, deadline_offset, expected",
+    [
+        (Status.ACTIVE, timedelta(days=CLOSES_SOON_DAYS, minutes=-1), True),
+        (Status.ACTIVE, timedelta(days=CLOSES_SOON_DAYS, minutes=1), False),
+        (Status.ACTIVE, PAST, False),
+        (Status.DRAFT, FUTURE, False),
+    ],
+)
+def test_closes_soon(status, deadline_offset, expected):
+    solicitation = SolicitationFactory(status=status, application_deadline=now() + deadline_offset)
+
+    assert solicitation.closes_soon is expected
+
+
+@pytest.mark.parametrize("deadline_offset, expected", [(timedelta(hours=5), 0), (timedelta(days=3, hours=5), 3)])
+def test_days_until_deadline(deadline_offset, expected):
+    solicitation = SolicitationFactory(application_deadline=now() + deadline_offset)
+
+    assert solicitation.days_until_deadline == expected

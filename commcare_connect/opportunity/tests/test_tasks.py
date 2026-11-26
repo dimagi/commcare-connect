@@ -686,25 +686,27 @@ class TestExportTasksCreateExportFile:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "send_notification, title, body, key",
+    "send_notification, title, body, key, send_push",
     [
         (
             send_task_assignment_notification,
             "New Task Assigned",
             "A task has been assigned to you. You must complete it before continuing Delivery activities.",
             "task_assignment",
+            True,
         ),
         (
             send_task_completion_notification,
             "Task Completed",
             "You have completed the task '{task_name}'.",
             "task_completion",
+            False,
         ),
     ],
     ids=["assignment", "completion"],
 )
 @mock.patch("commcare_connect.opportunity.tasks.send_message")
-def test_send_task_notification(send_message_patch, send_notification, title, body, key):
+def test_send_task_notification(send_message_patch, send_notification, title, body, key, send_push):
     opportunity = OpportunityFactory()
     access = OpportunityAccessFactory(opportunity=opportunity)
     task_type = TaskTypeFactory(app=opportunity.deliver_app)
@@ -725,6 +727,7 @@ def test_send_task_notification(send_message_patch, send_notification, title, bo
                 "key": key,
                 "session_endpoint_id": "cc_app_home",
             },
+            send_push=send_push,
         )
     )
 
