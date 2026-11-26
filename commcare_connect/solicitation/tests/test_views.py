@@ -2,12 +2,14 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 import pytest
+from allauth.utils import build_absolute_uri
 from django.urls import reverse
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
@@ -223,7 +225,7 @@ class TestSolicitationSteps:
         response = pm_client.get(step_url(step, draft))
 
         assert response.context["path"] == [
-            {"title": "Solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
+            {"title": "My solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
             {"title": draft.title},
         ]
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
@@ -388,6 +390,19 @@ class TestSolicitationInvitations:
         }
         sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
         assert sorted(sent_to) == sorted(org.get_member_emails() for org in invited_orgs)
+
+    def test_invite_email_links_to_the_solicitation(self, solicitation, mock_send_mail):
+        invitation = SolicitationInvitationFactory(
+            solicitation=solicitation, organization=MembershipFactory().organization
+        )
+
+        send_solicitation_invite_emails([invitation.pk])
+
+        url = build_absolute_uri(None, reverse("marketplace:detail", args=[solicitation.solicitation_id]))
+        email = mock_send_mail.delay.call_args.kwargs
+        assert url.startswith("http")
+        assert url in email["message"]
+        assert f'href="{url}"' in email["html_message"]
 
     @pytest.mark.parametrize("already_invited", [True, False])
     def test_invite_rejects_invited_and_own_org(

@@ -15,13 +15,13 @@ This directory holds the project's Django HTML templates, organized by feature a
 
 ### Shared
 
-| Directory     | Contents                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------- |
-| `components/` | Reusable partials: forms, modals, badges, cards, dropdowns, progress bars, worker page pieces, sidenav items  |
-| `layouts/`    | `header.html`, `sidenav.html`, `footer.html`                                                                  |
-| `tables/`     | Table-level templates and placeholders shared by several tables                                               |
-| `widgets/`    | Templates for custom form widgets (e.g. `preset_date_range.html`)                                             |
-| `email/`      | `base.html` / `base.txt` that app email templates extend                                                      |
+| Directory     | Contents                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `components/` | Reusable partials: forms, modals, badges, cards, dropdowns, progress bars, worker page pieces, sidenav items and group headers |
+| `layouts/`    | `header.html`, `sidenav.html`, `footer.html`                                                                                   |
+| `tables/`     | Table-level templates and placeholders shared by several tables                                                                |
+| `widgets/`    | Templates for custom form widgets (e.g. `preset_date_range.html`)                                                              |
+| `email/`      | `base.html` / `base.txt` that app email templates extend                                                                       |
 
 ### Per app or feature
 
@@ -31,7 +31,7 @@ This directory holds the project's Django HTML templates, organized by feature a
 | `microplanning/`                          | Work areas, groups, clustering modals and maps                              |
 | `organization/`                           | Creating and managing organizations, members and invites                    |
 | `program/`                                | Program manager and network manager views                                   |
-| `solicitation/`                           | Solicitations: listing, publishing, invitations                           |
+| `solicitation/`                           | Solicitations: listing, publishing, invitations, the marketplace            |
 | `audit/`                                  | Audit reports and their emails                                              |
 | `reports/`                                | KPI and admin reports                                                       |
 | `tasks/`                                  | The assigned-task modal                                                     |

@@ -1,6 +1,8 @@
 import logging
 
+from allauth.utils import build_absolute_uri
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from commcare_connect.solicitation.models import Solicitation, SolicitationInvitation
 from commcare_connect.utils.tasks import send_mail_async
@@ -19,8 +21,13 @@ def send_solicitation_invite_emails(invitation_ids):
         if not recipient_emails:
             continue
 
-        # TODO: link to the solicitation once invited organizations can view it (CCCT-2618).
-        context = {"solicitation": invitation.solicitation}
+        solicitation = invitation.solicitation
+        context = {
+            "solicitation": solicitation,
+            "solicitation_url": build_absolute_uri(
+                None, reverse("marketplace:detail", args=[solicitation.solicitation_id])
+            ),
+        }
         send_mail_async.delay(
             subject=f"Invitation to apply: {invitation.solicitation.title}",
             message=render_to_string("solicitation/email/invitation.txt", context),

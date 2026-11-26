@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from django.utils.timezone import now
 
-from commcare_connect.solicitation.models import Solicitation
+from commcare_connect.solicitation.models import CLOSES_SOON_DAYS, Solicitation
 from commcare_connect.solicitation.tasks import update_solicitation_statuses
 from commcare_connect.solicitation.tests.factories import SolicitationFactory
 
@@ -43,3 +43,25 @@ def test_update_solicitation_statuses(status, deadline_offset, expected_status):
 
     solicitation.refresh_from_db()
     assert solicitation.status == expected_status
+
+
+@pytest.mark.parametrize(
+    "status, deadline_offset, expected",
+    [
+        (Status.ACTIVE, timedelta(days=CLOSES_SOON_DAYS, minutes=-1), True),
+        (Status.ACTIVE, timedelta(days=CLOSES_SOON_DAYS, minutes=1), False),
+        (Status.ACTIVE, PAST, False),
+        (Status.DRAFT, FUTURE, False),
+    ],
+)
+def test_closes_soon(status, deadline_offset, expected):
+    solicitation = SolicitationFactory(status=status, application_deadline=now() + deadline_offset)
+
+    assert solicitation.closes_soon is expected
+
+
+@pytest.mark.parametrize("deadline_offset, expected", [(timedelta(hours=5), 0), (timedelta(days=3, hours=5), 3)])
+def test_days_until_deadline(deadline_offset, expected):
+    solicitation = SolicitationFactory(application_deadline=now() + deadline_offset)
+
+    assert solicitation.days_until_deadline == expected

@@ -1,0 +1,14 @@
+{% load i18n humanize %}
+{% if solicitation.budget_min is not None or solicitation.budget_max is not None %}
+  <dt>{% translate "Budget" %}</dt>
+  <dd>
+    {{ solicitation.currency_id }}
+    {% if solicitation.budget_min is not None and solicitation.budget_max is not None %}
+      {{ solicitation.budget_min|intcomma }} – {{ solicitation.budget_max|intcomma }}
+    {% elif solicitation.budget_min is not None %}
+      {% blocktranslate with amount=solicitation.budget_min|intcomma %}from {{ amount }}{% endblocktranslate %}
+    {% else %}
+      {% blocktranslate with amount=solicitation.budget_max|intcomma %}up to {{ amount }}{% endblocktranslate %}
+    {% endif %}
+  </dd>
+{% endif %}

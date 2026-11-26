@@ -7,7 +7,7 @@
        x-data="{ formOpen: false }"
        @htmx:after-swap.window="if ($event.detail.target.id === 'directory-form') formOpen = true">
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-      <h1 class="text-sm text-brand-deep-purple">{% translate "Solicitations" %}</h1>
+      <h1 class="text-sm text-brand-deep-purple">{% translate "My solicitations" %}</h1>
       <a class="button button-md primary-dark"
          href="{% url "solicitation:create" request.org.slug %}">{% translate "New solicitation" %}</a>
     </div>
