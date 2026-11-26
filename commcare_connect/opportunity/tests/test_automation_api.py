@@ -146,9 +146,7 @@ class TestPaymentUnits:
         self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
         opportunity, du1, du2 = opp_with_deliver_units
-        # Pre-assign du1 to another PaymentUnit
-        existing_pu = PaymentUnitFactory(opportunity=opportunity, amount=1, org_amount=1, max_total=1)
-        du1.payment_unit = existing_pu
+        du1.payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=1, org_amount=1, max_total=1)
         du1.save()
 
         api_client.force_authenticate(program_manager_org_user_admin)

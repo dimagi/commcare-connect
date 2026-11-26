@@ -86,7 +86,13 @@ def get_invoice_pdf_context(invoice):
         "opportunity": invoice.opportunity,
         "service_summary_lines": get_invoice_service_summary(invoice),
         "dimagi_address": DIMAGI_ADDRESS,
+        "main_contact": _main_contact(invoice.opportunity.organization),
     }
+
+
+def _main_contact(organization):
+    """The organization's main point of contact in the LLO Directory, unless that contact is archived."""
+    return organization.contacts.filter(is_main_poc=True, is_archived=False).first()
 
 
 def invoice_pdf_filename(invoice):

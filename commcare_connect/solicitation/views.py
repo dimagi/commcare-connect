@@ -11,14 +11,17 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import DetailView, FormView, UpdateView
+from django_filters.views import FilterView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
+from commcare_connect.solicitation.filters import MarketplaceFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
+    SolicitationClosureForm,
     SolicitationForm,
     SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
@@ -34,6 +37,7 @@ from commcare_connect.solicitation.models import (
 from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.utils.tables import get_validated_page_size
+from commcare_connect.utils.views import HtmxModalFormMixin
 
 # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
 NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
@@ -69,22 +73,27 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
 
 
 @method_decorator(org_pm_required, name="dispatch")
-class SolicitationStepMixin(WaffleSwitchMixin):
+class EditableSolicitationMixin(WaffleSwitchMixin):
+    """Looks up one of the org's solicitations that can still change; closed and cancelled ones are not found."""
+
+    waffle_switch = SOLICITATIONS
+    slug_field = "solicitation_id"
+    slug_url_kwarg = "solicitation_id"
+
+    def get_queryset(self):
+        return Solicitation.objects.editable().filter(organization=self.request.org)
+
+
+class SolicitationStepMixin(EditableSolicitationMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
     Every step saves to the draft, so a PM can leave and come back. Once active, the criteria and
     questions are locked so applicants answer the same form.
     """
 
-    waffle_switch = SOLICITATIONS
-    slug_field = "solicitation_id"
-    slug_url_kwarg = "solicitation_id"
     step = None
     previous_step = None
     next_step = None
-
-    def get_queryset(self):
-        return Solicitation.objects.editable().filter(organization=self.request.org)
 
     def get_context_data(self, **kwargs):
         kwargs["path"] = [
@@ -200,6 +209,45 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
+class BaseSolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
+    """Ends a solicitation with a reason, after which it can't be edited or applied to.
+
+    The form is the modal on the list page.
+    """
+
+    form_class = SolicitationClosureForm
+    template_name = "solicitation/closure_form.html"
+    status = None
+    title = None
+    hint = None
+
+    def form_valid(self, form):
+        form.instance.status = self.status
+        form.instance.modified_by = self.request.user.email
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("solicitation:list", args=[self.request.org.slug])
+
+
+class SolicitationCloseView(BaseSolicitationClosureView):
+    status = Solicitation.Status.CLOSED
+    title = _("Close solicitation")
+    hint = _("Marks the solicitation closed before its deadline. It can't be edited or reopened afterwards.")
+    success_message = _("Solicitation closed.")
+
+    def get_queryset(self):
+        # A draft was never open to applications, so there is nothing to close.
+        return super().get_queryset().open()
+
+
+class SolicitationCancelView(BaseSolicitationClosureView):
+    status = Solicitation.Status.CANCELLED
+    title = _("Cancel solicitation")
+    hint = _("Calls the solicitation off. A cancelled solicitation can't be edited, applied to or reopened.")
+    success_message = _("Solicitation cancelled.")
+
+
 @method_decorator(org_pm_required, name="dispatch")
 class InvitationsMixin(WaffleSwitchMixin):
     waffle_switch = SOLICITATIONS
@@ -277,3 +325,35 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 
     def form_invalid(self, form):
         return HttpResponseBadRequest()
+
+
+# Public marketplace ---------------------------------------------------------------------------------------------
+
+
+class MarketplaceListView(WaffleSwitchMixin, FilterView):
+    """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
+    view here, open to visitors who aren't logged in."""
+
+    waffle_switch = SOLICITATIONS
+    filterset_class = MarketplaceFilterSet
+    template_name = "solicitation/marketplace_list.html"
+    context_object_name = "solicitations"
+    paginate_by = 12  # fills whole rows of the 1, 2 and 3 column grid
+
+    def get_queryset(self):
+        return (
+            Solicitation.objects.public()
+            .select_related("organization", "country", "delivery_type")
+            .order_by("application_deadline", "pk")
+        )
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
+
+    def _filters_applied(self):
+        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
+        rather than the query string: a custom range with no dates, say, narrows nothing."""
+        form = self.filterset.form
+        if not form.is_bound:  # no query string at all
+            return False
+        return not form.is_valid() or any(form.cleaned_data.values())

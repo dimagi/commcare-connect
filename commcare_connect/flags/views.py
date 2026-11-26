@@ -1,5 +1,7 @@
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from waffle.models import Switch
 
@@ -32,6 +34,10 @@ def toggle_switch(request, switch_name):
     switch = get_object_or_404(Switch, name=switch_name)
     switch.active = not switch.active
     switch.save()
+    if switch.active:
+        messages.success(request, _("Switch '%(name)s' is now on.") % {"name": switch.name})
+    else:
+        messages.success(request, _("Switch '%(name)s' is now off.") % {"name": switch.name})
     return redirect("flags:feature_flags")
 
 
@@ -43,4 +49,7 @@ def update_flag(request, flag_name):
     form = FlagForm(request.POST, instance=flag)
     if form.is_valid():
         form.save()
+        messages.success(request, _("Toggle '%(name)s' saved.") % {"name": flag.name})
+    else:
+        messages.error(request, _("Toggle '%(name)s' was not saved. Please try again.") % {"name": flag.name})
     return redirect("flags:feature_flags")

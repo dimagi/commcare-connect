@@ -1,4 +1,4 @@
-# ADR-0002: One access model for UI and API
+# ADR-0003: One access model for UI and API
 
 **Status:** Proposed
 

@@ -12,6 +12,7 @@ from django.test import RequestFactory
 from django.urls import reverse
 
 from commcare_connect.flags.tests.factories import FlagFactory, SwitchFactory
+from commcare_connect.opportunity.models import UserInviteStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserInviteFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
@@ -479,3 +480,32 @@ class TestUpdateUserProfileView:
         worker.refresh_from_db()
         assert response.status_code == 400
         assert worker.name == "Old Name"
+
+
+class TestSMSStatusCallbackView:
+    url = "/users/sms_status_callback/"
+
+    def test_missing_message_sid_returns_400(self, client):
+        invites = UserInviteFactory.create_batch(3, message_sid=None, status=UserInviteStatus.invited)
+        response = client.post(self.url, {"MessageStatus": "delivered"})
+        assert response.status_code == 400
+        for invite in invites:
+            invite.refresh_from_db()
+            assert invite.status == UserInviteStatus.invited
+
+    def test_empty_body_returns_400(self, client):
+        UserInviteFactory.create_batch(2, message_sid=None)
+        response = client.post(self.url, {})
+        assert response.status_code == 400
+
+    def test_delivered_updates_invite(self, client):
+        invite = UserInviteFactory(message_sid="SM123", status=UserInviteStatus.invited)
+        response = client.post(self.url, {"MessageSid": "SM123", "MessageStatus": "delivered"})
+        assert response.status_code == 200
+        invite.refresh_from_db()
+        assert invite.status == UserInviteStatus.sms_delivered
+        assert invite.notification_date is not None
+
+    def test_unknown_message_sid_returns_404(self, client):
+        response = client.post(self.url, {"MessageSid": "SM-unknown", "MessageStatus": "delivered"})
+        assert response.status_code == 404

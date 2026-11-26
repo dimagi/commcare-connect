@@ -2,8 +2,11 @@ import datetime
 from collections import Counter
 
 import pytest
+from django.urls import reverse
 from django.utils.timezone import now
+from waffle.testutils import override_switch
 
+from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
@@ -19,9 +22,21 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.organization.models import Organization
 from commcare_connect.simulation.scenarios import get_scenario, standard_scenario_names
+from commcare_connect.solicitation.models import Solicitation
 
 pytestmark = pytest.mark.django_db
+
+# Scenarios whose state lives outside opportunities.
+WITHOUT_OPPORTUNITIES = {"solicitations"}
+
+
+@pytest.fixture(autouse=True)
+def solicitations_switch():
+    """Steps refuse while their pages' switch is off; CI builds every scenario, so it turns the switch on."""
+    with override_switch(SOLICITATIONS, active=True):
+        yield
 
 
 @pytest.mark.parametrize("name", standard_scenario_names())
@@ -31,9 +46,26 @@ def test_scenario_builds(sim, name):
 
     scenario.build(sim, small=True)
 
+    assert Organization.objects.filter(name__in=scenario.ORG_NAMES).count() == len(scenario.ORG_NAMES)
     opportunities = Opportunity.objects.filter(organization__name__in=scenario.ORG_NAMES)
-    assert opportunities.exists()
+    assert opportunities.exists() is (name not in WITHOUT_OPPORTUNITIES)
     _assert_history_reads_in_order(opportunities)
+
+
+def test_solicitations_shows_every_state(sim):
+    scenario = get_scenario("solicitations")
+    scenario.build(sim, small=True)
+
+    solicitations = Solicitation.objects.filter(organization__name__in=scenario.ORG_NAMES)
+    listed = solicitations.public()
+    assert _values(listed, "type") == {Solicitation.Type.RFP, Solicitation.Type.EOI}
+    assert len(_values(listed, "country")) == len(_values(listed, "delivery_type")) == 2
+    private = solicitations.open().get(public=False)
+    assert private.invitations.filter(organization__name__in=scenario.ORG_NAMES).exists()
+    assert solicitations.filter(status=Solicitation.Status.DRAFT).count() == 1
+    assert solicitations.expired().count() == 1
+    assert solicitations.filter(status=Solicitation.Status.CLOSED).count() == 1
+    assert ("Solicitations Marketplace", reverse("marketplace:list")) in sim.links
 
 
 def test_delivery_review_shows_every_review_state(sim):

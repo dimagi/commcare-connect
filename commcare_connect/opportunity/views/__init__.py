@@ -43,6 +43,7 @@ from django_tables2 import RequestConfig, SingleTableView
 from geopy import distance
 from waffle import flag_is_active, switch_is_active
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
@@ -60,13 +61,13 @@ from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AudioAttachmentTranscribeForm,
     DeliverUnitFlagsForm,
+    ExportFormatForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
-    PaymentExportForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -74,6 +75,7 @@ from commcare_connect.opportunity.forms import (
 from commcare_connect.opportunity.helpers import (
     OpportunityData,
     amount_with_currency,
+    api_key_owner_has_left,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
     get_payment_report_data,
@@ -308,6 +310,10 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if "api_key" in context["form"].fields:
+            context["api_key_form"] = pinned_api_key_form(self.object)
+            if warning := api_key_owner_warning(self.object):
+                messages.warning(self.request, warning)
         context["active_events"] = self.active_history_events
         return context
 
@@ -317,6 +323,26 @@ class OpportunityEdit(OpportunityObjectMixin, UpdateView):
         if self.active_history_events:
             form_kwargs.update({"latest_active_history_event": self.active_history_events[0]})
         return form_kwargs
+
+
+def pinned_api_key_form(opportunity):
+    """The add-key modal's form on pages that edit an opportunity's key.
+
+    The key select only lists keys on the opportunity's server, so a key for another one would vanish.
+    """
+    return HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=opportunity.hq_server)
+
+
+def api_key_owner_warning(opportunity):
+    """The warning to show when the opportunity's API key belongs to someone who can no longer manage its program,
+    or None."""
+    if not api_key_owner_has_left(opportunity):
+        return None
+    owner = opportunity.api_key.user
+    return _(
+        "The API key on this opportunity was added by %(name)s, who can no longer manage the %(program)s program. "
+        "Replace it with one of your own keys."
+    ) % {"name": owner.name or str(owner), "program": opportunity.program.name}
 
 
 @method_decorator(opportunity_pm_required, name="dispatch")
@@ -383,7 +409,7 @@ class OpportunityDashboard(OpportunityObjectMixin, DetailView):
         context = super().get_context_data(**kwargs)
 
         learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
-        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
+        deliver_unit_count = DeliverUnit.objects.for_opportunity(object).count()
         payment_unit_count = object.paymentunit_set.count()
 
         def safe_display(value):
@@ -699,7 +725,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
 @opp_standard_access_required
 @opportunity_required
 def export_users_for_payment(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_payments", org_slug, opp_id)
@@ -804,9 +830,7 @@ def add_payment_units(request, org_slug=None, opp_id=None):
 @opportunity_pm_required
 @opportunity_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=request.opportunity.deliver_app
-    )
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity)
     form = PaymentUnitForm(
         deliver_units=deliver_units,
         data=request.POST or None,
@@ -869,10 +893,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
-    deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
-        app=request.opportunity.deliver_app,
-    )
+    deliver_units = DeliverUnit.objects.assignable(request.opportunity, payment_unit)
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
@@ -943,16 +964,16 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
 
 
 def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
-    # The form only offers unattached units and units from inactive opportunities, so this may move
-    # a unit off an inactive opportunity's payment unit
-    DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
-    DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
+    # Scoped to the payment unit's opportunity so another opportunity's units are never moved
+    own_units = DeliverUnit.objects.for_opportunity(payment_unit.opportunity)
+    own_units.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
+    own_units.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
 
 
 @opp_standard_access_required
 @opportunity_required
 def export_user_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:worker_list", request.org.slug, opp_id)
@@ -966,7 +987,7 @@ def export_user_status(request, org_slug, opp_id):
 @opp_standard_access_required
 @opportunity_required
 def export_deliver_status(request, org_slug, opp_id):
-    form = PaymentExportForm(data=request.POST)
+    form = ExportFormatForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:detail", request.org.slug, opp_id)
@@ -1228,7 +1249,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     form = OpportunityVerificationFlagsConfigForm(
         instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
     )
-    deliver_unit_count = DeliverUnit.objects.filter(app=request.opportunity.deliver_app).count()
+    deliver_unit_count = DeliverUnit.objects.for_opportunity(request.opportunity).count()
     DeliverUnitFlagsFormset = modelformset_factory(
         DeliverUnitFlagRules, DeliverUnitFlagsForm, extra=deliver_unit_count, max_num=deliver_unit_count
     )
@@ -1240,7 +1261,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         initial=[
             {"deliver_unit": du}
-            for du in request.opportunity.deliver_app.deliver_units.exclude(
+            for du in DeliverUnit.objects.for_opportunity(request.opportunity).exclude(
                 id__in=deliver_unit_flags.values_list("deliver_unit")
             )
         ],
@@ -1385,7 +1406,7 @@ def opportunity_user_invite(request, org_slug=None, opp_id=None):
         return redirect("opportunity:detail", request.org.slug, opp_id)
     return render(
         request,
-        "components/form.html",
+        "opportunity/user_invite.html",
         dict(title=f"{request.org.slug} - {request.opportunity.name}", form_title="Invite Connect Workers", form=form),
     )
 
@@ -1764,7 +1785,7 @@ def learn_module_table(request, org_slug=None, opp_id=None):
 @opp_view_access_required
 @opportunity_required
 def deliver_unit_table(request, org_slug=None, opp_id=None):
-    unit = DeliverUnit.objects.filter(app=request.opportunity.deliver_app)
+    unit = DeliverUnit.objects.for_opportunity(request.opportunity)
     table = DeliverUnitTable(unit)
     return render(
         request,
@@ -2016,14 +2037,26 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 @login_required
 @require_POST
 def add_api_key(request, org_slug):
-    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s")
+    fixed_hq_server = _fixed_hq_server(request)
+    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
 
+    headers = {}
     if form.is_valid():
         api_key = form.save(commit=False)
         api_key.user = request.user
         api_key.save()
-        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-    return HttpResponse(render_crispy_form(form))
+        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s", fixed_hq_server=fixed_hq_server)
+        # Only a saved key closes the modal and reloads the key select; a rejected one keeps its errors on screen.
+        headers["HX-Trigger"] = "reload_api_keys"
+    return HttpResponse(render_crispy_form(form), headers=headers)
+
+
+def _fixed_hq_server(request):
+    """The server the add-key modal is pinned to, passed as `?hq_server=` by pages that pin it."""
+    server_id = request.GET.get("hq_server")
+    if not server_id or not server_id.isdigit():
+        return None
+    return HQServer.objects.filter(pk=server_id).first()
 
 
 @login_required

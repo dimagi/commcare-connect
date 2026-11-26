@@ -15,13 +15,13 @@ Installed only by `config/settings/local.py` and `config/settings/test.py`; it n
 creates. Use `--pm-email` / `--nm-email` to put the program-manager and network-manager sides on different users.
 Unless `--keep` is passed, the scenario first deletes the organizations it owns, so reruns start clean. It
 refuses, deleting nothing, when anything outside them depends on them: another organization's opportunity
-under their program or using their apps, or a solicitation. The command prints the pages worth opening when it
-finishes.
+under their program or using their apps, another organization's application to their solicitation, or another
+organization's solicitation linked to their program. The command prints the pages worth opening when it finishes.
 
 ## Standard scenarios
 
-Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations, a program and opportunities,
-with a history that runs from about six weeks ago to now.
+Each builds its own `Sim <Scenario> PM` and `Sim <Scenario> NM` organizations and a program, with a history
+that runs from about six weeks ago to now. All but `solicitations` also build opportunities.
 
 - `baseline`: one active opportunity whose workers have finished learning and claimed it.
 - `opp_setup`: opportunities in each setup state: a draft, an active one, an ended one, and one with several
@@ -31,9 +31,14 @@ with a history that runs from about six weeks ago to now.
 - `delivery_review`: clean and flagged visits (duplicate, no GPS, too short), approved, rejected or still pending
   with the network manager, and agreed or disagreed by the program manager.
 - `payments`: approved work paid to workers in full and in part, and invoices that are paid, ready to pay, and
-  waiting for program-manager review.
+  waiting for program-manager review. The network manager has an office address and a main contact in the LLO
+  Directory, so the invoice PDFs show them.
 - `payment_units`: one opportunity paying two kinds of visit at different rates, workers paid in full and in part,
   and an invoice whose line items split the work by payment unit.
+- `solicitations`: RFPs and EOIs in every state: public and open across countries, delivery types and deadlines
+  (enough to fill more than one page), private with the network manager invited, a draft, one past its deadline
+  but not yet closed, and one the hourly task has closed. A Celery worker running beat (`-B`) closes the expired
+  one within the hour. Needs the `solicitations` switch on (`./manage.py waffle_switch solicitations on --create`).
 
 `--small` builds the fewest records that still show every state; that is what CI builds.
 
@@ -51,7 +56,8 @@ through `sim.browser(user)`, which fails with the errors the page showed if the 
 integrations with no page, such as HQ forwarding a form, call the function their endpoint runs.
 
 The one exception is configuration records that have no UI path: the simulated `HQServer` and its OAuth
-application, and the program's `DeliveryType`, are get-or-created.
+application, and the `DeliveryType`s programs and solicitations use, are get-or-created. Waffle switches are not
+in that list: a step whose pages are behind a switch refuses with a clear error until you turn it on.
 
 A scenario is done when it has run: build it with `run_scenario <name> --admin-email <your local user>` and open
 the pages it prints. For a shared scenario, also run `pytest commcare_connect/simulation/tests/test_scenarios.py`.
@@ -81,7 +87,7 @@ Steps call the same code the pages do, so they break when that code changes, and
 - **A page's request changes** (a renamed field, a new required field, a different URL or success response):
   update the step's POST to match what the page now sends.
 - **A new feature needs local data**: whoever first needs it adds the step. Areas with no steps yet include tasks,
-  microplanning, audit, solicitations and the reports.
+  microplanning, audit, solicitation applications and reviews, and the reports.
 - **A new state should be easy to reach**: extend the shared scenario for that area, or add a new one if no area
   fits.
 

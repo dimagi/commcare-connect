@@ -17,7 +17,12 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication
 from commcare_connect.simulation.reset import ResetBlocked, reset_orgs
 from commcare_connect.simulation.scenarios import get_scenario
-from commcare_connect.solicitation.tests.factories import SolicitationFactory
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.tests.factories import (
+    SolicitationApplicationFactory,
+    SolicitationFactory,
+    SolicitationInvitationFactory,
+)
 from commcare_connect.users.models import User
 
 pytestmark = pytest.mark.django_db
@@ -90,15 +95,41 @@ def test_reset_refuses_when_another_orgs_opportunity_depends_on_it(baseline, org
     assert Opportunity.objects.filter(pk=other.pk).exists()
 
 
-def test_reset_refuses_when_a_solicitation_protects_an_org(baseline):
+def test_reset_deletes_only_the_organizations_solicitations(baseline, organization):
+    pm_org, nm_org = (Organization.objects.get(name=name) for name in BASELINE_ORGS)
+    solicitation = SolicitationFactory(organization=pm_org, program=Program.objects.get(organization=pm_org))
+    SolicitationInvitationFactory(solicitation=solicitation, organization=nm_org)
+    outside = SolicitationFactory(organization=organization)
+    outside_invitation = SolicitationInvitationFactory(solicitation=outside)
+
+    reset_orgs(BASELINE_ORGS, log=_quiet)
+
+    assert list(Solicitation.objects.all()) == [outside]
+    assert list(SolicitationInvitation.objects.all()) == [outside_invitation]
+
+
+def test_reset_refuses_when_another_org_applied_to_its_solicitation(baseline, organization):
     pm_org = Organization.objects.get(name=BASELINE_ORGS[0])
-    solicitation = SolicitationFactory(organization=pm_org)
+    application = SolicitationApplicationFactory(solicitation__organization=pm_org, organization=organization)
+    before = _counts()
+
+    with pytest.raises(ResetBlocked, match=rf"{organization.slug} to .* \(id {application.pk}\)"):
+        reset_orgs(BASELINE_ORGS, log=_quiet)
+
+    assert _counts() == before
+    assert SolicitationApplication.objects.filter(pk=application.pk).exists()
+
+
+def test_reset_refuses_when_another_orgs_solicitation_uses_its_program(baseline, organization):
+    program = Program.objects.get(organization__name=BASELINE_ORGS[0])
+    solicitation = SolicitationFactory(organization=organization, program=program)
     before = _counts()
 
     with pytest.raises(ResetBlocked, match=rf"Solicitation {solicitation.pk} .*Nothing was deleted"):
         reset_orgs(BASELINE_ORGS, log=_quiet)
 
     assert _counts() == before
+    assert Solicitation.objects.filter(pk=solicitation.pk).exists()
 
 
 def test_reset_logs_each_organization(baseline):

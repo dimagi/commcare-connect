@@ -2,8 +2,9 @@
   "name": "commcare_connect",
   "version": "0.1.0",
   "devDependencies": {
-    "@babel/core": "^7.16.5",
-    "@babel/preset-env": "^7.16.5",
+    "@babel/core": "^8.1.2",
+    "@babel/preset-env": "^8.0.7",
+    "@babel/preset-typescript": "^8.0.7",
     "@eslint/js": "^10.0.1",
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@mapbox/mapbox-gl-draw": "^1.5.2",
@@ -23,13 +24,15 @@
     "mapbox-gl": "^3.35.0",
     "mini-css-extract-plugin": "^2.4.5",
     "open-chat-studio-widget": "^0.15.0",
-    "postcss": "^8.5.32",
+    "postcss": "^8.5.33",
     "postcss-loader": "^8.2.1",
     "sass": "^1.108.2",
     "sass-loader": "^17.1.0",
     "tailwindcss": "^4.3.3",
     "tippy.js": "^6.3.7",
     "tom-select": "^2.7.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.73.0",
     "webpack": "^5.112.2",
     "webpack-bundle-tracker": "^3.2.4",
     "webpack-cli": "^7.3.1",
@@ -43,13 +46,15 @@
   ],
   "babel": {
     "presets": [
-      "@babel/preset-env"
+      "@babel/preset-env",
+      "@babel/preset-typescript"
     ]
   },
   "scripts": {
     "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js",
     "dev": "webpack --mode development --config webpack/base.config.js",
-    "dev-watch": "webpack --mode development --config webpack/base.config.js --watch"
+    "dev-watch": "webpack --mode development --config webpack/base.config.js --watch",
+    "typecheck": "tsc"
   },
   "dependencies": {
     "@alpinejs/persist": "^3.17.5"

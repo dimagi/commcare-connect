@@ -501,13 +501,17 @@ class Command(BaseCommand):
         """
         units = []
         for index, (name, slug) in enumerate(PAYMENT_UNITS):
-            deliver_unit = DeliverUnit.objects.filter(app=opportunity.deliver_app, slug=slug).first()
+            deliver_unit = DeliverUnit.objects.for_opportunity(opportunity).filter(slug=slug).first()
             payment_unit = self.existing_payment_unit(deliver_unit, opportunity) or self.seeded_payment_unit(
                 opportunity, name, index
             )
             if deliver_unit is None:
                 deliver_unit = DeliverUnit.objects.create(
-                    app=opportunity.deliver_app, slug=slug, name=f"{name} DU", payment_unit=payment_unit
+                    opportunity=opportunity,
+                    app=opportunity.deliver_app,
+                    slug=slug,
+                    name=f"{name} DU",
+                    payment_unit=payment_unit,
                 )
             elif deliver_unit.payment_unit_id != payment_unit.id:
                 deliver_unit.payment_unit = payment_unit

@@ -1,0 +1,4 @@
+{# SolicitationTable's row menu. Boosting makes its links load their form into the list page's modal instead of navigating. #}
+<div class="flex justify-end" hx-boost="true" hx-target="#directory-form">
+  {% include "components/dropdowns/text_button_dropdown.html" with text='<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'|safe list=actions styles="button-icon" %}
+</div>
