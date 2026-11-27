@@ -1,0 +1,239 @@
+name: Rebuild staging (jobs)
+
+# Called by rebuild-staging.yml. The staged branches' code runs only in `build`, which has a read-only
+# token and no secrets. `publish` and `report` never run that code, so it can't reach their write token
+# or the Slack token. `build` can still choose what `publish` pushes to autostaging, but a listed branch
+# can already put any code there.
+
+on:
+  workflow_call:
+    secrets:
+      SLACK_BOT_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  STAGING_CONFIG: commcare-connect-staging.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.bundle.outputs.sha }}
+      failed-step: ${{ steps.failed-step.outputs.step }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # Full history needed for merging branches
+          fetch-depth: 0
+          # Leave no token in .git/config for the staged code to read
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          # The staged code could change the cache, and other workflows restore it
+          save-cache: false
+
+      - name: Install git-build-branch
+        run: uv tool install git-build-branch==0.1.20
+
+      - name: Configure git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Build autostaging
+        id: build
+        run: |
+          set -o pipefail
+          ./deploy/rebuildstaging --no-push 2>&1 | tee build.log
+
+      - name: Install app dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils gdal-bin libproj-dev
+          # git-build-branch leaves the original branch checked out
+          git checkout autostaging
+          uv sync --frozen
+
+      # The checks below catch a broken combination of branches before autostaging is pushed, rather than in
+      # the deploy. They need no database service: makemigrations only warns when it can't reach one.
+      - name: Run Django checks
+        id: django-check
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -o pipefail
+          uv run python manage.py check 2>&1 | tee check.log
+
+      - name: Check migrations
+        id: migrations
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          # Two staged branches that each add a migration to the same app give it two leaf nodes
+          set -o pipefail
+          uv run python manage.py makemigrations --check --dry-run 2>&1 | tee migrations.log
+
+      - name: Bundle autostaging
+        id: bundle
+        run: |
+          echo "sha=$(git rev-parse autostaging)" >> "$GITHUB_OUTPUT"
+          # `publish` already has main's history; with nothing beyond main there is nothing to bundle
+          if [ "$(git rev-list --count origin/main..autostaging)" -gt 0 ]; then
+            git bundle create autostaging.bundle autostaging ^origin/main
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autostaging
+          path: autostaging.bundle
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Name the failed step
+        id: failed-step
+        if: failure()
+        env:
+          STEP: >-
+            ${{ steps.build.outcome == 'failure' && 'build'
+                || steps.django-check.outcome == 'failure' && 'check'
+                || steps.migrations.outcome == 'failure' && 'migrations'
+                || 'other' }}
+        run: echo "step=$STEP" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: |
+            *.log
+            artifacts/staging-branches/${{ env.STAGING_CONFIG }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # The bundle's base commit, and origin/autostaging to compare against
+          fetch-depth: 0
+
+      # `build` ran the staged code before uploading, so the artifact may hold any paths. Extract it outside
+      # the checkout so it can't replace files there, such as .git/hooks. v8 rejects entries that climb out
+      # of `path`; v4 doesn't.
+      - uses: actions/download-artifact@v8
+        with:
+          name: autostaging
+          path: ${{ runner.temp }}/autostaging
+        # No artifact when autostaging is just main
+        continue-on-error: true
+
+      - name: Push if the code changed
+        id: push
+        env:
+          SHA: ${{ needs.build.outputs.sha }}
+          BUNDLE: ${{ runner.temp }}/autostaging/autostaging.bundle
+        run: |
+          if [ -f "$BUNDLE" ]; then
+            git fetch --quiet "$BUNDLE" autostaging
+          fi
+          git rev-parse --verify --quiet "$SHA^{commit}" > /dev/null
+          # Every build makes new merge commits, so compare trees to avoid deploying identical code
+          if git rev-parse -q --verify origin/autostaging > /dev/null \
+              && [ "$(git rev-parse "$SHA^{tree}")" = "$(git rev-parse 'origin/autostaging^{tree}')" ]; then
+            echo "autostaging is unchanged, nothing to deploy"
+            exit 0
+          fi
+          git push --force origin "$SHA:refs/heads/autostaging"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A push made with GITHUB_TOKEN doesn't start deploy.yml, so start it explicitly
+        run: gh workflow run deploy.yml --ref main -f environment=staging -f deploy_type=adhoc
+
+  report:
+    needs: [build, publish]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # The report reads the listed branches' history
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Outside the checkout, so the logs can't replace the report script; see `publish`
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-logs
+          path: ${{ runner.temp }}/build-logs
+        # No logs when `build` succeeded and `publish` failed
+        continue-on-error: true
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Fetch listed fork branches
+        env:
+          LOGS: ${{ runner.temp }}/build-logs
+        run: |
+          CONFIG="$LOGS/artifacts/staging-branches/$STAGING_CONFIG"
+          [ -f "$CONFIG" ] || exit 0
+          # The checkout has origin's branches; the report finds `owner:branch` entries under refs/remotes/owner
+          yq '.branches[] | select(test(":"))' "$CONFIG" |
+            while IFS=: read -r owner name; do
+              git fetch --quiet "https://github.com/$owner/commcare-connect.git" \
+                "+refs/heads/$name:refs/remotes/$owner/$name" || echo "Couldn't fetch $owner:$name"
+            done
+
+      - name: Build Slack message
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FAILED_STEP: ${{ needs.build.outputs.failed-step || 'other' }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          LOGS: ${{ runner.temp }}/build-logs
+        run: |
+          CONFIG="$LOGS/artifacts/staging-branches/$STAGING_CONFIG"
+          LOG_ARGS=()
+          if [ -f "$LOGS/$FAILED_STEP.log" ]; then
+            LOG_ARGS=(--log "$LOGS/$FAILED_STEP.log")
+          fi
+          if [ ! -f "$CONFIG" ] || ! uv run --no-project --with httpx --with pyyaml python -m deploy.staging_report \
+              --step "$FAILED_STEP" "${LOG_ARGS[@]}" --config "$CONFIG" \
+              --run-url "$RUN_URL" --payload-file slack-payload.json; then
+            # Still report the failure, without the details, if there's nothing to report on or the report breaks
+            jq -n --arg url "$RUN_URL" '{text: "Staging rebuild failed", blocks: [{type: "section", text: {
+              type: "mrkdwn", text: ("*Staging rebuild failed.* <" + $url + "|View run>")}}]}' > slack-payload.json
+          fi
+
+      - name: Post failure to Slack
+        uses: slackapi/slack-github-action@e28cf165c92ffef168d23c5c9000cffc8a25e117 # v1.24.0
+        with:
+          channel-id: 'C09TVKX4N2C'
+          payload-file-path: ./slack-payload.json
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
