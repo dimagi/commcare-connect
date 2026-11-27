@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tables import (
     OpportunityTable,
+    PaymentUnitTable,
     ProgramManagerOpportunityTable,
 )
 from commcare_connect.opportunity.tables.invoices import (
@@ -55,6 +56,14 @@ def test_invoice_line_items_table_org_column_visibility(show_org):
     if show_org:
         assert table.columns["flw_amount_local"].column.verbose_name == "FLW Pay (KES)"
         assert table.columns["org_amount_local"].column.verbose_name == "Org Pay (KES)"
+
+
+@pytest.mark.parametrize("is_program_manager", [False, True])
+def test_payment_unit_table_shows_pay_columns_to_everyone(is_program_manager):
+    table = PaymentUnitTable([], org_slug="org", is_program_manager=is_program_manager)
+    visible = [column.name for column in table.columns]
+    assert "amount" in visible
+    assert "org_amount" in visible
 
 
 def test_invoice_line_items_table_reads_money_off_line_items():
