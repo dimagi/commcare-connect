@@ -1,4 +1,4 @@
-{% load static i18n waffle_tags organization_extras sidenav %}
+{% load static i18n waffle_tags sidenav solicitation_extras %}
 <div x-cloak
      class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
      :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -54,7 +54,7 @@
           {% include "components/sidenav-group-header.html" with name=solicitations_name icon="file-signature" %}
           <div x-show="open || !sidebarOpen"
                :class="sidebarOpen && 'ml-3 border-l border-white/30'">
-            {% if request.org and request.org_access_level.has_view and request.user|is_pm_org_admin:request.org %}
+            {% if request.org and request.org_access_level.has_view and request.user|can_manage_solicitations:request.org %}
               {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
               {% translate "My solicitations" as my_solicitations_name %}
               {% include "components/sidenav-items.html" with name=my_solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}

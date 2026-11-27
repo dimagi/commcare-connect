@@ -13,7 +13,6 @@ from django_tables2 import SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.organization.decorators import org_pm_required
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -27,6 +26,7 @@ from commcare_connect.solicitation.models import (
     SolicitationEvaluationCriterion,
     SolicitationQuestion,
 )
+from commcare_connect.solicitation.permissions import solicitation_manager_required
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
@@ -39,7 +39,7 @@ STEP_LABELS = {
 }
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(solicitation_manager_required, name="dispatch")
 class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     waffle_switch = SOLICITATIONS
     table_class = SolicitationTable
@@ -95,7 +95,7 @@ class SolicitationPageMixin:
         return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
 
 
-@method_decorator(org_pm_required, name="dispatch")
+@method_decorator(solicitation_manager_required, name="dispatch")
 class EditableSolicitationMixin(WaffleSwitchMixin):
     """Looks up one of the org's solicitations that can still change; closed and cancelled ones are not found."""
 
