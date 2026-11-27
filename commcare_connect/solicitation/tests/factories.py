@@ -28,6 +28,10 @@ class SolicitationFactory(DjangoModelFactory):
     class Params:
         # Past its deadline; with status=ACTIVE, not yet closed by update_solicitation_statuses.
         deadline_passed = Trait(application_deadline=LazyFunction(lambda: now() - timedelta(days=1)))
+        # Goes live tomorrow, well before the default deadline.
+        scheduled = Trait(
+            status=Solicitation.Status.SCHEDULED, go_live_date=LazyFunction(lambda: now() + timedelta(days=1))
+        )
 
     class Meta:
         model = Solicitation

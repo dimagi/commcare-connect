@@ -9,6 +9,7 @@ from commcare_connect.solicitation.forms import (
     QuestionForm,
     SolicitationClosureForm,
     SolicitationForm,
+    SolicitationPublishForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import Solicitation, SolicitationQuestion
@@ -100,6 +101,60 @@ def test_publish_errors(overrides, weights, blocked_steps):
         SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=weight)
 
     assert set(publish_errors(solicitation)) == blocked_steps
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "schedule, go_live_days, valid",
+    [
+        (False, None, True),
+        # Publishing now, so a date left in the hidden field is dropped.
+        (False, -1, True),
+        (True, None, False),
+        (True, 1, True),
+        (True, -1, False),
+        # The default deadline is 30 days away, so this goes live after applications close.
+        (True, 31, False),
+    ],
+)
+def test_publish_form_go_live_date(schedule, go_live_days, valid):
+    solicitation = SolicitationFactory(country=_get_default_country())
+    SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=100)
+    data = {"go_live_date": "" if go_live_days is None else deadline(go_live_days)}
+    if schedule:
+        data["schedule"] = "on"
+
+    form = SolicitationPublishForm(data, instance=solicitation)
+
+    assert form.is_valid() is valid
+    if valid:
+        assert (form.cleaned_data["go_live_date"] is not None) is schedule
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "factory_kwargs, weight",
+    [
+        ({"country": None}, 100),
+        ({}, 90),
+        # Live already, so there's nothing left to publish.
+        ({"status": Solicitation.Status.ACTIVE}, 100),
+        ({"scheduled": True, "go_live_date": now() - timedelta(hours=1)}, 100),
+    ],
+)
+def test_publish_form_rejects_what_cant_be_published(factory_kwargs, weight):
+    solicitation = SolicitationFactory(**{"country": _get_default_country()} | factory_kwargs)
+    SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=weight)
+
+    assert not SolicitationPublishForm({}, instance=solicitation).is_valid()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_publish_form_starts_with_schedule_on_for_a_scheduled_solicitation(scheduled):
+    form = SolicitationPublishForm(instance=SolicitationFactory(scheduled=scheduled))
+
+    assert form["schedule"].value() is scheduled
 
 
 @pytest.mark.django_db

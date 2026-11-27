@@ -1,6 +1,7 @@
 """RFPs and EOIs in every state the marketplace and the program manager's list tell apart: public and open (across
-countries, delivery types and deadlines), private with an invited organization, a draft, one past its deadline that
-the hourly task hasn't closed yet, and one it has closed."""
+countries, delivery types and deadlines), private with an invited organization, a draft, a public one scheduled to go
+live that the marketplace doesn't show yet, one past its deadline that the hourly task hasn't closed yet, and one it
+has closed."""
 
 from django.urls import reverse
 
@@ -52,6 +53,7 @@ def build(sim, *, small):
     closed_deadline = _common.days_ago(CLOSED_DEADLINE_DAYS_AGO)
     expired_deadline = _common.days_ago(EXPIRED_DEADLINE_DAYS_AGO)
     open_deadline = _common.days_ahead(30)
+    go_live = _common.days_ahead(7)
     public_deadlines = [_common.days_ahead(days) for *_, days in public]
 
     with sim.at(_common.days_ago(CLOSED_PUBLISHED_DAYS_AGO)):
@@ -83,5 +85,10 @@ def build(sim, *, small):
         sim.invite_to_solicitation(private, [nm_org])
         sim.solicitation(
             pm_org, SolicitationSpec(title="Draft: maternal health", deadline=open_deadline), publish=False
+        )
+        sim.solicitation(
+            pm_org,
+            SolicitationSpec(title="Scheduled: CHW refresher training", deadline=open_deadline),
+            go_live=go_live,
         )
     sim.link("Solicitations Marketplace", reverse("marketplace:list"))
