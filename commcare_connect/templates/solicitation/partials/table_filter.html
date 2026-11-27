@@ -1,0 +1,33 @@
+{% load i18n %}
+{# The filters above a solicitation table, in one row of the page's toolbar. They apply as they change. #}
+{# `target` is the selector of the region that holds the filters and the table; it is swapped on each change. #}
+<form method="get"
+      class="flex items-center gap-3"
+      hx-get="{{ request.path }}"
+      hx-trigger="change delay:500ms"
+      hx-target="{{ target }}"
+      hx-select="{{ target }}"
+      hx-swap="outerHTML"
+      hx-push-url="true">
+  {# Keep the table's sort and page size when the filters change. #}
+  {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+  {% if request.GET.page_size %}<input type="hidden" name="page_size" value="{{ request.GET.page_size }}">{% endif %}
+  {% for field in filter.form %}
+    {% if field.widget_type == "checkbox" %}
+      <label class="flex items-center gap-2 text-sm whitespace-nowrap">
+        {{ field }}
+        {{ field.label }}
+      </label>
+    {% else %}
+      <label for="{{ field.id_for_label }}" class="text-sm whitespace-nowrap">{{ field.label }}</label>
+      {# base-input fills its container, so the container sets the width. #}
+      <div class="w-60">{{ field }}</div>
+    {% endif %}
+  {% endfor %}
+  {# Takes the form's hx-target, hx-select, hx-swap and hx-push-url, and sends only the sort and page size. #}
+  <button type="button"
+          hx-get="{{ request.path }}"
+          hx-include="{{ target }} input[type=hidden]"
+          class="button button-sm outline-style whitespace-nowrap"
+          {% if not filters_applied %}disabled{% endif %}>{% translate "Clear filters" %}</button>
+</form>

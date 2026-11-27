@@ -3,8 +3,8 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.db.models import Exists, OuterRef, Q
-from django.db.models.functions import Now
+from django.db.models import Avg, Count, Exists, F, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce, Now
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
@@ -230,8 +230,45 @@ class SolicitationInvitation(BaseModel):
         constraints = [models.UniqueConstraint(fields=["solicitation", "organization"], name="one_invitation_per_org")]
 
 
+class SolicitationApplicationQuerySet(models.QuerySet):
+    def newest_first(self):
+        """Most recently submitted first; pk breaks ties so rows don't move between pages."""
+        return self.order_by(F("submitted_date").desc(nulls_last=True), "pk")
+
+    def responses(self):
+        return self.exclude(status__in=SolicitationApplication.NON_RESPONSE_STATUSES)
+
+    def with_review_summary(self):
+        """Annotates each application from its submitted reviews and its solicitation's reviewers.
+
+        average_score and the <recommendation>_count fields use every submitted review. reviewer_count is the
+        number of reviewers on the application's solicitation, and reviewed_count only counts reviews by them, so
+        the two measure progress against the current reviewers.
+        """
+        # Observers don't score, so only reviewers count towards review progress.
+        reviewers = SolicitationReviewer.objects.filter(
+            solicitation=OuterRef("solicitation"), role=SolicitationReviewer.Role.REVIEWER
+        )
+        reviewer_count = reviewers.values("solicitation").annotate(count=Count("pk")).values("count")
+        submitted = Q(reviews__submitted_date__isnull=False)
+        recommendation_counts = {
+            f"{recommendation}_count": Count("reviews", filter=submitted & Q(reviews__recommendation=recommendation))
+            for recommendation in SolicitationApplicationReview.Recommendation
+        }
+        return self.annotate(
+            average_score=Avg("reviews__overall_score", filter=submitted),
+            reviewer_count=Coalesce(Subquery(reviewer_count), 0),
+            reviewed_count=Count(
+                "reviews", filter=submitted & Q(reviews__reviewer_id__in=reviewers.values("user_id"))
+            ),
+            **recommendation_counts,
+        )
+
+
 class SolicitationApplication(BaseModel):
     """One submission from an organization in response to a solicitation."""
+
+    objects = SolicitationApplicationQuerySet.as_manager()
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")
@@ -240,6 +277,9 @@ class SolicitationApplication(BaseModel):
         AWARDED = "awarded", _("Awarded")
         REJECTED = "rejected", _("Rejected")
         WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
+    NON_RESPONSE_STATUSES = (Status.DRAFT, Status.WITHDRAWN)
 
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")

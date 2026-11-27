@@ -8,12 +8,13 @@ from commcare_connect.program.tests.factories import _get_default_currency
 from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
+    SolicitationApplicationReview,
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
     SolicitationReviewer,
 )
-from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 
 class SolicitationFactory(DjangoModelFactory):
@@ -80,3 +81,14 @@ class SolicitationQuestionFactory(DjangoModelFactory):
 
     class Meta:
         model = SolicitationQuestion
+
+
+class SolicitationApplicationReviewFactory(DjangoModelFactory):
+    application = SubFactory(SolicitationApplicationFactory)
+    reviewer = SubFactory(UserFactory)
+
+    class Params:
+        submitted = Trait(submitted_date=LazyFunction(now))
+
+    class Meta:
+        model = SolicitationApplicationReview

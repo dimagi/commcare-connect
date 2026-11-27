@@ -31,7 +31,7 @@ This directory holds the project's Django HTML templates, organized by feature a
 | `microplanning/`                          | Work areas, groups, clustering modals and maps                              |
 | `organization/`                           | Creating and managing organizations, members and invites                    |
 | `program/`                                | Program manager and network manager views                                   |
-| `solicitation/`                           | Solicitations: listing, publishing, invitations, the marketplace            |
+| `solicitation/`                           | Solicitations: listing, publishing, invitations, applications, the marketplace |
 | `audit/`                                  | Audit reports and their emails                                              |
 | `reports/`                                | KPI and admin reports                                                       |
 | `tasks/`                                  | The assigned-task modal                                                     |

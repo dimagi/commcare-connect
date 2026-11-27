@@ -1,0 +1,13 @@
+{% load i18n %}
+{# Submitted reviews out of the solicitation's assigned reviewers. #}
+{% if record.reviewer_count %}
+  <div class="flex items-center gap-2 min-w-32">
+    <div class="progress-track">
+      <div class="progress-fill bg-brand-indigo"
+           style="width: {% widthratio record.reviewed_count record.reviewer_count 100 %}%"></div>
+    </div>
+    <span class="text-sm">{{ record.reviewed_count }}/{{ record.reviewer_count }}</span>
+  </div>
+{% else %}
+  <span class="hint">{% translate "No reviewers" %}</span>
+{% endif %}

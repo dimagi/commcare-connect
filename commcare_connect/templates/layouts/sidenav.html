@@ -49,7 +49,7 @@
       {% endif %}
       {% switch "solicitations" %}
         <div {% if not request.org %}class="mt-5"{% endif %}
-             x-data="{ open: {% sidenav_group_open 'solicitation' 'marketplace' %} }">
+             x-data="{ open: {% sidenav_group_open 'solicitation' 'received_applications' 'marketplace' %} }">
           {% translate "Solicitations" as solicitations_name %}
           {% include "components/sidenav-group-header.html" with name=solicitations_name icon="file-signature" %}
           <div x-show="open || !sidebarOpen"
@@ -58,6 +58,9 @@
               {% url 'solicitation:list' request.org.slug as solicitation_list_url %}
               {% translate "My solicitations" as my_solicitations_name %}
               {% include "components/sidenav-items.html" with name=my_solicitations_name icon="file-signature" target=solicitation_list_url namespace="solicitation" %}
+              {% url 'received_applications:list' request.org.slug as received_applications_url %}
+              {% translate "Applications" as received_applications_name %}
+              {% include "components/sidenav-items.html" with name=received_applications_name icon="inbox" target=received_applications_url namespace="received_applications" %}
             {% endif %}
             {% url 'marketplace:list' as marketplace_url %}
             {% translate "Marketplace" as marketplace_name %}
