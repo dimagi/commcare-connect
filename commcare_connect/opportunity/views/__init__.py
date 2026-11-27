@@ -128,6 +128,11 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
+from commcare_connect.opportunity.utils.visit_approval import (
+    MissingJustificationError,
+    approvable_visits,
+    approve_user_visits,
+)
 from commcare_connect.opportunity.visit_import import (
     PAYMENT_IMPORT_FORMATS,
     ImportException,
@@ -1072,14 +1077,7 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 @require_manual_visit_verification
 def approve_visits(request, org_slug, opp_id):
     visit_ids = request.POST.getlist("visit_ids[]")
-
-    visits = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
-        .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
-        .prefetch_related("opportunity")
-        .select_related("work_area", "work_area__opportunity_access")
-        .only("status", "review_status", "flagged", "justification", "review_created_on", "work_area")
-    )
+    visits = approvable_visits(request.opportunity, visit_ids)
 
     if len(visits) > max(PAGE_SIZE_OPTIONS):
         return HttpResponseBadRequest(
@@ -1087,44 +1085,11 @@ def approve_visits(request, org_slug, opp_id):
             headers={"HX-Trigger": "form_error"},
         )
 
-    work_areas_to_update = []
-    today = now()
-    for visit in visits:
-        visit.status = VisitValidationStatus.approved
-        visit.review_created_on = today
-        if visit.review_status == VisitReviewStatus.disagree:
-            visit.review_status = VisitReviewStatus.pending
-            visit.review_status_modified_date = today
-        if visit.flagged:
-            justification = request.POST.get("justification")
-            if not justification:
-                return HttpResponse(
-                    "Justification is mandatory for flagged visits.",
-                    status=400,
-                    headers={"HX-Trigger": "form_error"},
-                )
-            visit.justification = justification
-        if visit.work_area:
-            work_areas_to_update.append(visit.work_area)
-
-    user_ids = list(visits.values_list("user_id", flat=True).distinct())
-    approved_count = UserVisit.objects.bulk_update(
-        visits,
-        [
-            "status",
-            "status_modified_date",
-            "review_created_on",
-            "review_status",
-            "review_status_modified_date",
-            "justification",
-        ],
-    )
-    if user_ids:
-        update_payment_accrued(opportunity=request.opportunity, users=user_ids, incremental=True)
+    try:
+        approved_count = approve_user_visits(request.opportunity, visits, request.POST.get("justification"))
+    except MissingJustificationError as error:
+        return HttpResponse(str(error), status=400, headers={"HX-Trigger": "form_error"})
     send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
-
-    for work_area in work_areas_to_update:
-        work_area.update_status()
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
