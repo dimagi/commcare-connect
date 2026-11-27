@@ -235,14 +235,14 @@ flowchart LR
     B2 --> U
 ```
 
-| Trigger                              | Entry point                                                                  | Works recalculated                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Form received                        | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)` | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
-| Bulk approve visits                  | `views.approve_visits` → `update_payment_accrued(incremental=True)`          | Works not yet approved with`saved_approved_count=0`                             |
-| Reject visits                        | `views.reject_visits` → `update_payment_accrued()`                           | All of the worker's works                                                       |
-| PM review                            | `views.user_visit_review` → `update_payment_accrued()`                       | All of the worker's works                                                       |
-| Visit or review status imports       | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)              | All works except`rejected`                                                      |
-| Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)        | All works except`rejected`                                                      |
+| Trigger                              | Entry point                                                                             | Works recalculated                                                              |
+| ------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Form received                        | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)`            | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
+| Bulk approve visits                  | `utils.visit_approval.approve_user_visits` → `update_payment_accrued(incremental=True)` | Works not yet approved with`saved_approved_count=0`                             |
+| Reject visits                        | `views.reject_visits` → `update_payment_accrued()`                                      | All of the worker's works                                                       |
+| PM review                            | `views.user_visit_review` → `update_payment_accrued()`                                  | All of the worker's works                                                       |
+| Visit or review status imports       | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)                         | All works except`rejected`                                                      |
+| Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)                   | All works except`rejected`                                                      |
 
 **Incremental** skips works that are already processed (approved, or with `saved_approved_count > 0`), so only works still waiting on approval are recalculated. **Full** recalculates every one of the worker's works.
 
