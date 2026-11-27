@@ -1,8 +1,10 @@
-# ADR-0003: One access model for UI and API
+# ADR-0014: One access model for UI and API
 
 **Status:** Proposed
 
 **Author:** Charl Smit · **Created:** 2026-11-19
+
+**Extends:** [ADR-0011](0011-organization-scoped-access-levels.md)
 
 ## Context
 

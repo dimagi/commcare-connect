@@ -64,8 +64,6 @@ nav = [
   { "Architecture decisions" = [
     { "ADR-0001: Database trigger change history" = "adr/0001-database-trigger-change-history.md" },
     { "ADR-0002: TypeScript for front-end modules" = "adr/0002-typescript-for-front-end-modules.md" },
-    { "ADR-0003: One access model for UI and API" = "adr/0003-one-access-model-for-ui-and-api.md" },
-    { "ADR-0004: Shared service layer for UI and API" = "adr/0004-shared-service-layer-for-ui-and-api.md" },
     { "ADR-0003: Unit of payable work" = "adr/0003-completed-work-unit-of-payable-work.md" },
     { "ADR-0004: Per-worker claim limits" = "adr/0004-per-worker-claim-limits.md" },
     { "ADR-0005: Visit status at ingest" = "adr/0005-visit-status-at-ingest.md" },
@@ -77,6 +75,8 @@ nav = [
     { "ADR-0011: Organization access levels" = "adr/0011-organization-scoped-access-levels.md" },
     { "ADR-0012: Worker identity" = "adr/0012-worker-identity-connectid-and-hq.md" },
     { "ADR-0013: One active opportunity per app" = "adr/0013-one-active-opportunity-per-app.md" },
+    { "ADR-0014: One access model for UI and API" = "adr/0014-one-access-model-for-ui-and-api.md" },
+    { "ADR-0015: Shared service layer for UI and API" = "adr/0015-shared-service-layer-for-ui-and-api.md" },
   ] },
   { "Design docs" = [
     { "Program access redesign" = "design/2026-08-17-program-access-redesign.md" },
