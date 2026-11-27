@@ -505,6 +505,11 @@
     @apply text-xs;
   }
 
+  /* A crumb with no page to link to. */
+  .breadcrumb li span {
+    @apply cursor-default text-xs;
+  }
+
   .breadcrumb li i {
     @apply text-xs;
   }
@@ -622,6 +627,11 @@
 
   .base-input:focus {
     @apply outline-brand-indigo outline-1;
+  }
+
+  /* A compact base-input, for filters in a page's toolbar. */
+  .base-input-sm {
+    @apply h-8 text-sm;
   }
 }
 

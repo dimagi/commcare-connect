@@ -4,6 +4,7 @@ from commcare_connect.solicitation.views import (
     MarketplaceAttachmentView,
     MarketplaceDetailView,
     MarketplaceListView,
+    ReceivedApplicationsView,
     SolicitationCancelView,
     SolicitationCloseView,
     SolicitationCriteriaView,
@@ -42,4 +43,9 @@ marketplace_urlpatterns = [
         view=MarketplaceAttachmentView.as_view(),
         name="attachment",
     ),
+]
+
+# The applications a posting organization's solicitations received.
+received_application_urlpatterns = [
+    path("", view=ReceivedApplicationsView.as_view(), name="list"),
 ]

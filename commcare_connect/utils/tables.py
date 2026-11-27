@@ -4,6 +4,7 @@ from datetime import timedelta
 from functools import cached_property
 
 import django_tables2 as tables
+from django.db.models import F
 from django.utils.timezone import is_aware, localtime  # For timezone handling
 from django.utils.translation import gettext_lazy as _
 from django_tables2.data import TableQuerysetData
@@ -27,6 +28,14 @@ def merge_attrs(*dicts):
         for key, val in d.items():
             merged.setdefault(key, {}).update(val)
     return merged
+
+
+def order_empty_last(queryset, field, is_descending):
+    """Orders a table's queryset by ``field`` with empty values last in either direction, and the primary key
+    keeping equal values in a stable order across pages. Returns what a table's ``order_<column>`` method returns."""
+    value = F(field)
+    ordering = value.desc(nulls_last=True) if is_descending else value.asc(nulls_last=True)
+    return queryset.order_by(ordering, "pk"), True
 
 
 class OrgContextTable(tables.Table):
