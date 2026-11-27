@@ -23,9 +23,11 @@ from commcare_connect.opportunity.models import (
 
 
 class LearnModuleSerializer(serializers.ModelSerializer):
+    time_estimate_minutes = serializers.IntegerField(source="estimated_minutes", read_only=True)
+
     class Meta:
         model = LearnModule
-        fields = ["slug", "name", "description", "time_estimate", "id"]
+        fields = ["slug", "name", "description", "time_estimate", "time_estimate_minutes", "id"]
 
 
 class CommCareAppSerializer(serializers.ModelSerializer):

@@ -115,13 +115,13 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 
 `received_on` is validated but not used.
 
-| Block              | App     | Key fields                                                                  |
-| ------------------ | ------- | --------------------------------------------------------------------------- |
-| `module`           | learn   | `@id` (slug), `name`, `description`, `time_estimate`                        |
-| `assessment`       | learn   | `user_score`                                                                |
-| `deliver`          | deliver | `@id` (slug), `name`, `entity_id`, `entity_name`, `work_area_id` (optional) |
-| `task`             | deliver | `@id` (task type slug)                                                      |
-| `work_area_update` | deliver | `work_area_id`, `status`, `reason`, `photo_evidence`, `additional_details`  |
+| Block              | App     | Key fields                                                                                       |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------ |
+| `module`           | learn   | `@id` (slug), `name`, `description`, `time_estimate` (hours), `time_estimate_minutes` (optional) |
+| `assessment`       | learn   | `user_score`                                                                                     |
+| `deliver`          | deliver | `@id` (slug), `name`, `entity_id`, `entity_name`, `work_area_id` (optional)                      |
+| `task`             | deliver | `@id` (task type slug)                                                                           |
+| `work_area_update` | deliver | `work_area_id`, `status`, `reason`, `photo_evidence`, `additional_details`                       |
 
 **Not re-validated:** Connect stores the form's username, timestamps and GPS as sent. `timeStart` is device time, so a wrong phone clock shifts the visit date and the daily-limit day.
 
@@ -129,7 +129,7 @@ Only these fields are read. Example payloads are in `tests/xforms.py`.
 
 ### Learn forms
 
-- **Modules** (`process_learn_modules`): one `CompletedModule` per block, and `LearnModule` is created on first sight. When learning reaches 100%, `completed_learn_date` is set to the latest of each module's _earliest_ completion, so a re-taken module doesn't move it.
+- **Modules** (`process_learn_modules`): one `CompletedModule` per block, and `LearnModule` is created on first sight. Minutes are the source of truth: when `time_estimate_minutes` is present, hours are derived from it (rounded up, for app versions that still read hours) and a disagreeing `time_estimate` is logged and ignored. Older forms have only `time_estimate`, so minutes fall back to hours × 60. When learning reaches 100%, `completed_learn_date` is set to the latest of each module's _earliest_ completion, so a re-taken module doesn't move it.
 - **Assessments** (`process_assessments`): `passed = user_score >= app.passing_score`. Only one `Assessment` per `xform_id`, so each attempt is recorded separately. If HQ resends the same form (same `xform_id`), it is rejected with a 400.
 - **Access:** learn processing looks up `OpportunityAccess` without a guard, so a learn form from a worker with no access returns a 500 (unlike deliver, which returns a 400).
 
@@ -218,7 +218,7 @@ Attachments are fetched from HQ's form attachment API with the opportunity's `HQ
 `ProcessingError` messages, grouped by where they are raised:
 
 - **Routing:** the token's OAuth app has no `HQServer` (detail is the generic "A server error occurred."); `Commcare User <username> not found`; `CommCare App <id> not found on <server>`; `Multiple active opportunities found for CommCare app <id>.`
-- **Learn:** `User score must be an integer`; `Learn Assessment is already completed`.
+- **Learn:** `User score must be an integer`; `Learn Assessment is already completed`; `Learn module <slug> has no time estimate`.
 - **Deliver:** `User does not have access to opportunity …`; `Payment unit is not configured for the deliver unit …`; `User has not claimed opportunity …`; `User has no claim limit for payment unit …`; `Invalid work area case id specified …`; `Work area not found`.
 - **Work area update:** pending request already exists; user not assigned to the work area; invalid status or transition; missing `reason` / `photo_evidence`; photo attachment not found on the form.
 

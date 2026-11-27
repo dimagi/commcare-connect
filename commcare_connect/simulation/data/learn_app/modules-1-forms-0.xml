@@ -10,6 +10,7 @@
               <name>Module 3</name>
               <description>Module 3 in the series</description>
               <time_estimate>3</time_estimate>
+              <time_estimate_minutes>150</time_estimate_minutes>
             </module>
           </module_3>
           <orx:meta xmlns:cc="http://commcarehq.org/xforms">

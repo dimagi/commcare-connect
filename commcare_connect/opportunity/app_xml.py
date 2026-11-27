@@ -9,6 +9,7 @@ import httpx
 from django.core.cache import cache
 
 from commcare_connect.opportunity.models import CommCareApp
+from commcare_connect.opportunity.models.learn import resolve_time_estimate
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 XMLNS = "http://commcareconnect.com/data/v1/learn"
@@ -21,6 +22,7 @@ class Module:
     name: str
     description: str
     time_estimate: int
+    time_estimate_minutes: int | None = None
 
 
 @dataclass
@@ -104,8 +106,10 @@ def extract_modules(xml: ET.Element):
         slug = block.get("id")
         name = get_element_text(block, "name")
         description = get_element_text(block, "description")
-        time_estimate = get_element_text(block, "time_estimate")
-        yield Module(slug, name, description, int(time_estimate) if time_estimate is not None else None)
+        hours, minutes = resolve_time_estimate(
+            get_element_text(block, "time_estimate"), get_element_text(block, "time_estimate_minutes"), slug
+        )
+        yield Module(slug, name, description, hours, minutes)
 
 
 def extract_deliver_units(form_xml):

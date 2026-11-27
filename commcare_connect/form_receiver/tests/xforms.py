@@ -43,8 +43,7 @@ MOCK_FORM = {
 MODULE_XML_TEMPLATE = """<data>
 <module xmlns="{xmlns}" id="{id}">
     <name>{name}</name>
-    <description>{description}</description>
-    <time_estimate>{time_estimate}</time_estimate>
+    <description>{description}</description>{time_estimate_xml}
 </module>
 </data>
 """
@@ -104,15 +103,20 @@ class LearnModuleJsonFactory(factory.StubFactory):
     name = factory.Faker("name")
     description = factory.Faker("text")
     time_estimate = factory.Faker("pyint", min_value=1, max_value=10)
+    time_estimate_minutes = None
 
     @factory.lazy_attribute
     def json(self):
+        estimates = {"time_estimate": self.time_estimate, "time_estimate_minutes": self.time_estimate_minutes}
+        time_estimate_xml = "".join(
+            f"\n    <{tag}>{value}</{tag}>" for tag, value in estimates.items() if value is not None
+        )
         xml = MODULE_XML_TEMPLATE.format(
             xmlns=CCC_LEARN_XMLNS,
             id=self.id,
             name=self.name,
             description=self.description,
-            time_estimate=self.time_estimate,
+            time_estimate_xml=time_estimate_xml,
         )
         _, module = xml2json(xml)
         return module
