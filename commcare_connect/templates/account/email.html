@@ -17,7 +17,7 @@
       <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% translate "E-mail Addresses" %}</h2>
       {% if user.emailaddress_set.all %}
         <p class="mb-4 text-sm text-gray-700">
-          {% translate 'The following e-mail addresses are associated with your account:' %}
+          {% translate "The following e-mail addresses are associated with your account:" %}
         </p>
         <form action="{% url 'account_email' %}" method="post">
           {% csrf_token %}
@@ -58,17 +58,17 @@
               <button class="button button-md outline-style text-red-600 hover:bg-red-50 border-red-300 hover:border-red-400"
                       type="submit"
                       name="action_remove">
-                <i class="fa-solid fa-trash mr-1"></i> {% translate 'Remove' %}
+                <i class="fa-solid fa-trash mr-1"></i> {% translate "Remove" %}
               </button>
               <button class="button button-md primary-light"
                       type="submit"
                       name="action_send">
-                <i class="fa-solid fa-rotate-right mr-1"></i> {% translate 'Re-send Verification' %}
+                <i class="fa-solid fa-rotate-right mr-1"></i> {% translate "Re-send Verification" %}
               </button>
               <button class="button button-md primary-dark"
                       type="submit"
                       name="action_primary">
-                <i class="fa-solid fa-check mr-1"></i> {% translate 'Make Primary' %}
+                <i class="fa-solid fa-check mr-1"></i> {% translate "Make Primary" %}
               </button>
             </div>
           </div>
@@ -77,7 +77,7 @@
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded"
              role="alert">
           <p class="text-sm text-yellow-700">
-            <strong class="font-bold">{% translate 'Warning:' %}</strong> {% translate "You currently do not have any e-mail address set up. You should really add an e-mail address so you can receive notifications, reset your password, etc." %}
+            <strong class="font-bold">{% translate "Warning:" %}</strong> {% translate "You currently do not have any e-mail address set up. You should really add an e-mail address so you can receive notifications, reset your password, etc." %}
           </p>
         </div>
       {% endif %}
@@ -104,7 +104,7 @@
 {% endblock content %}
 {% block inline_javascript %}
   {{ block.super }}
-  <script type="text/javascript">
+  <script>
     window.addEventListener('DOMContentLoaded', function () {
       const message = "{% translate 'Do you really want to remove the selected e-mail address?' %}";
       const actions = document.getElementsByName('action_remove');

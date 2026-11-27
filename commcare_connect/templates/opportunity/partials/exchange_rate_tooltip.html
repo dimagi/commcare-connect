@@ -1,8 +1,9 @@
 {% load i18n %}
 {# H008: this is rendered as the value of a double-quoted x-tooltip attribute (see #}
-{# value_with_icon_tooltip in commcare_connect/opportunity/tables.py), so every #}
-{# attribute below must use single quotes instead. #}
-{# djlint:off H008 #}
+{# value_with_icon_tooltip in commcare_connect/opportunity/tables/__init__.py), so every #}
+{# attribute below must use single quotes. djlint is off for the whole file because its #}
+{# reformatter rewrites them to double quotes, which ends the attribute early. #}
+{# djlint:off #}
 <div class='text-left text-sm leading-snug'>
   <p class='font-semibold'>{% translate "How the exchange rate is set" %}</p>
   <p class='mt-1 text-white/70'>

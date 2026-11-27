@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load i18n %}
 {% block has_sidebar %}false{% endblock %}
 {% block sidenav %}{% endblock %}
@@ -10,7 +10,8 @@
       {% translate "You have been invited to a job" %} <strong>{{ opportunity_name }}</strong>.
     </p>
     <p class="mb-6">{% translate "Click the button below to accept it." %}</p>
-    <button hx-post="{{ request.path }}"
+    <button type="button"
+            hx-post="{{ request.path }}"
             hx-target="#accept-invite"
             hx-swap="outerHTML"
             class="bg-brand-mango text-white px-4 py-2 rounded">{% translate "Accept Invitation" %}</button>

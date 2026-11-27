@@ -1,4 +1,4 @@
-{% extends 'program/program_base.html' %}
+{% extends "program/program_base.html" %}
 {% load i18n %}
 {% block inner %}
   <div class="flex flex-col gap-4">
@@ -9,11 +9,11 @@
         <div class="flex w-full justify-between">
           <!-- program details -->
           <div class="flex items-center gap-2 font-normal">
-            {% if program.status == 'invited' %}
+            {% if program.status == "invited" %}
               <div class="h-2 w-2 bg-brand-marigold rounded-full"></div>
-            {% elif program.status == 'applied' %}
+            {% elif program.status == "applied" %}
               <div class="h-2 w-2 bg-brand-deep-purple rounded-full"></div>
-            {% elif program.status == 'accepted' %}
+            {% elif program.status == "accepted" %}
               <div class="h-2 w-2 bg-green-600 rounded-full"></div>
             {% endif %}
             <p class="hint">{{ program.organization.name }}</p>
@@ -58,18 +58,20 @@
           </div>
         </div>
         <div class="flex flex-row-reverse">
-          {% if program.status == 'invited' %}
-            <button {% if request.org_membership.is_admin %} hx-post="{% url "program:apply_or_decline_application" request.org.slug program.program_id program.application_program_application_id "apply" %}" hx-swap="outerHTML" hx-target="body" {% else %} disabled {% endif %}
+          {% if program.status == "invited" %}
+            <button type="button"
+                    {% if request.org_membership.is_admin %} hx-post="{% url "program:apply_or_decline_application" request.org.slug program.program_id program.application_program_application_id "apply" %}" hx-swap="outerHTML" hx-target="body" {% else %} disabled {% endif %}
                     class="button button-sm primary-dark">
               <i class="fa-solid fa-circle-plus text-white"></i> {% translate "Apply to Program" %}
             </button>
-          {% elif program.status == 'applied' %}
-            <button class="button button-sm neutral lg:self-end" disabled>
+          {% elif program.status == "applied" %}
+            <button type="button" class="button button-sm neutral lg:self-end" disabled>
               <i class="fa-solid fa-circle-check text-green-600"></i> {% translate "Apply to Program" %}
             </button>
-          {% elif program.status == 'accepted' %}
+          {% elif program.status == "accepted" %}
             {% if program.opportunities_for_org %}
-              <button class="button button-sm outline-style w-full"
+              <button type="button"
+                      class="button button-sm outline-style w-full"
                       @click="showOpp = !showOpp">
                 <span class="relative z-20"
                       x-text="showOpp ? '{% translate "Hide Opportunities" %}' : '{% translate "View Opportunities" %}'"></span>
@@ -79,7 +81,7 @@
             {% endif %}
           {% endif %}
         </div>
-        {% if program.status == 'accepted' %}
+        {% if program.status == "accepted" %}
           {% if program.opportunities_for_org %}
             <div id="opportunity-container"
                  class="flex flex-col gap-y-4 py-4"

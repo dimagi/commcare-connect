@@ -44,7 +44,7 @@
       {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
     {% if not request.opp_access_level.has_standard or opportunity.has_ended %}
-      <button disabled class="button-icon shadow-sm">
+      <button type="button" disabled class="button-icon shadow-sm">
         <i class="fa-solid fa-plus"></i>
       </button>
     {% else %}

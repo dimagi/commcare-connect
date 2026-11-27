@@ -31,13 +31,13 @@
         <!-- Details Tab -->
         <li @click="selectedTab = 'details';"
             :class="{'active': selectedTab !== 'details'}">
-          <span>{% trans 'Details' %}</span>
+          <span>{% trans "Details" %}</span>
           <div x-show="selectedTab === 'details'"></div>
         </li>
         {% if can_manage_members %}
           <li @click="selectedTab = 'members';"
               :class="{'active': selectedTab !== 'members'}">
-            <span>{% trans 'Members' %}</span>
+            <span>{% trans "Members" %}</span>
             <div x-show="selectedTab === 'members'"></div>
           </li>
         {% endif %}
@@ -46,18 +46,20 @@
       {% if can_manage_members %}
         <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
           <span x-show="selected.length > 0" class="hint">
-            <span x-text="selected.length"></span> {% trans 'selected' %}
+            <span x-text="selected.length"></span> {% trans "selected" %}
           </span>
-          <button class="button button-md negative-outline"
+          <button type="button"
+                  class="button button-md negative-outline"
                   :disabled="selected.length === 0"
                   @click="showConfirmRemoveMembershipModal = true">
             <i class="fa-solid fa-trash"></i>
-            {% trans 'Remove Member(s)' %}
+            {% trans "Remove Member(s)" %}
           </button>
-          <button class="button button-md primary-dark"
+          <button type="button"
+                  class="button button-md primary-dark"
                   @click="showAddMemberModal = true">
             <i class="fa-solid fa-plus"></i>
-            {% trans 'Add Members' %}
+            {% trans "Add Members" %}
           </button>
         </div>
       {% endif %}

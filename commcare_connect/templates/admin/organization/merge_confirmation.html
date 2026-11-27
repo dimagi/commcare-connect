@@ -2,15 +2,15 @@
 {% block breadcrumbs %}
   <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">Home</a>
-    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
-    &rsaquo; <a href="{% url 'admin:organization_organization_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
-    &rsaquo; Merge organizations
+    › <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    › <a href="{% url 'admin:organization_organization_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    › Merge organizations
   </div>
 {% endblock %}
 {% block content %}
   <p class="errornote">
     Merging is irreversible. Every relation below is repointed at the organization you keep, and the other organization is
-    deleted. Run it once and check the result &mdash; there is no undo.
+    deleted. Run it once and check the result — there is no undo.
   </p>
   <form method="post">
     {% csrf_token %}
@@ -43,7 +43,7 @@
       </table>
       <p class="help">
         Only the surviving organization's profile is kept. Nothing above is carried over from the organization you delete
-        &mdash; including <code>program_manager</code> and <code>funder</code>.
+        — including <code>program_manager</code> and <code>funder</code>.
       </p>
     </fieldset>
     <fieldset class="module aligned">
@@ -84,7 +84,7 @@
                 {% if names %}
                   {{ names|join:", " }}
                 {% else %}
-                  &mdash;
+                  —
                 {% endif %}
               </td>
             {% endfor %}

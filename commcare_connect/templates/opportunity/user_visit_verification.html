@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
 {% load django_tables2 %}
 {% load i18n %}
@@ -12,11 +12,11 @@
   <script src="{% static 'bundles/js/mapbox-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="w-full space-y-4">
     {% include "components/worker_page/worker_profile_kpi.html" %}
     {% if show_worker_tasks_tabs %}
-      {% include 'components/worker_page/visit_task_tabs.html' %}
+      {% include "components/worker_page/visit_task_tabs.html" %}
     {% endif %}
     <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
       <div class="col-span-6"
@@ -44,7 +44,8 @@
               <div id="visit-loading-indicator"
                    role="status"
                    class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
-                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent">
+                </div>
                 <span class="sr-only">Loading...</span>
               </div>
             </div>
@@ -57,7 +58,7 @@
 {% endblock %}
 {% block inline_javascript %}
   {{ block.super }}
-  <script type="text/javascript">
+  <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('visitVerification', (initialTab, defaultPage) => ({
       activeTab: initialTab,

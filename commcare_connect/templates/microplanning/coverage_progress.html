@@ -1,10 +1,10 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load render_table from django_tables2 %}
 {% load i18n %}
 {% block content %}
   <div class="p-4">
-    {% include 'components/breadcrumbs.html' with path=path %}
-    {% include 'microplanning/missing_deliver_units_banner.html' %}
+    {% include "components/breadcrumbs.html" with path=path %}
+    {% include "microplanning/missing_deliver_units_banner.html" %}
     {# Page header: title + the opportunity-wide Ward Saturation Goal #}
     <header class="metric-container text-white mb-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -53,7 +53,7 @@
     <section class="mb-8">
       <div class="flex items-center justify-between mb-3">
         <h2 class="title text-xl">{% translate "Core Metrics" %}</h2>
-        {% include 'microplanning/coverage_download_button.html' with hrefs=export_hrefs.ward %}
+        {% include "microplanning/coverage_download_button.html" with hrefs=export_hrefs.ward %}
       </div>
       <div class="card_bg !p-0 overflow-hidden">{% render_table ward_table %}</div>
     </section>
@@ -61,7 +61,7 @@
     <section class="mb-8">
       <div class="flex items-center justify-between mb-3">
         <h2 class="title text-xl">{% translate "Metrics by Work Area Group" %}</h2>
-        {% include 'microplanning/coverage_download_button.html' with hrefs=export_hrefs.wag %}
+        {% include "microplanning/coverage_download_button.html" with hrefs=export_hrefs.wag %}
       </div>
       <div class="card_bg !p-0 overflow-hidden">{% render_table wag_table %}</div>
     </section>

@@ -11,7 +11,8 @@
         <div x-data=" { open: false, hasOrg: {{ request.org|yesno:'true,false' }}, hasMembership: {{ request.org_membership|yesno:'true,false' }}, isSuperuser: {{ request.user.is_superuser|yesno:'true,false' }}, get hasSelectedOrg() { return this.hasOrg && (this.hasMembership || this.isSuperuser) }, membershipsCount: {{ request.memberships|length }}, canCreateOrg: {{ perms.users.workspace_entity_management_access|yesno:'true,false' }}, get showDropdown() { return this.membershipsCount > 1 || (!this.hasSelectedOrg && this.membershipsCount > 0) || this.canCreateOrg } }"
              @click.away="open = false"
              class="relative mx-8">
-          <button @click="open = !open"
+          <button type="button"
+                  @click="open = !open"
                   class="flex items-center gap-2 focus:outline-none">
             <div class="text-left">
               <div x-show="hasSelectedOrg" x-transition.opacity x-cloak>
@@ -65,7 +66,7 @@
         </div>
         <!-- User Profile -->
         <div x-data="{ open: false }" @click.away="open = false" class="relative">
-          <button @click="open = !open" class="focus:outline-none">
+          <button type="button" @click="open = !open" class="focus:outline-none">
             <div class="cursor-pointer overflow-hidden">
               {% user_avatar user=request.user size="small" color_classes="bg-brand-cornflower-blue text-white" %}
             </div>

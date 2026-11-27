@@ -1,4 +1,5 @@
 {% load static i18n humanize %}
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -104,7 +105,7 @@
         {% if main_contact %}
           <p>
             {{ main_contact.email }}
-            {% if main_contact.phone %}&middot; {{ main_contact.phone }}{% endif %}
+            {% if main_contact.phone %}· {{ main_contact.phone }}{% endif %}
           </p>
         {% endif %}
       </div>

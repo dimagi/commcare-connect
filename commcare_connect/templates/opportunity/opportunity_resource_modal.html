@@ -35,17 +35,20 @@
             </li>
           </ul>
           <!-- Close button -->
-          <button @click="showModal = false;" id="button" class="button-icon">
+          <button type="button"
+                  @click="showModal = false;"
+                  id="button"
+                  class="button-icon">
             <i class="fa-solid fa-xmark text-brand-deep-purple"></i>
           </button>
         </div>
         <!-- Modal body / Tab content -->
-        <div class="z-50 bg-white ">
+        <div class="z-50 bg-white">
           <div x-show="selectedTab === 'Learn App'"
                hx-get="{% url 'opportunity:learn_module_table' request.org.slug opportunity.opportunity_id %}"
                hx-trigger="tabShown from:body"
                hx-swap="innerHTML"
-               class=" rounded-lg h-full w-full">
+               class="rounded-lg h-full w-full">
             <div class="flex justify-center items-center h-full">
               <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
             </div>

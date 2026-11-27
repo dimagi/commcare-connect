@@ -43,33 +43,33 @@
         </div>
         {% for panel in stat.panels %}
           {% if panel.url %}<a href="{{ panel.url }}">{% endif %}
-            <div class="flex gap-2 rounded-lg p-4 items-center bg-brand-indigo {{ panel.body }}">
-              <div class="w-10 h-10 flex items-center justify-center text-white rounded-md {{ panel.icon_bg }}">
-                <i class="fa-solid {{ panel.icon }}"></i>
-              </div>
-              <div class="flex-1">
-                <h3 class="text-xs text-white {{ panel.text_color }}">{{ panel.name }}</h3>
-                <p class="text-sm text-white {{ panel.text_color }}">{{ panel.status }}</p>
-              </div>
-              <h3 class="text-2xl font-medium text-white {{ panel.text_color }}">{{ panel.value }}</h3>
-              <div>
-                {% if panel.incr is not None %}
-                  <span x-data
-                        x-tooltip.raw="Increment in last 24 hours"
-                        class="badge badge-md positive-dark">{{ panel.incr }} ↑</span>
-                {% else %}
-                  <span class="inline-block h-6">&nbsp;</span>
-                {% endif %}
-              </div>
-              <div>
-                {% if panel.url %}
-                  <i class="fa-solid fa-arrow-up-right-from-square text-brand-sky text-lg {{ panel.text_color }}"></i>
-                {% else %}
-                  <i class="fa-solid fa-arrow-up-right-from-square text-lg invisible"></i>
-                {% endif %}
-              </div>
+          <div class="flex gap-2 rounded-lg p-4 items-center bg-brand-indigo {{ panel.body }}">
+            <div class="w-10 h-10 flex items-center justify-center text-white rounded-md {{ panel.icon_bg }}">
+              <i class="fa-solid {{ panel.icon }}"></i>
             </div>
-            {% if panel.url %}</a>{% endif %}
+            <div class="flex-1">
+              <h3 class="text-xs text-white {{ panel.text_color }}">{{ panel.name }}</h3>
+              <p class="text-sm text-white {{ panel.text_color }}">{{ panel.status }}</p>
+            </div>
+            <h3 class="text-2xl font-medium text-white {{ panel.text_color }}">{{ panel.value }}</h3>
+            <div>
+              {% if panel.incr is not None %}
+                <span x-data
+                      x-tooltip.raw="Increment in last 24 hours"
+                      class="badge badge-md positive-dark">{{ panel.incr }} ↑</span>
+              {% else %}
+                <span class="inline-block h-6">&nbsp;</span>
+              {% endif %}
+            </div>
+            <div>
+              {% if panel.url %}
+                <i class="fa-solid fa-arrow-up-right-from-square text-brand-sky text-lg {{ panel.text_color }}"></i>
+              {% else %}
+                <i class="fa-solid fa-arrow-up-right-from-square text-lg invisible"></i>
+              {% endif %}
+            </div>
+          </div>
+          {% if panel.url %}</a>{% endif %}
         {% endfor %}
       </div>
     {% endfor %}

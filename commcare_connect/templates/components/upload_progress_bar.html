@@ -15,7 +15,7 @@
       <div x-data="{ open: false, openModal() { this.open = true }, closeModal() { this.open = false } }"
            @keydown.escape.window="closeModal()"
            id="exportStatus">
-        <a class="w-full text-sm text-gray-700 underline cursor-pointer "
+        <a class="w-full text-sm text-gray-700 underline cursor-pointer"
            @click="openModal()">All done! View status.</a>
         <div x-cloak
              x-show="open"
@@ -29,7 +29,8 @@
                aria-labelledby="exportStatusLabel">
             <div class="modal-content p-4 flex items-center justify-between">
               <h5 class="text-lg font-medium" id="exportStatusLabel">Status</h5>
-              <button @click="closeModal()"
+              <button type="button"
+                      @click="closeModal()"
                       class="button-icon"
                       aria-label="Close"
                       id="exportStatusClose">

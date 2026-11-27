@@ -1,10 +1,10 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load i18n %}
 {% block title %}{{ request.org }} - {{ object.name }}{% endblock %}
 {% block content %}
   <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }} }"
        class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
-    {% include 'components/breadcrumbs.html' with path=path %}
+    {% include "components/breadcrumbs.html" with path=path %}
     {% if export_task_id %}
       <div class="flex items-center justify-end">
         <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
@@ -84,16 +84,17 @@
             </div>
             <!--Separator Between basic detail columns-->
             {% if not forloop.last and forloop.counter != 2 %}
-              <div class="w-0.5 h-10 {% if not object.is_test %}bg-white{% else %}bg-slate-200{% endif %} bg-opacity-30"></div>
+              <div class="w-0.5 h-10 {% if not object.is_test %}bg-white{% else %}bg-slate-200{% endif %} bg-opacity-30">
+              </div>
             {% endif %}
           {% endfor %}
           <div>
             {% if object.is_active %}
-              <span class="badge badge-md positive-dark">{% trans 'Active' %}</span>
+              <span class="badge badge-md positive-dark">{% trans "Active" %}</span>
             {% elif object.active and object.has_ended %}
-              <span class="badge badge-md warning-dark">{% trans 'Ended' %}</span>
+              <span class="badge badge-md warning-dark">{% trans "Ended" %}</span>
             {% else %}
-              <span class="badge badge-md negative-dark">{% trans 'Inactive' %}</span>
+              <span class="badge badge-md negative-dark">{% trans "Inactive" %}</span>
             {% endif %}
           </div>
         </div>

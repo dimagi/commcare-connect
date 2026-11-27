@@ -5,7 +5,7 @@
 {% load duration_minutes %}
 {% load tailwind_filters %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
     <h2 class="title">{% translate "Verification Rules Configuration" %}</h2>
     <form method="post" class="flex flex-col gap-4 space-y-6">

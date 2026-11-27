@@ -1,5 +1,6 @@
 {% load i18n %}
-<div class="flex flex-col gap-6" x-data="{ slides: [
+<div class="flex flex-col gap-6"
+     x-data="{ slides: [
   {% for image in images %}
     { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=completed_task.opportunity_access.opportunity.opportunity_id blob_id=image.blob_id %}', alt: '' },
   {% endfor %}
@@ -63,13 +64,15 @@
     <div class="flex justify-between">
       <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
       <div class="flex gap-2">
-        <button class="button-icon"
+        <button type="button"
+                class="button-icon"
                 @click="prevSlide()"
                 :disabled="currentIndex === 0">
           <i class="cursor-pointer fa-solid fa-arrow-left"
              :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
         </button>
-        <button class="button-icon"
+        <button type="button"
+                class="button-icon"
                 @click="nextSlide()"
                 :disabled="currentIndex + visibleSlides >= slides.length">
           <i class="cursor-pointer fa-solid fa-arrow-right"
@@ -80,6 +83,7 @@
     <div class="grid grid-cols-9 gap-4 cursor-pointer">
       <template x-for="(slide, index) in visibleImages" :key="index">
         <img :src="slide.src"
+             alt=""
              :alt="slide.alt"
              class="object-cover col-span-3 rounded-2xl aspect-square hover:opacity-90 transition-opacity"
              @click="openPopup(index + currentIndex)" />
@@ -105,16 +109,19 @@
       <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
         <div class="flex justify-between mb-2">
           <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
-          <button class="button-icon cursor-pointer" @click="closePopup()">
+          <button type="button"
+                  class="button-icon cursor-pointer"
+                  @click="closePopup()">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
         <!-- Main Image -->
         <div class="relative">
           <img :src="slides[modalCurrentIndex].src"
+               alt=""
                :alt="slides[modalCurrentIndex].alt"
                class="object-contain w-full rounded-lg max-h-[60vh]" />
-          <button class="absolute bottom-2 right-2 button-icon">
+          <button type="button" class="absolute bottom-2 right-2 button-icon">
             <a :href="slides[modalCurrentIndex].src"
                download="downloaded-image.jpg"
                aria-label="Download Image">
@@ -124,7 +131,8 @@
         </div>
         <!-- Thumbnails -->
         <div class="relative w-full flex items-center justify-center gap-4 mt-4">
-          <button class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+          <button type="button"
+                  class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
                   @click="prevModal()"
                   :disabled="modalCurrentIndex === 0"
                   :class="{'opacity-50': modalCurrentIndex === 0}">
@@ -135,6 +143,7 @@
               <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer"
                    @click="setModalImage(slides.indexOf(slide))">
                 <img :src="slide.src"
+                     alt=""
                      :alt="slide.alt"
                      class="object-cover w-full h-full rounded-lg" />
                 <div x-show="slides.indexOf(slide) === modalCurrentIndex"
@@ -143,7 +152,8 @@
               </div>
             </template>
           </div>
-          <button class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+          <button type="button"
+                  class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
                   @click="nextModal()"
                   :disabled="modalCurrentIndex >= slides.length - 1"
                   :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">

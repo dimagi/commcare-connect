@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static i18n %}
 {% load render_table from django_tables2 %}
 {% load crispy_forms_tags %}
@@ -55,7 +55,7 @@
             <div class="modal">
               <div class="header text-lg font-semibold text-brand-deep-purple">
                 <h1>{% trans "Filters" %}</h1>
-                <button @click="showFilterModal = false">
+                <button type="button" @click="showFilterModal = false">
                   <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
               </div>

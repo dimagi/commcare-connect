@@ -10,7 +10,8 @@
        class="modal w-full !max-w-2xl">
     <div class="header flex justify-between items-center">
       <h2 class="title">{% translate "Edit Task Type" %}</h2>
-      <button @click="showEditTaskTypeModal = false"
+      <button type="button"
+              @click="showEditTaskTypeModal = false"
               class="button-icon"
               aria-label="{% translate 'Close' %}">
         <i class="fa-solid fa-xmark text-xl"></i>

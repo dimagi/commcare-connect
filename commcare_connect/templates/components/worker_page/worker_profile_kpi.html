@@ -87,7 +87,9 @@
           <i class="fa-solid ml-2 cursor-pointer"
              :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
              @click="isOpen = !isOpen"></i>
-        </div>
+        {% endif %}
+      </div>
+      {% if last_payment_details %}
         <div x-show="isOpen"
              x-cloak
              @click.outside="isOpen = false"
@@ -102,8 +104,8 @@
               <span class="text-xs text-brand-deep-purple">{{ last_payment_details.opportunity_access.user.name }}</span>
             {% endif %}
           </div>
-        {% endif %}
-      </div>
+        </div>
+      {% endif %}
     </div>
   </div>
 </div>

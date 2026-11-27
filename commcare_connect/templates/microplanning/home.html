@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load i18n static %}
 {% block css %}
   {{ block.super }}
@@ -13,8 +13,8 @@
 {% endblock javascript %}
 {% block content %}
   <div class="min-w-0 mb-4">
-    {% include 'components/breadcrumbs.html' with path=path %}
-    {% include 'microplanning/missing_deliver_units_banner.html' %}
+    {% include "components/breadcrumbs.html" with path=path %}
+    {% include "microplanning/missing_deliver_units_banner.html" %}
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
     <!-- Top header section -->
     <header class="mb-2">
@@ -409,7 +409,8 @@
                   </div>
                 </dl>
                 <div class="mt-4 flex justify-end gap-2">
-                  <button class="button button-md button-outline-rounded"
+                  <button type="button"
+                          class="button button-md button-outline-rounded"
                           @click="openWorkAreaEditModal(selectedFeature._id)">
                     <i class="fa-regular fa-pen-to-square"></i>
                     {% translate "Modify Work Area" %}
@@ -503,7 +504,8 @@
           <aside class="bg-white shadow-md p-4 overflow-auto flex flex-col gap-4 xl:flex-1 min-h-0">
             <!-- Show only unassigned toggle -->
             <div class="flex items-center justify-between">
-              <label for="unassigned-toggle" class="text-sm text-gray-700">{% translate "Show only unassigned Work Areas" %}</label>
+              <label for="unassigned-toggle"
+                     class="text-sm text-gray-700">{% translate "Show only unassigned Work Areas" %}</label>
               <button id="unassigned-toggle"
                       type="button"
                       role="switch"
@@ -697,10 +699,12 @@
                 </template>
               </div>
               <div class="flex gap-2 justify-between">
-                <button class="button button-md outline-style"
+                <button type="button"
+                        class="button button-md outline-style"
                         @click="showConfirmModal = false"
                         :disabled="isSaving">{% translate "Back to Edit" %}</button>
-                <button class="button button-md primary-dark"
+                <button type="button"
+                        class="button button-md primary-dark"
                         @click="saveAssignment()"
                         :disabled="isSaving">
                   <i x-show="isSaving" class="fa-solid fa-spinner fa-spin mr-1"></i>
@@ -719,7 +723,8 @@
               <p class="text-sm mb-4">{% translate "Your changes won't be saved. Are you sure you want to continue?" %}</p>
               <div class="flex gap-2 justify-between">
                 <a href="{{ request.path }}" class="button button-md outline-style">{% translate "Continue" %}</a>
-                <button class="button button-md primary-dark"
+                <button type="button"
+                        class="button button-md primary-dark"
                         @click="showDiscardModal = false">{% translate "Back to Edit" %}</button>
               </div>
             </div>

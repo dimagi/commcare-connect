@@ -222,7 +222,7 @@
       <main class="pane">
         {% if opened %}
           <article data-opened-email="{{ opened.id }}">
-            <a class="back" href="{% url 'demo_inbox' %}?to={{ owner|urlencode }}">&larr; Back to Inbox</a>
+            <a class="back" href="{% url 'demo_inbox' %}?to={{ owner|urlencode }}">← Back to Inbox</a>
             <h1>
               {{ opened.subject }} <span class="chip">Inbox</span>
               <time>{{ opened.sent_at|naturaltime }}</time>
@@ -241,7 +241,7 @@
                data-email="{{ email.id }}"
                href="{% url 'demo_email' email.id %}?to={{ owner|urlencode }}">
               <span class="row-text"><span class="row-subject">{{ email.subject }}</span>
-              <span class="row-snippet">- {{ email.text|truncatechars:90 }}</span></span>
+                <span class="row-snippet">- {{ email.text|truncatechars:90 }}</span></span>
               <time>{{ email.sent_at|naturaltime }}</time>
             </a>
           {% empty %}

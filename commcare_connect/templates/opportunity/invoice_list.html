@@ -12,7 +12,8 @@
   {{ block.super }}
   {% if exportable_count %}
     <div x-data="{ open: false }" @click.away="open = false" class="relative">
-      <button @click="open = !open"
+      <button type="button"
+              @click="open = !open"
               class="button button-md outline-style flex flex-row items-center space-x-2">
         <i class="fa-solid fa-download text-xs"></i>
         <span>{% translate "Export" %}</span>
@@ -67,7 +68,8 @@
   {% endif %}
   {% if can_create_invoice %}
     <div x-data="{ open: false }" @click.away="open = false" class="relative">
-      <button @click="open = !open"
+      <button type="button"
+              @click="open = !open"
               class="button button-md primary-dark flex flex-row items-center space-x-2">
         {% translate "Create Invoice" %}
         <i :class="open ? 'rotate-180' : ''"
@@ -109,7 +111,8 @@
           {% endfor %}
           {% if older_months %}
             <div x-data="{ open: false }" @click.away="open = false" class="relative">
-              <button @click="open = !open"
+              <button type="button"
+                      @click="open = !open"
                       class="chip chip-md inline-flex items-center gap-2">
                 {% translate "Older" %}
                 <i :class="open ? 'rotate-180' : ''"

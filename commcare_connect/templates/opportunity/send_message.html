@@ -8,7 +8,7 @@
   {% block title %}{{ title }}{% endblock %}
 {% endif %}
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
   <div class="md:max-w-screen-lg mx-auto flex flex-col gap-6">
     {% if form_title %}<h1 class="title">{{ form_title }}</h1>{% endif %}
     <form method="post"
@@ -26,8 +26,8 @@
         </div>
       {% endif %}
       {% if users %}
-        <div class="card_bg flex flex-col gap-4 ">
-          <div class="space-y-4 p-4  bg-gray-100 rounded-lg">
+        <div class="card_bg flex flex-col gap-4">
+          <div class="space-y-4 p-4 bg-gray-100 rounded-lg">
             <p class="title-sm">Select Users*</p>
             <table class="base-table">
               <thead class="table-primary">
