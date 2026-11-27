@@ -1,6 +1,7 @@
 import logging
 
 import httpx
+from django.db.models import Case, When
 from rest_framework.response import Response
 
 from commcare_connect.opportunity.models import HQApiKey
@@ -12,19 +13,43 @@ from commcare_connect.utils.error_codes import ErrorCodes
 logger = logging.getLogger(__name__)
 
 
+# The organization the user last opened, for pages whose URL names none, such as the marketplace.
+CURRENT_ORG_SESSION_KEY = "current_org_slug"
+
+
 def get_organization_for_request(request, view_kwargs):
+    """The organization the URL names; on other pages, the one the user last opened, or else their first."""
     if not request.user.is_authenticated:
         return
 
     org_slug = view_kwargs.get("org_slug", None)
     if org_slug:
         try:
-            return Organization.objects.get(slug=org_slug)
+            organization = Organization.objects.get(slug=org_slug)
         except Organization.DoesNotExist:
             return None
+        remember_organization(request, organization)
+        return organization
 
-    membership = request.user.memberships.select_related("organization").first()
+    memberships = request.user.memberships.select_related("organization")
+    session = getattr(request, "session", None)  # API requests authenticated by token may have none
+    remembered_slug = session.get(CURRENT_ORG_SESSION_KEY) if session is not None else None
+    if remembered_slug:
+        # Looked up among their memberships, since the user may have left it; one query either way.
+        memberships = memberships.order_by(Case(When(organization__slug=remembered_slug, then=0), default=1), "pk")
+    membership = memberships.first()
     return membership.organization if membership else None
+
+
+def remember_organization(request, organization):
+    """Makes `organization` the one used on pages whose URL names none, such as the marketplace."""
+    session = getattr(request, "session", None)  # API requests authenticated by token may have none
+    # Only written when it changes, so the session isn't saved on every request. Staff can open organizations
+    # they don't belong to; those aren't remembered.
+    if session is None or session.get(CURRENT_ORG_SESSION_KEY) == organization.slug:
+        return
+    if request.user.memberships.filter(organization=organization).exists():
+        session[CURRENT_ORG_SESSION_KEY] = organization.slug
 
 
 def hq_user_error_response(user, domain, opportunity) -> Response | None:
