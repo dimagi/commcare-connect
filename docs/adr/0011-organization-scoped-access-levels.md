@@ -17,6 +17,7 @@ We will scope every web request to one organization and compute access to a prog
 - The user's level comes from their role in the acting organization: admin → `ADMIN`, member → `STANDARD`, viewer → `VIEW`.
 - The organization's level comes from its relationship to the resource. On a program: owner (`Program.organization`) and `funder` → `ADMIN`; `watchers` → `VIEW`. On an opportunity: the delivering `organization` and the `supervising_organization` → `ADMIN`; otherwise the program relationship applies.
 - Effective access is the lower of the two levels.
+- Program-manager actions on an opportunity, such as adding payment units or activating it, require `ADMIN` through an organization other than the delivering organization.
 - Relationships are stored as direct foreign keys and a many-to-many (`Program.funder`, `Program.watchers`, `Opportunity.supervising_organization`), not as a generic role table.
 - Every opportunity belongs to a program (`Opportunity.program`).
 - Users with the `ALL_ORG_ACCESS` permission get `ADMIN` on everything.
@@ -24,6 +25,7 @@ We will scope every web request to one organization and compute access to a prog
 ## Consequences
 
 - A watcher organization can't grant edit rights to its members, whatever their role.
+- A delivering organization's admins run their opportunity but can't change its program-manager settings; that takes an admin of the program's owner, the funder or the supervising organization.
 - A user acting in two organizations sees different access to the same opportunity depending on which `org_slug` they use.
 - Adding a new kind of relationship means a new field and a change to the organization-level rules, not data in a role table.
 - Views check access through shared decorators per scope, so a view that skips them has no access control.
