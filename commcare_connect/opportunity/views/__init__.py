@@ -20,6 +20,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage, storages
 from django.db.models import F, FloatField, Func, Q, Sum, Value
 from django.db.models.functions import Cast, Coalesce
@@ -91,7 +92,6 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityActiveEvent,
     OpportunityClaim,
-    OpportunityClaimLimit,
     OpportunityStatus,
     OpportunityVerificationFlags,
     Payment,
@@ -103,6 +103,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.services.payment_units import create_payment_units, update_payment_unit
 from commcare_connect.opportunity.tables import (
     DeliverUnitTable,
     LearnModuleTable,
@@ -839,23 +840,16 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         opportunity=request.opportunity,
     )
     if form.is_valid():
-        form.instance.opportunity = request.opportunity
-        form.save()
-        link_deliver_units(
-            form.instance, form.cleaned_data["required_deliver_units"], form.cleaned_data["optional_deliver_units"]
-        )
-        sub_payment_units = form.cleaned_data["payment_units"]
-        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
-            parent_payment_unit=form.instance.id
-        )
-        messages.success(request, _("Payment unit %(name)s created.") % {"name": form.instance.name})
-        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=request.opportunity)
-        for claim in claims:
-            OpportunityClaimLimit.create_claim_limits(request.opportunity, claim)
-        return redirect(
-            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
-        )
-    elif request.POST:
+        try:
+            (payment_unit,) = create_payment_units(request.user, request.opportunity, [form.to_input()])
+        except ValidationError as error:
+            form.add_service_error(error)
+        else:
+            messages.success(request, _("Payment unit %(name)s created.") % {"name": payment_unit.name})
+            return redirect(
+                "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+            )
+    if request.POST:
         return render(
             request,
             "opportunity/add_payment_units.html",
@@ -897,7 +891,6 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
-    payment_unit_deliver_units = {deliver_unit.pk for deliver_unit in payment_unit.deliver_units.all()}
     opportunity_payment_units = (
         request.opportunity.paymentunit_set.filter(
             Q(parent_payment_unit=payment_unit.pk) | Q(parent_payment_unit__isnull=True)
@@ -913,27 +906,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         org_slug=org_slug,
         opportunity=request.opportunity,
     )
-    if form.is_valid():
-        form.save()
-        required_deliver_units = form.cleaned_data["required_deliver_units"]
-        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
-        link_deliver_units(form.instance, required_deliver_units, optional_deliver_units)
-        sub_payment_units = form.cleaned_data["payment_units"]
-        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
-            parent_payment_unit=form.instance.id
-        )
-        # Remove deliver units which are not selected anymore
-        deliver_units = required_deliver_units + optional_deliver_units
-        removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
-        DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None, optional=False)
-        removed_payment_units = {payment_unit.id for payment_unit in opportunity_payment_units} - {
-            int(payment_unit_id) for payment_unit_id in sub_payment_units
-        }
-        PaymentUnit.objects.filter(id__in=removed_payment_units, parent_payment_unit=form.instance.id).update(
-            parent_payment_unit=None
-        )
-
-        messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
+    if form.is_valid() and _update_payment_unit(request.user, payment_unit, form):
+        messages.success(request, f"Payment unit {payment_unit.name} updated. Please reset the budget")
         if request.is_opportunity_pm:
             return redirect(
                 "opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
@@ -963,11 +937,13 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     )
 
 
-def link_deliver_units(payment_unit, required_deliver_units, optional_deliver_units):
-    # Scoped to the payment unit's opportunity so another opportunity's units are never moved
-    own_units = DeliverUnit.objects.for_opportunity(payment_unit.opportunity)
-    own_units.filter(id__in=required_deliver_units).update(payment_unit=payment_unit, optional=False)
-    own_units.filter(id__in=optional_deliver_units).update(payment_unit=payment_unit, optional=True)
+def _update_payment_unit(user, payment_unit, form):
+    try:
+        update_payment_unit(user, payment_unit, form.to_input())
+    except ValidationError as error:
+        form.add_service_error(error)
+        return False
+    return True
 
 
 @opp_standard_access_required

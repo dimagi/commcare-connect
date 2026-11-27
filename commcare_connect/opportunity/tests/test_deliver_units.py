@@ -15,7 +15,6 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.views import link_deliver_units
 
 split_migration = importlib.import_module("commcare_connect.opportunity.migrations.0157_split_shared_deliver_units")
 
@@ -123,18 +122,6 @@ class TestRulesOnAPreviousDeliverApp:
         form = FormJsonValidationRulesForm(instance=rule, opportunity=opportunity)
 
         assert set(form.fields["deliver_unit"].queryset) == {current_unit, old_app_unit}
-
-
-@pytest.mark.django_db
-def test_link_deliver_units_leaves_other_opportunities_units_alone(reused_app):
-    previous_unit, new_opportunity = reused_app
-    previous_payment_unit = previous_unit.payment_unit
-    payment_unit = PaymentUnitFactory(opportunity=new_opportunity)
-
-    link_deliver_units(payment_unit, [str(previous_unit.id)], [])
-
-    previous_unit.refresh_from_db()
-    assert previous_unit.payment_unit == previous_payment_unit
 
 
 @pytest.mark.usefixtures("nullable_deliver_unit_opportunity")

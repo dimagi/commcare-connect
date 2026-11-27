@@ -17,6 +17,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.users.tests.factories import ProgramManagerOrgWithUsersFactory
 
 
 @pytest.fixture
@@ -37,6 +38,11 @@ def opp_with_deliver_units(program_manager_org, organization):
     du1 = DeliverUnitFactory(app=deliver_app, slug="du-1", name="DU 1", payment_unit=None)
     du2 = DeliverUnitFactory(app=deliver_app, slug="du-2", name="DU 2", payment_unit=None)
     return opportunity, du1, du2
+
+
+@pytest.fixture
+def unrelated_pm_admin(db):
+    return ProgramManagerOrgWithUsersFactory().memberships.filter(role="admin").first().user
 
 
 @pytest.fixture
@@ -211,19 +217,25 @@ class TestPaymentUnits:
         assert "budget cannot give the full limit" in str(response.data)
         assert not PaymentUnit.objects.filter(opportunity=opportunity).exists()
 
-    def test_payment_units_cross_tenant_rejected(self, api_client, opp_with_deliver_units):
-        """Admin of a different program manager org cannot add payment units to someone else's opportunity."""
+    @pytest.mark.parametrize(
+        "user_fixture",
+        [
+            # Admin of a program manager org with no relation to the opportunity.
+            pytest.param("unrelated_pm_admin", id="cross_tenant"),
+            # Payment units are a program-manager action, as in the UI (ADR-0003).
+            pytest.param("org_user_admin", id="delivering_org_admin"),
+        ],
+    )
+    def test_payment_units_rejected_for_non_program_managers(
+        self, request, api_client, opp_with_deliver_units, user_fixture
+    ):
         opportunity, du1, du2 = opp_with_deliver_units
-        # Create a separate program manager org — the user there has no relation to opportunity
-        from commcare_connect.users.tests.factories import ProgramManagerOrgWithUsersFactory
-
-        other_pm_org = ProgramManagerOrgWithUsersFactory()
-        other_admin = other_pm_org.memberships.filter(role="admin").first().user
-        api_client.force_authenticate(other_admin)
+        api_client.force_authenticate(request.getfixturevalue(user_fixture))
         response = _post_payment_units(
             api_client=api_client, opportunity=opportunity, payment_units=[_payment_unit(required=[du1.id])]
         )
         assert response.status_code == 403
+        assert not PaymentUnit.objects.filter(opportunity=opportunity).exists()
 
 
 def _post_payment_units(*, api_client, opportunity, payment_units):

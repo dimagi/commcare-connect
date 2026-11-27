@@ -45,6 +45,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.models.verification import parse_question_path
+from commcare_connect.opportunity.services.payment_units import PaymentUnitInput
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
@@ -1483,11 +1484,27 @@ class PaymentUnitForm(forms.ModelForm):
         for field_name in ("required_deliver_units", "optional_deliver_units"):
             self.fields[field_name].deliver_unit_rows = self._deliver_unit_rows(field_name)
 
-    def save(self, commit=True):
-        payment_unit = super().save(commit)
-        if commit:
-            self._save_deliver_unit_display_names()
-        return payment_unit
+    def to_input(self):
+        """The cleaned form as the service's input; the payment unit services check the rules."""
+        data = self.cleaned_data
+        required = [int(pk) for pk in data["required_deliver_units"]]
+        optional = [int(pk) for pk in data["optional_deliver_units"]]
+        return PaymentUnitInput(
+            **{name: data[name] for name in self._meta.fields},
+            required_deliver_units=required,
+            optional_deliver_units=optional,
+            child_payment_units=[int(pk) for pk in data["payment_units"]],
+            deliver_unit_display_names=self._deliver_unit_display_names({*required, *optional}),
+        )
+
+    def add_service_error(self, error):
+        """Show a ``ValidationError`` from the payment unit services against the fields it names."""
+        if not hasattr(error, "error_dict"):
+            self.add_error(None, error)
+            return
+        for name, messages in error.message_dict.items():
+            name = {"child_payment_units": "payment_units"}.get(name, name)
+            self.add_error(name if name in self.fields else None, messages)
 
     def _build_layout(self, org_slug):
         deliver_unit_checkboxes_template = "opportunity/partials/deliver_unit_checkboxes.html"
@@ -1582,21 +1599,14 @@ class PaymentUnitForm(forms.ModelForm):
                 payment_units_initial.append(payment_unit.pk)
         self.fields["payment_units"].initial = payment_units_initial
 
-    def _save_deliver_unit_display_names(self):
+    def _deliver_unit_display_names(self, selected):
         # The display name input is disabled while its deliver unit is unticked, so unselected
         # deliver units submit nothing and must keep their stored name
-        selected = {
-            int(pk) for pk in self.cleaned_data["required_deliver_units"] + self.cleaned_data["optional_deliver_units"]
+        return {
+            deliver_unit.pk: self.cleaned_data[self._deliver_unit_display_name_field(deliver_unit)]
+            for deliver_unit in self.deliver_units
+            if deliver_unit.pk in selected
         }
-        changed = []
-        for deliver_unit in self.deliver_units:
-            if deliver_unit.pk not in selected:
-                continue
-            display_name = self.cleaned_data[self._deliver_unit_display_name_field(deliver_unit)]
-            if display_name != deliver_unit.display_name:
-                deliver_unit.display_name = display_name
-                changed.append(deliver_unit)
-        DeliverUnit.objects.bulk_update(changed, ["display_name"])
 
     def _deliver_unit_rows(self, field_name):
         selected = {str(pk) for pk in self[field_name].value() or []}
@@ -1648,37 +1658,11 @@ class PaymentUnitForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        start_date = cleaned_data.get("start_date")
-        end_date = cleaned_data.get("end_date")
-        if start_date and end_date and end_date < start_date:
-            raise ValidationError({"end_date": "End date cannot be earlier than start date."})
-
-        required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
-        if required_deliver_units & set(cleaned_data.get("optional_deliver_units", [])):
-            self.add_error("optional_deliver_units", _("A deliver unit cannot be both required and optional."))
-
         if cleaned_data.get("no_daily_limit"):
             cleaned_data["max_daily"] = None
         elif cleaned_data.get("max_daily") is None and "max_daily" not in self.errors:
             self.add_error("max_daily", _("Enter a daily limit or mark this payment unit as having no daily limit."))
-
-        self._validate_budget_covers_claimants(cleaned_data)
-
         return cleaned_data
-
-    def _validate_budget_covers_claimants(self, cleaned_data):
-        """
-        Reject the create/edit if the budget can't give every existing claimant the full limit.
-        """
-        max_total = cleaned_data.get("max_total")
-        amount = cleaned_data.get("amount")
-        if max_total is None or amount is None:
-            return
-
-        proposed_unit = PaymentUnit(max_total=max_total, amount=amount, org_amount=cleaned_data.get("org_amount") or 0)
-        other_units = self.opportunity.paymentunit_set.exclude(pk=self.instance.pk)
-
-        self.opportunity.validate_budget_for_payment_units([proposed_unit, *other_units])
 
 
 class SendMessageMobileUsersForm(forms.Form):
