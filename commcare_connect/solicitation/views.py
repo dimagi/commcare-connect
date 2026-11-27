@@ -18,7 +18,7 @@ from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
-from commcare_connect.solicitation.filters import MarketplaceFilterSet
+from commcare_connect.solicitation.filters import MarketplaceFilterSet, ReceivedApplicationFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
@@ -39,6 +39,7 @@ from commcare_connect.solicitation.models import (
     SolicitationReviewer,
 )
 from commcare_connect.solicitation.tables import (
+    SolicitationApplicationTable,
     SolicitationInvitationTable,
     SolicitationReviewerTable,
     SolicitationTable,
@@ -48,8 +49,6 @@ from commcare_connect.utils.file import stored_file_response
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
 
-# Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
-NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
 STEP_LABELS = {
     "details": _("Details"),
     "criteria": _("Evaluation criteria"),
@@ -73,13 +72,46 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
             # distinct, since counting several relations joins them all and would multiply the counts together.
             .annotate(
                 response_count=Count(
-                    "applications", filter=~Q(applications__status__in=NON_RESPONSE_STATUSES), distinct=True
+                    "applications",
+                    filter=~Q(applications__status__in=SolicitationApplication.NON_RESPONSE_STATUSES),
+                    distinct=True,
                 ),
                 invited_count=Count("invitations", distinct=True),
                 reviewer_count=Count("reviewer_assignments", distinct=True),
             )
             .order_by("-date_created")
         )
+
+
+class FiltersAppliedMixin:
+    """Adds `filters_applied` to a FilterView's context, so the page can offer to clear them."""
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
+
+    def _filters_applied(self):
+        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
+        rather than the query string: a custom range with no dates, say, narrows nothing."""
+        form = self.filterset.form
+        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
+
+
+class SolicitationPageMixin:
+    """A page about one existing solicitation. Subclasses set title and a `solicitation` property."""
+
+    title = None
+
+    def get_context_data(self, **kwargs):
+        org_slug = self.request.org.slug
+        details_url = None  # closed and cancelled solicitations have no details page to link to
+        if self.solicitation.is_editable:
+            details_url = reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id])
+        path = [
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
+            {"title": self.solicitation.title, "url": details_url},
+            {"title": self.title, "url": self.request.path},
+        ]
+        return super().get_context_data(solicitation=self.solicitation, path=path, **kwargs)
 
 
 @method_decorator(org_pm_required, name="dispatch")
@@ -283,7 +315,7 @@ class SolicitationParticipantsMixin(WaffleSwitchMixin):
         return reverse(f"solicitation:{url_name}", args=[self.request.org.slug, self.solicitation.solicitation_id])
 
 
-class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMixin, FormView):
+class SolicitationParticipantsView(SolicitationParticipantsMixin, SolicitationPageMixin, SingleTableMixin, FormView):
     """Lists a solicitation's participants and adds more through the form in the page's modal.
 
     The wording a subclass sets is read by the template as `view.<name>`.
@@ -306,21 +338,7 @@ class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMix
         return get_validated_page_size(self.request)
 
     def get_context_data(self, **kwargs):
-        solicitation_crumb = {"title": self.solicitation.title}
-        # The details page only exists while the solicitation can be edited.
-        if self.solicitation.is_editable:
-            solicitation_crumb["url"] = self.solicitation_url("details")
-        path = [
-            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
-            solicitation_crumb,
-            {"title": self.title, "url": self.request.path},
-        ]
-        return super().get_context_data(
-            solicitation=self.solicitation,
-            path=path,
-            delete_url=self.solicitation_url(f"delete_{self.url_name}"),
-            **kwargs,
-        )
+        return super().get_context_data(delete_url=self.solicitation_url(f"delete_{self.url_name}"), **kwargs)
 
     def form_valid(self, form):
         participants = form.new_participants()
@@ -424,12 +442,35 @@ class SolicitationReviewerDeleteView(ReviewersMixin, SolicitationParticipantsDel
     removed_message = _("Removed %(count)d team member(s).")
 
 
+@method_decorator(org_pm_required, name="dispatch")
+class ReceivedApplicationsView(WaffleSwitchMixin, FiltersAppliedMixin, SingleTableMixin, FilterView):
+    """Lists the applications to all of the organization's solicitations, newest first, with their average
+    score, recommendations and review progress."""
+
+    waffle_switch = SOLICITATIONS
+    table_class = SolicitationApplicationTable
+    filterset_class = ReceivedApplicationFilterSet
+    template_name = "solicitation/received_applications.html"
+
+    def get_queryset(self):
+        return (
+            SolicitationApplication.objects.responses()
+            .filter(solicitation__organization=self.request.org)
+            .with_review_summary()
+            .select_related("solicitation", "organization")
+            .newest_first()
+        )
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+
 # Public marketplace ---------------------------------------------------------------------------------------------
 
 CARD_RELATED = ("organization", "country", "delivery_type")
 
 
-class MarketplaceListView(WaffleSwitchMixin, FilterView):
+class MarketplaceListView(WaffleSwitchMixin, FiltersAppliedMixin, FilterView):
     """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
     view here, open to visitors who aren't logged in."""
 
@@ -442,15 +483,6 @@ class MarketplaceListView(WaffleSwitchMixin, FilterView):
     def get_queryset(self):
         # Soonest deadline first.
         return Solicitation.objects.public().select_related(*CARD_RELATED).order_by("application_deadline", "pk")
-
-    def get_context_data(self, **kwargs):
-        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
-
-    def _filters_applied(self):
-        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
-        rather than the query string: a custom range with no dates, say, narrows nothing."""
-        form = self.filterset.form
-        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
 
 
 class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
