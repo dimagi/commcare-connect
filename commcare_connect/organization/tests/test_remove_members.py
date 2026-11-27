@@ -7,6 +7,8 @@ from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, Opport
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.organization.views import MANAGING_API_KEYS_URL, api_key_removal_blocks
 from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.solicitation.models import SolicitationReviewer
+from commcare_connect.solicitation.tests.factories import SolicitationReviewerFactory
 from commcare_connect.users.tests.factories import UserFactory
 
 
@@ -82,6 +84,20 @@ class TestRemoveMembersView:
 
         assert messages == ["Selected members have been removed from the organization."]
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
+
+    def test_removed_member_leaves_the_organizations_review_teams(
+        self, client, org_user_admin, org_user_member, organization
+    ):
+        membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
+        SolicitationReviewerFactory(solicitation__organization=organization, user=org_user_member)
+        kept = [
+            SolicitationReviewerFactory(solicitation__organization=organization),  # another member
+            SolicitationReviewerFactory(user=org_user_member),  # the same person, reviewing for another organization
+        ]
+
+        self._remove_members(client, org_user_admin, organization, [membership.id])
+
+        assert list(SolicitationReviewer.objects.order_by("pk")) == kept
 
     def test_request_fails_when_admin_in_list(self, client, org_user_admin, org_user_member, organization):
         admin_membership = UserOrganizationMembership.objects.get(user=org_user_admin, organization=organization)
