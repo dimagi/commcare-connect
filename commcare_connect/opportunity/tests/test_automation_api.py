@@ -142,6 +142,19 @@ class TestPaymentUnits:
         )
         assert response.status_code == 400
 
+    def test_payment_unit_rejects_start_before_opportunity(
+        self, api_client, program_manager_org_user_admin, opp_with_deliver_units
+    ):
+        opportunity, du1, du2 = opp_with_deliver_units
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payment_unit = {
+            **_payment_unit(required=[du1.id]),
+            "start_date": (opportunity.start_date - datetime.timedelta(days=1)).isoformat(),
+        }
+        response = _post_payment_units(api_client=api_client, opportunity=opportunity, payment_units=[payment_unit])
+        assert response.status_code == 400
+        assert "opportunity's start date" in str(response.data)
+
     def test_payment_unit_rejects_already_assigned_deliver_unit(
         self, api_client, program_manager_org_user_admin, opp_with_deliver_units
     ):
@@ -379,6 +392,7 @@ class TestInviteUsers:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures("hq_grants_app_access")
 class TestFullPipeline:
     @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
     @patch("commcare_connect.opportunity.api.views.automation.add_connect_users")
