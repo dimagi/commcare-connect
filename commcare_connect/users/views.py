@@ -239,6 +239,8 @@ class SMSStatusCallbackView(APIView):
     def post(self, *args, **kwargs):
         message_sid = self.request.data.get("MessageSid", None)
         message_status = self.request.data.get("MessageStatus", None)
+        if not message_sid:
+            return Response({"error": "MessageSid is required."}, status=400)
         user_invite = get_object_or_404(UserInvite, message_sid=message_sid)
         if not user_invite.status == UserInviteStatus.accepted:
             if message_status == "delivered":
@@ -265,14 +267,7 @@ def get_api_keys(request):
     options = []
     options.append(format_html("<option value=''>{}</option>", "Select an API key"))
     for api_key in api_keys:
-        api_key_hidden = f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}"
-        options.append(
-            format_html(
-                "<option value='{}'>{}</option>",
-                api_key.id,
-                api_key_hidden,
-            )
-        )
+        options.append(format_html("<option value='{}'>{}</option>", api_key.id, api_key.masked))
     return HttpResponse("\n".join(options))
 
 

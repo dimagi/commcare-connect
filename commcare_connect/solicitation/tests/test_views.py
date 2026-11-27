@@ -2,12 +2,14 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 import pytest
+from allauth.utils import build_absolute_uri
 from django.urls import reverse
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
 from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
+from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
@@ -223,13 +225,13 @@ class TestSolicitationSteps:
         response = pm_client.get(step_url(step, draft))
 
         assert response.context["path"] == [
-            {"title": "Solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
+            {"title": "My solicitations", "url": reverse("solicitation:list", args=(program_manager_org.slug,))},
             {"title": draft.title},
         ]
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, title_linked, invited_linked",
+        "status, public, deadline_passed, is_editable, is_open",
         [
             (Solicitation.Status.DRAFT, False, False, True, False),
             (Solicitation.Status.ACTIVE, False, False, True, True),
@@ -240,9 +242,7 @@ class TestSolicitationSteps:
             (Solicitation.Status.CANCELLED, False, False, False, False),
         ],
     )
-    def test_list_links(
-        self, pm_client, program_manager_org, status, public, deadline_passed, title_linked, invited_linked
-    ):
+    def test_list_links(self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open):
         solicitation = SolicitationFactory(
             organization=program_manager_org,
             status=status,
@@ -253,8 +253,10 @@ class TestSolicitationSteps:
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         content = response.content.decode()
-        assert (step_url("details", solicitation) in content) is title_linked
-        assert (step_url("invitations", solicitation) in content) is invited_linked
+        assert (step_url("details", solicitation) in content) is is_editable
+        assert (step_url("cancel", solicitation) in content) is is_editable
+        assert (step_url("invitations", solicitation) in content) is is_open
+        assert (step_url("close", solicitation) in content) is is_open
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
@@ -266,6 +268,93 @@ class TestSolicitationSteps:
 @pytest.fixture
 def solicitation(program_manager_org):
     return SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE, public=False)
+
+
+ACTIONS = {"close": Solicitation.Status.CLOSED, "cancel": Solicitation.Status.CANCELLED}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ACTIONS)
+class TestSolicitationClosure:
+    @pytest.mark.parametrize(
+        "status, deadline_passed, allowed_actions",
+        [
+            # A draft was never open to applications, so it can only be cancelled.
+            (Solicitation.Status.DRAFT, False, {"cancel"}),
+            (Solicitation.Status.ACTIVE, False, {"close", "cancel"}),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            (Solicitation.Status.ACTIVE, True, set()),
+            (Solicitation.Status.CLOSED, False, set()),
+            (Solicitation.Status.CANCELLED, False, set()),
+        ],
+    )
+    def test_transitions(
+        self,
+        pm_client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        action,
+        status,
+        deadline_passed,
+        allowed_actions,
+    ):
+        solicitation = SolicitationFactory(
+            organization=program_manager_org, status=status, deadline_passed=deadline_passed
+        )
+
+        response = pm_client.post(
+            step_url(action, solicitation), {"closure_reason": "Funding withdrawn"}, HTTP_HX_REQUEST="true"
+        )
+
+        solicitation.refresh_from_db()
+        if action in allowed_actions:
+            assert response.headers["HX-Redirect"] == reverse("solicitation:list", args=(program_manager_org.slug,))
+            assert (solicitation.status, solicitation.closure_reason, solicitation.modified_by) == (
+                ACTIONS[action],
+                "Funding withdrawn",
+                program_manager_org_user_admin.email,
+            )
+            assert pm_client.get(step_url("details", solicitation)).status_code == HTTPStatus.NOT_FOUND
+        else:
+            assert response.status_code == HTTPStatus.NOT_FOUND
+            assert (solicitation.status, solicitation.closure_reason) == (status, "")
+
+    def test_form_only_renders_in_the_modal(self, pm_client, solicitation, action):
+        url = step_url(action, solicitation)
+
+        response = pm_client.get(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == HTTPStatus.OK
+        # The row menu's link is boosted, which would otherwise put this URL in the address bar.
+        assert response.headers["HX-Push-Url"] == "false"
+        # A direct visit goes to the list page that hosts the modal.
+        assert pm_client.get(url).url == reverse("solicitation:list", args=(solicitation.organization.slug,))
+
+    @pytest.mark.parametrize(
+        "switch_active, role, own_org",
+        [(False, "admin", True), (True, "member", True), (True, "admin", False)],
+    )
+    def test_only_pm_admins_of_the_owning_org(self, client, program_manager_org, action, switch_active, role, own_org):
+        organization = program_manager_org if own_org else OrganizationFactory(program_manager=True)
+        solicitation = SolicitationFactory(organization=organization, status=Solicitation.Status.ACTIVE)
+        client.force_login(MembershipFactory(organization=program_manager_org, role=role).user)
+        # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
+        url = reverse(f"solicitation:{action}", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        with override_switch(SOLICITATIONS, active=switch_active):
+            response = client.post(url, {"closure_reason": "Funding withdrawn"})
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        solicitation.refresh_from_db()
+        assert solicitation.status == Solicitation.Status.ACTIVE
+
+    def test_list_shows_the_reason(self, pm_client, program_manager_org, action):
+        SolicitationFactory(
+            organization=program_manager_org, status=ACTIONS[action], closure_reason="Funding withdrawn"
+        )
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert "Funding withdrawn" in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -301,6 +390,19 @@ class TestSolicitationInvitations:
         }
         sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
         assert sorted(sent_to) == sorted(org.get_member_emails() for org in invited_orgs)
+
+    def test_invite_email_links_to_the_solicitation(self, solicitation, mock_send_mail):
+        invitation = SolicitationInvitationFactory(
+            solicitation=solicitation, organization=MembershipFactory().organization
+        )
+
+        send_solicitation_invite_emails([invitation.pk])
+
+        url = build_absolute_uri(None, reverse("marketplace:detail", args=[solicitation.solicitation_id]))
+        email = mock_send_mail.delay.call_args.kwargs
+        assert url.startswith("http")
+        assert url in email["message"]
+        assert f'href="{url}"' in email["html_message"]
 
     @pytest.mark.parametrize("already_invited", [True, False])
     def test_invite_rejects_invited_and_own_org(

@@ -21,6 +21,7 @@ from django_htmx.middleware import HtmxDetails
 from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
@@ -35,6 +36,7 @@ from commcare_connect.opportunity.models import (
     AssignedTaskStatus,
     CompletedWorkStatus,
     FormJsonValidationRules,
+    HQApiKey,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -82,8 +84,12 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.utils.invoice_export import invoice_pdf_filename
 from commcare_connect.opportunity.views import (
     OpportunityList,
+    _fixed_hq_server,
+    add_api_key,
+    api_key_owner_warning,
     get_export_task_id,
     link_deliver_units,
+    pinned_api_key_form,
 )
 from commcare_connect.opportunity.views.worker import WorkerPaymentsView
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -99,6 +105,7 @@ from commcare_connect.users.tests.factories import (
 from commcare_connect.users.tests.test_connections import _create_social_app
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.ocs_api import OcsApiError
+from commcare_connect.utils.test_utils import make_membership
 
 
 @pytest.mark.django_db
@@ -1359,6 +1366,7 @@ class TestResendUserInvites:
         sms_body = mock_send_sms.call_args.args[1]
         expected_path = reverse("users:invite_redirect", args=(self.access2.opportunity.opportunity_id,))
         assert expected_path in sms_body
+        mock_send_message.assert_not_called()
 
     def test_no_user_ids(self, mock_send_event):
         response = self.client.post(self.url, data={})
@@ -2844,6 +2852,25 @@ class TestOpportunityEditActiveHistory:
         assert event_toggling_inactive.pgh_context.metadata["username"] == program_admin.username
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("owner_is_member", [True, False])
+def test_api_key_owner_warning(opportunity, owner_is_member):
+    owner = opportunity.api_key.user
+    if owner_is_member:
+        make_membership(opportunity.program.organization, owner, "member")
+    warning = api_key_owner_warning(opportunity)
+    if owner_is_member:
+        assert warning is None
+    else:
+        assert (owner.name or str(owner)) in warning
+        assert opportunity.program.name in warning
+
+
+@pytest.mark.django_db
+def test_pinned_api_key_form(opportunity):
+    assert pinned_api_key_form(opportunity).fixed_hq_server == opportunity.hq_server
+
+
 def test_user_invite_redirects_for_ended_opportunity(client, org_user_member, organization):
     opportunity = OpportunityFactory(
         organization=organization,
@@ -4072,3 +4099,32 @@ def test_get_export_task_id_requires_standard_access(rf, opportunity, access_lev
         "commcare_connect.opportunity.views.opportunity_access_level_from_request", return_value=access_level
     ):
         assert get_export_task_id(request, opportunity) == expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("valid", [True, False])
+def test_add_api_key_only_signals_a_reload_when_the_key_was_saved(rf, organization, valid):
+    """A rejected key must not close the modal or reload the key select, which would empty it."""
+    user = UserFactory()
+    data = {"hq_server": HQServerFactory().id, "api_key": "a-new-api-key-value" if valid else ""}
+    request = rf.post("/", data)
+    request.user = user
+    response = add_api_key(request, organization.slug)
+    assert (response.headers.get("HX-Trigger") == "reload_api_keys") is valid
+    assert HQApiKey.objects.filter(user=user).exists() is valid
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query, pinned",
+    [
+        ("?hq_server={pk}", True),
+        ("", False),
+        ("?hq_server=", False),
+        ("?hq_server=abc", False),
+        ("?hq_server=999999", False),  # no such server
+    ],
+)
+def test_fixed_hq_server(rf, query, pinned):
+    server = HQServerFactory()
+    assert _fixed_hq_server(rf.post("/" + query.format(pk=server.pk))) == (server if pinned else None)

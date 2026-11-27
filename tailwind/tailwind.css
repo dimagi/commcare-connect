@@ -98,6 +98,74 @@
   @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
+/* A card_bg whose card-link-target link is stretched over it, so the whole card is clickable. */
+.card-link {
+  @apply relative border border-transparent transition-all duration-200;
+}
+
+.card-link:hover {
+  @apply border-brand-sky shadow-md;
+}
+
+.card-link:focus-within {
+  @apply border-brand-sky ring-brand-indigo shadow-md ring-2;
+}
+
+.card-link .card-link-target::after {
+  content: '';
+  @apply absolute inset-0 rounded-lg;
+}
+
+.card-link .card-link-target:focus-visible {
+  @apply outline-none;
+}
+
+/* A dl laid out as one column per fact, each dt above its dd. Pair it with card-facts or hero-facts. */
+.facts-row {
+  @apply grid auto-cols-fr grid-flow-col grid-rows-[auto_auto] gap-x-4;
+}
+
+/* A facts-row along the bottom of a card_bg.
+   The negative margins cancel card_bg's p-6 so the strip reaches the card's edges. */
+.card-facts {
+  @apply -mx-6 -mb-6 mt-auto rounded-b-lg border-t border-gray-100 bg-gray-50 px-6 py-3;
+}
+
+.card-facts dt {
+  @apply text-xs font-medium uppercase tracking-wide text-gray-500;
+}
+
+.card-facts dd {
+  @apply text-sm font-semibold text-gray-900;
+}
+
+/* A dark banner at the top of a detail page: badges, title, a deadline box and a row of facts. */
+.hero {
+  @apply bg-brand-deep-purple flex flex-col gap-6 rounded-lg p-6 text-white shadow-sm lg:p-8;
+}
+
+.hero-title {
+  @apply text-2xl font-semibold lg:text-3xl;
+}
+
+.hero-deadline {
+  @apply shrink-0 rounded-lg border border-white/20 bg-white/10 px-5 py-4;
+}
+
+/* Facts in a hero-facts dl are tiles: each dt is a tile's top half and its dd the bottom half. */
+/* :empty never matches a template-rendered dl (it holds whitespace), so hide it when it has no facts. */
+.hero-facts:not(:has(dt)) {
+  @apply hidden;
+}
+
+.hero-facts dt {
+  @apply bg-brand-indigo rounded-t-lg px-4 pt-3 text-xs text-indigo-100;
+}
+
+.hero-facts dd {
+  @apply bg-brand-indigo rounded-b-lg px-4 pb-3 text-lg font-semibold;
+}
+
 /* The card is the wrapper rather than the fieldset itself: a legend is laid out over
    its fieldset's top border, which on a bordered card leaves the title hanging outside. */
 .form_section legend {
@@ -116,6 +184,10 @@
 
 .title {
   @apply font-medium text-gray-900;
+}
+
+.page-title {
+  @apply text-brand-deep-purple text-2xl font-semibold;
 }
 
 .title-sm {

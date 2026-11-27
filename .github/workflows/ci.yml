@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
 
       - name: Run prek
-        uses: j178/prek-action@5337cb91e0fa35a7ff31b9ca345126d8bbbcdf16 # v2.0.6
+        uses: j178/prek-action@7b101f8338a08d2bd6fdb3625e4e7692428763a3 # v3.1.1
 
   build-js:
     runs-on: ubuntu-latest
@@ -93,7 +93,7 @@ jobs:
             libproj-dev
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock

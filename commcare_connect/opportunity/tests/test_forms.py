@@ -64,14 +64,18 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     TaskTypeFactory,
 )
-from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.opportunity.tests.form_helpers import (
+    OpportunityInitFormTestBase,
+    change_form,
+    mock_hq_app,
+    request_for,
+)
 from commcare_connect.program.helpers import eligible_supervising_organizations
 from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 from commcare_connect.program.utils import AccessLevel, org_opportunity_access
 from commcare_connect.users.models import UserCredential
 from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
-from commcare_connect.utils.test_utils import make_membership, make_request
 
 
 @pytest.fixture
@@ -423,6 +427,28 @@ class TestOpportunityInitUpdateForm:
             program=opportunity.program,
         )
 
+    def test_keeping_the_key_and_apps_makes_no_hq_calls(self, opportunity, httpx_mock):
+        # httpx_mock has no responses registered, so any HQ request fails the test.
+        form = self._get_form(opportunity=opportunity, data=self._valid_data(opportunity), user=UserFactory())
+        assert form.is_valid(), form.errors
+
+    def test_kept_key_is_checked_against_new_apps(self, opportunity, httpx_mock):
+        """The current key may belong to a colleague, so pointing it at other apps needs HQ's say-so."""
+        mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-learn-domain", "new-learn-id", status=403)
+        mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-deliver-domain", "new-deliver-id")
+        data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": "new-learn-id", "name": "new learn app"},
+            learn_domain="new-learn-domain",
+            learn_description="learn description",
+            learn_score=70,
+            deliver_payload={"id": "new-deliver-id", "name": "new deliver app"},
+            deliver_domain="new-deliver-domain",
+        )
+        form = self._get_form(opportunity=opportunity, data=data, user=UserFactory())
+
+        assert form.errors["api_key"] == ['This API key cannot access the learn app on domain "new-learn-domain".']
+
     @pytest.mark.parametrize("case", ["another_users_key", "current_key_on_changed_server"])
     def test_rejects_key(self, opportunity, case):
         if case == "another_users_key":
@@ -492,6 +518,7 @@ class TestOpportunityInitUpdateForm:
         # currency is always taken from the program, ignoring the submitted "EUR" value
         assert updated_opportunity.currency == opportunity.program.currency
 
+    @pytest.mark.usefixtures("hq_grants_app_access")
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app
         original_deliver_app = opportunity.deliver_app
@@ -590,45 +617,8 @@ class TestOpportunityInitUpdateForm:
 
 
 @pytest.mark.django_db
-class TestOpportunityInitForm:
-    @pytest.fixture(autouse=True)
-    def program_application(self, opportunity):
-        return ProgramApplicationFactory(
-            organization=opportunity.organization,
-            program=opportunity.program,
-            status=ProgramApplicationStatus.ACCEPTED,
-        )
-
-    def _build_data(self, opportunity):
-        learn_app = opportunity.learn_app
-        deliver_app = opportunity.deliver_app
-        return {
-            "hq_server": opportunity.hq_server.id,
-            "api_key": str(opportunity.api_key.id),
-            "learn_app_domain": learn_app.cc_domain,
-            "learn_app": json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name}),
-            "learn_app_description": "Learn description",
-            "learn_app_passing_score": 70,
-            "deliver_app_domain": deliver_app.cc_domain,
-            "deliver_app": json.dumps({"id": deliver_app.cc_app_id, "name": deliver_app.name}),
-            "organization": opportunity.organization.pk,
-        }
-
-    def _build_form(self, opportunity, extra_data=None):
-        data = {
-            "name": "Brand new opportunity",
-            "description": "Description",
-            "short_description": "Short",
-            **self._build_data(opportunity),
-            **(extra_data or {}),
-        }
-        return OpportunityInitForm(
-            data=data,
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
-        )
-
+@pytest.mark.usefixtures("hq_grants_app_access")
+class TestOpportunityInitForm(OpportunityInitFormTestBase):
     def test_rejects_key_owned_by_another_user(self, opportunity):
         other_key = HQApiKeyFactory(hq_server=opportunity.hq_server)
         form = self._build_form(opportunity, extra_data={"api_key": str(other_key.id)})
@@ -1903,16 +1893,9 @@ class TestSupervisingOrganizations:
         assert len(ids) == len(set(ids))
 
 
-class SupervisingOrganizationFormTestBase:
+@pytest.mark.usefixtures("hq_grants_app_access")
+class SupervisingOrganizationFormTestBase(OpportunityInitFormTestBase):
     """Shared form-data builders for the supervising organization tests."""
-
-    @pytest.fixture(autouse=True)
-    def program_application(self, opportunity):
-        return ProgramApplicationFactory(
-            organization=opportunity.organization,
-            program=opportunity.program,
-            status=ProgramApplicationStatus.ACCEPTED,
-        )
 
     def _form_data(self, opportunity, include_locked_fields=True, **overrides):
         """Build a valid payload.
@@ -1945,12 +1928,7 @@ class SupervisingOrganizationFormTestBase:
         return data
 
     def _create_form(self, opportunity, **overrides):
-        return OpportunityInitForm(
-            data=self._form_data(opportunity, **overrides),
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
-        )
+        return OpportunityInitForm(data=self._form_data(opportunity, **overrides), **self._form_kwargs(opportunity))
 
     def _update_form(self, opportunity, include_locked_fields=True, **overrides):
         return OpportunityInitUpdateForm(
@@ -1961,9 +1939,7 @@ class SupervisingOrganizationFormTestBase:
                 **overrides,
             ),
             instance=opportunity,
-            user=opportunity.api_key.user,
-            org_slug=opportunity.organization.slug,
-            program=opportunity.program,
+            **self._form_kwargs(opportunity),
         )
 
 
@@ -2181,29 +2157,10 @@ class TestSupervisingOrganizationOnChangeForm:
         )
         return opportunity
 
-    def _request_for(self, org, opportunity, role=UserOrganizationMembership.Role.ADMIN):
-        user = UserFactory()
-        return make_request(user, org=org, membership=make_membership(org, user, role), opportunity=opportunity)
-
-    def _form(self, opportunity, request, **overrides):
-        data = {
-            "name": opportunity.name,
-            "description": "Updated description",
-            "short_description": "Updated short",
-            "active": True,
-            "currency": opportunity.currency.code,
-            "country": opportunity.country,
-            "is_test": opportunity.is_test,
-            "delivery_type": opportunity.delivery_type_id,
-            "supervising_organization": opportunity.supervising_organization_id,
-        }
-        data.update(overrides)
-        return OpportunityChangeForm(data=data, instance=opportunity, request=request)
-
     def test_program_manager_can_reassign(self, pm_opportunity):
-        request = self._request_for(pm_opportunity.program.organization, pm_opportunity)
+        request = request_for(pm_opportunity.program.organization, pm_opportunity)
 
-        form = self._form(
+        form = change_form(
             pm_opportunity,
             request,
             supervising_organization=pm_opportunity.organization.pk,
@@ -2217,9 +2174,9 @@ class TestSupervisingOrganizationOnChangeForm:
 
     def test_delivering_organization_cannot_see_or_set_it(self, pm_opportunity):
         original = pm_opportunity.supervising_organization
-        request = self._request_for(pm_opportunity.organization, pm_opportunity)
+        request = request_for(pm_opportunity.organization, pm_opportunity)
 
-        form = self._form(
+        form = change_form(
             pm_opportunity,
             request,
             supervising_organization=pm_opportunity.organization.pk,

@@ -3,6 +3,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Now
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -26,9 +27,25 @@ class SolicitationQuerySet(models.QuerySet):
     def expired(self):
         return self._active().filter(application_deadline__lte=Now())
 
+    def public(self):
+        """Public and still open for applications: what the marketplace shows to everyone."""
+        return self.open().filter(public=True)
+
     def editable(self):
         """Drafts and open solicitations; closed and cancelled ones are finished."""
         return self.filter(status=Solicitation.Status.DRAFT) | self.open()
+
+    def visible_to(self, user):
+        """Public solicitations, and private ones that ``user``'s organization posted or was invited to."""
+        if not user.is_authenticated:
+            return self.filter(public=True)
+        invited = SolicitationInvitation.objects.filter(solicitation=OuterRef("pk"), organization__members=user)
+        posted = Organization.objects.filter(pk=OuterRef("organization_id"), members=user)
+        return self.filter(Q(public=True) | Q(Exists(invited)) | Q(Exists(posted)))
+
+
+# An open solicitation with fewer days than this left before its deadline is closing soon.
+CLOSES_SOON_DAYS = 14
 
 
 class Solicitation(BaseModel):
@@ -88,6 +105,21 @@ class Solicitation(BaseModel):
     @property
     def is_open(self):
         return self.effective_status == self.Status.ACTIVE
+
+    @property
+    def closes_soon(self):
+        """Open, with fewer than CLOSES_SOON_DAYS whole days left."""
+        return self.is_open and self.days_until_deadline < CLOSES_SOON_DAYS
+
+    @property
+    def days_until_deadline(self):
+        """Whole days left before the deadline; 0 on its last day."""
+        return (self.application_deadline - now()).days
+
+    @property
+    def apply_label(self):
+        """What the button that starts an application says."""
+        return _("Express interest") if self.type == self.Type.EOI else _("Submit proposal")
 
     @property
     def is_editable(self):

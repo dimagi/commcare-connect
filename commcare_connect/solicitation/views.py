@@ -10,15 +10,19 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
+from django.views import View
 from django.views.generic import DetailView, FormView, UpdateView
+from django_filters.views import FilterView
 from django_tables2 import SingleTableMixin, SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
+from commcare_connect.solicitation.filters import MarketplaceFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
+    SolicitationClosureForm,
     SolicitationForm,
     SolicitationInvitationDeleteForm,
     SolicitationInvitationForm,
@@ -27,13 +31,16 @@ from commcare_connect.solicitation.forms import (
 from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
+    SolicitationAttachment,
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
 )
 from commcare_connect.solicitation.tables import SolicitationInvitationTable, SolicitationTable
 from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
+from commcare_connect.utils.file import stored_file_response
 from commcare_connect.utils.tables import get_validated_page_size
+from commcare_connect.utils.views import HtmxModalFormMixin
 
 # Drafts haven't been sent yet and withdrawn applications were taken back, so neither is a response.
 NON_RESPONSE_STATUSES = (SolicitationApplication.Status.DRAFT, SolicitationApplication.Status.WITHDRAWN)
@@ -69,26 +76,31 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
 
 
 @method_decorator(org_pm_required, name="dispatch")
-class SolicitationStepMixin(WaffleSwitchMixin):
+class EditableSolicitationMixin(WaffleSwitchMixin):
+    """Looks up one of the org's solicitations that can still change; closed and cancelled ones are not found."""
+
+    waffle_switch = SOLICITATIONS
+    slug_field = "solicitation_id"
+    slug_url_kwarg = "solicitation_id"
+
+    def get_queryset(self):
+        return Solicitation.objects.editable().filter(organization=self.request.org)
+
+
+class SolicitationStepMixin(EditableSolicitationMixin):
     """A step of creating a solicitation: details, criteria, questions, then review and publish.
 
     Every step saves to the draft, so a PM can leave and come back. Once active, the criteria and
     questions are locked so applicants answer the same form.
     """
 
-    waffle_switch = SOLICITATIONS
-    slug_field = "solicitation_id"
-    slug_url_kwarg = "solicitation_id"
     step = None
     previous_step = None
     next_step = None
 
-    def get_queryset(self):
-        return Solicitation.objects.editable().filter(organization=self.request.org)
-
     def get_context_data(self, **kwargs):
         kwargs["path"] = [
-            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[self.request.org.slug])},
             {"title": self.object.title if self.object.pk else _("New solicitation")},
         ]
         if self.previous_step:
@@ -200,6 +212,45 @@ class SolicitationPublishView(SolicitationStepMixin, DetailView):
         return super().get_success_url()
 
 
+class BaseSolicitationClosureView(EditableSolicitationMixin, HtmxModalFormMixin, SuccessMessageMixin, UpdateView):
+    """Ends a solicitation with a reason, after which it can't be edited or applied to.
+
+    The form is the modal on the list page.
+    """
+
+    form_class = SolicitationClosureForm
+    template_name = "solicitation/closure_form.html"
+    status = None
+    title = None
+    hint = None
+
+    def form_valid(self, form):
+        form.instance.status = self.status
+        form.instance.modified_by = self.request.user.email
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("solicitation:list", args=[self.request.org.slug])
+
+
+class SolicitationCloseView(BaseSolicitationClosureView):
+    status = Solicitation.Status.CLOSED
+    title = _("Close solicitation")
+    hint = _("Marks the solicitation closed before its deadline. It can't be edited or reopened afterwards.")
+    success_message = _("Solicitation closed.")
+
+    def get_queryset(self):
+        # A draft was never open to applications, so there is nothing to close.
+        return super().get_queryset().open()
+
+
+class SolicitationCancelView(BaseSolicitationClosureView):
+    status = Solicitation.Status.CANCELLED
+    title = _("Cancel solicitation")
+    hint = _("Calls the solicitation off. A cancelled solicitation can't be edited, applied to or reopened.")
+    success_message = _("Solicitation cancelled.")
+
+
 @method_decorator(org_pm_required, name="dispatch")
 class InvitationsMixin(WaffleSwitchMixin):
     waffle_switch = SOLICITATIONS
@@ -238,7 +289,7 @@ class SolicitationInvitationsView(InvitationsMixin, SingleTableMixin, FormView):
     def get_context_data(self, **kwargs):
         org_slug = self.request.org.slug
         path = [
-            {"title": _("Solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
+            {"title": _("My solicitations"), "url": reverse("solicitation:list", args=[org_slug])},
             {
                 "title": self.solicitation.title,
                 "url": reverse("solicitation:details", args=[org_slug, self.solicitation.solicitation_id]),
@@ -277,3 +328,73 @@ class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
 
     def form_invalid(self, form):
         return HttpResponseBadRequest()
+
+
+# Public marketplace ---------------------------------------------------------------------------------------------
+
+CARD_RELATED = ("organization", "country", "delivery_type")
+
+
+class MarketplaceListView(WaffleSwitchMixin, FilterView):
+    """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
+    view here, open to visitors who aren't logged in."""
+
+    waffle_switch = SOLICITATIONS
+    filterset_class = MarketplaceFilterSet
+    template_name = "solicitation/marketplace_list.html"
+    context_object_name = "solicitations"
+    paginate_by = 12  # fills whole rows of the 1, 2 and 3 column grid
+
+    def get_queryset(self):
+        # Soonest deadline first.
+        return Solicitation.objects.public().select_related(*CARD_RELATED).order_by("application_deadline", "pk")
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filters_applied=self._filters_applied(), **kwargs)
+
+    def _filters_applied(self):
+        """Whether the filters narrow the list, or were refused (which empties it), going by what they cleaned to
+        rather than the query string: a custom range with no dates, say, narrows nothing."""
+        form = self.filterset.form
+        return form.is_bound and (not form.is_valid() or any(form.cleaned_data.values()))
+
+
+class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
+    """One open solicitation's scope, budget and deadline, without its questions or criteria. Private ones are
+    only found by members of the organization that posted them and of the organizations they invited."""
+
+    waffle_switch = SOLICITATIONS
+    template_name = "solicitation/marketplace_detail.html"
+    context_object_name = "solicitation"
+    slug_field = "solicitation_id"
+    slug_url_kwarg = "solicitation_id"
+
+    def get_queryset(self):
+        return (
+            Solicitation.objects.open()
+            .visible_to(self.request.user)
+            .select_related(*CARD_RELATED)
+            .prefetch_related("attachments")
+        )
+
+    def get_context_data(self, **kwargs):
+        path = [
+            {"title": _("Marketplace"), "url": reverse("marketplace:list")},
+            {"title": self.object.title, "url": self.request.path},
+        ]
+        return super().get_context_data(path=path, **kwargs)
+
+
+class MarketplaceAttachmentView(WaffleSwitchMixin, View):
+    """Downloads one of an open solicitation's attachments, for whoever can see its details."""
+
+    waffle_switch = SOLICITATIONS
+
+    def get(self, request, solicitation_id, attachment_id):
+        attachment = get_object_or_404(
+            SolicitationAttachment,
+            pk=attachment_id,
+            solicitation__in=Solicitation.objects.open().visible_to(request.user),
+            solicitation__solicitation_id=solicitation_id,
+        )
+        return stored_file_response(attachment.file, filename=attachment.filename)
