@@ -18,8 +18,11 @@ def details_url(record, table):
 
 
 def applications_url(record, table):
-    url = reverse("received_applications:list", args=(table.request.org.slug,))
-    return f"{url}?solicitation={record.solicitation_id}"
+    return reverse(
+        "received_applications:list",
+        args=(table.request.org.slug,),
+        query={"solicitation": record.solicitation_id},
+    )
 
 
 def invitations_url(record, table):
