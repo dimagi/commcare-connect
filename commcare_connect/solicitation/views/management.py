@@ -1,48 +1,33 @@
-from functools import cached_property, partial
+"""Creating, publishing and closing a solicitation, and the mixins its pages share."""
 
 from django.contrib import messages
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
 from django.db.models import Count, Prefetch, Q
-from django.http import HttpResponseBadRequest
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
-from django.views import View
-from django.views.generic import DetailView, FormView, UpdateView
-from django_filters.views import FilterView
-from django_tables2 import SingleTableMixin, SingleTableView
+from django.views.generic import DetailView, UpdateView
+from django_tables2 import SingleTableView
 from waffle.mixins import WaffleSwitchMixin
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.organization.decorators import org_pm_required
-from commcare_connect.solicitation.filters import MarketplaceFilterSet, ReceivedApplicationFilterSet
 from commcare_connect.solicitation.forms import (
     CriterionInlineFormSet,
     QuestionInlineFormSet,
     SolicitationClosureForm,
     SolicitationForm,
-    SolicitationInvitationDeleteForm,
-    SolicitationInvitationForm,
     publish_errors,
 )
 from commcare_connect.solicitation.models import (
     Solicitation,
     SolicitationApplication,
-    SolicitationAttachment,
     SolicitationEvaluationCriterion,
-    SolicitationInvitation,
     SolicitationQuestion,
 )
-from commcare_connect.solicitation.tables import (
-    SolicitationApplicationTable,
-    SolicitationInvitationTable,
-    SolicitationTable,
-)
-from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
-from commcare_connect.utils.file import stored_file_response
+from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
 
@@ -284,155 +269,3 @@ class SolicitationCancelView(BaseSolicitationClosureView):
     title = _("Cancel solicitation")
     hint = _("Calls the solicitation off. A cancelled solicitation can't be edited, applied to or reopened.")
     success_message = _("Solicitation cancelled.")
-
-
-@method_decorator(org_pm_required, name="dispatch")
-class InvitationsMixin(WaffleSwitchMixin):
-    waffle_switch = SOLICITATIONS
-
-    @cached_property
-    def solicitation(self):
-        # Organizations are only invited while a solicitation is open: published and before its deadline.
-        return get_object_or_404(
-            Solicitation.objects.open(),
-            organization=self.request.org,
-            solicitation_id=self.kwargs["solicitation_id"],
-        )
-
-    def get_form_kwargs(self):
-        return super().get_form_kwargs() | {"solicitation": self.solicitation}
-
-    def get_success_url(self):
-        return reverse("solicitation:invitations", args=[self.request.org.slug, self.solicitation.solicitation_id])
-
-
-class SolicitationInvitationsView(InvitationsMixin, SolicitationPageMixin, SingleTableMixin, FormView):
-    """Lists the organizations invited to a solicitation and invites more."""
-
-    title = _("Invited organizations")
-    form_class = SolicitationInvitationForm
-    template_name = "solicitation/solicitation_invitations.html"
-    table_class = SolicitationInvitationTable
-
-    def get_table_data(self):
-        return self.solicitation.invitations.select_related("organization", "invited_by").order_by(
-            "organization__name"
-        )
-
-    def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
-
-    def form_valid(self, form):
-        email = self.request.user.email
-        invitations = SolicitationInvitation.objects.bulk_create(
-            SolicitationInvitation(
-                solicitation=self.solicitation,
-                organization=organization,
-                invited_by=self.request.user,
-                created_by=email,
-                modified_by=email,
-            )
-            for organization in form.cleaned_data["organizations"]
-        )
-        transaction.on_commit(partial(send_solicitation_invite_emails, [invitation.pk for invitation in invitations]))
-        messages.success(self.request, _("Invited %(count)d organization(s).") % {"count": len(invitations)})
-        return redirect(self.get_success_url())
-
-
-class SolicitationInvitationDeleteView(InvitationsMixin, FormView):
-    """Removes the invitations selected in the table."""
-
-    form_class = SolicitationInvitationDeleteForm
-    http_method_names = ["post"]
-
-    def form_valid(self, form):
-        count, _deleted = form.cleaned_data["invitation_ids"].delete()
-        messages.success(self.request, _("Removed %(count)d invitation(s).") % {"count": count})
-        return redirect(self.get_success_url())
-
-    def form_invalid(self, form):
-        return HttpResponseBadRequest()
-
-
-@method_decorator(org_pm_required, name="dispatch")
-class ReceivedApplicationsView(WaffleSwitchMixin, FiltersAppliedMixin, SingleTableMixin, FilterView):
-    """Lists the applications to all of the organization's solicitations, newest first, with their average
-    score, recommendations and review progress."""
-
-    waffle_switch = SOLICITATIONS
-    table_class = SolicitationApplicationTable
-    filterset_class = ReceivedApplicationFilterSet
-    template_name = "solicitation/received_applications.html"
-
-    def get_queryset(self):
-        return (
-            SolicitationApplication.objects.responses()
-            .filter(solicitation__organization=self.request.org)
-            .with_review_summary()
-            .select_related("solicitation", "organization")
-            .newest_first()
-        )
-
-    def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
-
-
-# Public marketplace ---------------------------------------------------------------------------------------------
-
-CARD_RELATED = ("organization", "country", "delivery_type")
-
-
-class MarketplaceListView(WaffleSwitchMixin, FiltersAppliedMixin, FilterView):
-    """Every solicitation an organization can apply to. Not scoped to an organization and, unlike every other
-    view here, open to visitors who aren't logged in."""
-
-    waffle_switch = SOLICITATIONS
-    filterset_class = MarketplaceFilterSet
-    template_name = "solicitation/marketplace_list.html"
-    context_object_name = "solicitations"
-    paginate_by = 12  # fills whole rows of the 1, 2 and 3 column grid
-
-    def get_queryset(self):
-        # Soonest deadline first.
-        return Solicitation.objects.public().select_related(*CARD_RELATED).order_by("application_deadline", "pk")
-
-
-class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
-    """One open solicitation's scope, budget and deadline, without its questions or criteria. Private ones are
-    only found by members of the organization that posted them and of the organizations they invited."""
-
-    waffle_switch = SOLICITATIONS
-    template_name = "solicitation/marketplace_detail.html"
-    context_object_name = "solicitation"
-    slug_field = "solicitation_id"
-    slug_url_kwarg = "solicitation_id"
-
-    def get_queryset(self):
-        return (
-            Solicitation.objects.open()
-            .visible_to(self.request.user)
-            .select_related(*CARD_RELATED)
-            .prefetch_related("attachments")
-        )
-
-    def get_context_data(self, **kwargs):
-        path = [
-            {"title": _("Marketplace"), "url": reverse("marketplace:list")},
-            {"title": self.object.title, "url": self.request.path},
-        ]
-        return super().get_context_data(path=path, **kwargs)
-
-
-class MarketplaceAttachmentView(WaffleSwitchMixin, View):
-    """Downloads one of an open solicitation's attachments, for whoever can see its details."""
-
-    waffle_switch = SOLICITATIONS
-
-    def get(self, request, solicitation_id, attachment_id):
-        attachment = get_object_or_404(
-            SolicitationAttachment,
-            pk=attachment_id,
-            solicitation__in=Solicitation.objects.open().visible_to(request.user),
-            solicitation__solicitation_id=solicitation_id,
-        )
-        return stored_file_response(attachment.file, filename=attachment.filename)
