@@ -17,7 +17,7 @@ We will let only one active opportunity use a CommCare app at a time, and route 
 - Activating or reactivating an opportunity is refused while another `active` opportunity uses its learn or deliver app. Apps are matched by their HQ app id, in either role.
 - The form receiver routes a form to the opportunity that is `active`, not past its `end_date`, and whose learn or deliver `CommCareApp` matches the form's domain and app.
 - More than one match rejects the form with a 400.
-- No match accepts the form with a 200 and ignores it.
+- No match accepts the form with a 200 and ignores it. A form from an HQ user with no Connect user link is rejected with a 400 before routing ([ADR-0012](0012-worker-identity-connectid-and-hq.md)).
 
 ## Consequences
 

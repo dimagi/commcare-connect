@@ -14,11 +14,11 @@ Service delivery invoices bill a program for the approved work on an opportunity
 
 We will bill each work's newly approved units as a delta, and freeze what each invoice billed in its own rows.
 
-- `CompletedWork.invoiced_approved_count` records how many of the work's approved units have been billed. A work is billable while `saved_approved_count > invoiced_approved_count`.
+- `CompletedWork.invoiced_approved_count` records how many of the work's approved units have been billed. A work is billable while its `status` is `approved` and `saved_approved_count > invoiced_approved_count`.
 - Creating a service delivery invoice writes one `CompletedWorkInvoice` row per billed work, with the units billed and the worker and organization amounts in local currency and USD, then raises the watermark to `saved_approved_count`.
 - Invoice views and exports read `CompletedWorkInvoice` rows, never the work's current fields.
 - A first billing must fall inside the invoice's date window by approval date. Units approved after a work was first billed are billed on the next invoice that ends on or after the work's approval date, ignoring the window's start.
-- Only units the program manager has agreed to are counted as approved, and an agreed visit can't be rejected afterwards, so billed units can't be taken back.
+- Only units the program manager has agreed to are counted as approved, and an agreed visit can't be rejected afterwards ([ADR-0005](0005-visit-status-at-ingest.md)), so billed units can't be taken back.
 - Cancelling or rejecting an invoice lowers each work's watermark by the units that invoice billed and deletes its line items.
 - Billing locks the works it bills, so two invoices can't bill the same units.
 - Invoices are created automatically each month for the previous month, and can also be created by hand. Custom invoices (`service_delivery=False`) have no line items and don't touch the watermark.

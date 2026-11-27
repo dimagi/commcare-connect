@@ -17,7 +17,7 @@ The API is to read every table and, later, do anything the UI can, starting with
 We will put each app's rules in one layer that the UI, the API, Celery tasks, management commands and other apps all call.
 
 - Every write to an app's data goes through a service in that app's `services`. A service takes the acting user and plain values, never a request.
-- A service checks access as ADR-0014 defines, enforces the business rules, runs the transaction, and dispatches follow-up work such as tasks, emails and CommCare HQ calls after commit.
+- A service checks access as ADR-0014 defines, enforces the business rules, runs the transaction, and dispatches follow-up work such as tasks, emails and CommCare HQ calls after commit. An external call whose result the operation needs runs inside the operation, and its failure fails the operation. Example: a claim creates the worker's HQ user before it commits ([ADR-0012](0012-worker-identity-connectid-and-hq.md)).
 - A service rejects bad input with one validation error type whose messages are keyed by field. Forms and API views translate that error into their own format.
 - Forms and serializers only parse and shape input. A rule that reads the database or states business policy belongs in the service.
 - Every model the API exposes has one function that returns the rows a user may see, built on ADR-0014. UI tables and API endpoints both start from it.

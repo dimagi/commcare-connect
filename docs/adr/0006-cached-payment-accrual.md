@@ -30,6 +30,7 @@ We will store the computed counts and amounts on each work, and recalculate them
 - A changed `PaymentUnit.amount` or `org_amount` reaches already-cached works only on their next full recalculation.
 - The live properties remain on the model for single-work reads, so the same number has two sources that can disagree.
 - Recalculation for a worker runs inside the form receiver's request, so a worker with many works makes form receipt slower.
+- If the Redis lock's timeout expires while a recalculation is still running, two recalculations for the same worker can overlap and the later write wins. The next full recalculation corrects any value this leaves stale. [ADR-0005](0005-visit-status-at-ingest.md) rejected this kind of lock for limit checks, where an overlap exceeds a limit instead of leaving a stale cache.
 
 ## Alternatives considered
 

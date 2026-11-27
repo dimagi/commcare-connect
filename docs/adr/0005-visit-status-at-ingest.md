@@ -22,6 +22,7 @@ We will set each `UserVisit`'s status synchronously while the form is received, 
 - A flagged `pending` visit is rejected when `Opportunity.automatic_visit_verification` is on, and approving or rejecting visits by hand is disabled. Every new opportunity gets automatic verification while the `automatic_visit_verification` switch is on, and the product has no setting to turn it off.
 - Manual verification remains only on opportunities created without automatic verification: a flagged visit stays `pending` until the delivering organization approves it, with a justification, or rejects it.
 - `UserVisit.review_status` (`pending`, `agree`, `disagree`) holds the program manager's review of visits the delivering organization approved by hand, so it applies only under manual verification. A visit counts toward payment only when `status=approved` and `review_status=agree`.
+- A visit with `review_status=agree` can't be rejected afterwards, whether it was agreed to by hand or approved automatically. Invoicing relies on this ([ADR-0010](0010-invoice-billing-watermark.md)).
 - Counting visits and checking duplicates happens inside a transaction that holds a `select_for_update` lock on the worker's `OpportunityClaimLimit` row for that payment unit.
 
 ## Consequences

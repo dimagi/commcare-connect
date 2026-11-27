@@ -15,7 +15,7 @@ We will have HQ push every form to Connect's form receiver, and make the receive
 - HQ posts each form as JSON to `/api/receiver/`, authenticated with OAuth2 client credentials. Each HQ server has its own OAuth application linked to an `HQServer` row, which identifies the sender.
 - Connect reads only the Connect blocks in the form (identified by the Connect `@xmlns`) and a fixed set of metadata, so it works with both HQ's full-form and metadata-only payloads.
 - A form is routed to the one opportunity that is active, not past its `end_date`, and whose learn or deliver `CommCareApp` matches the form's domain and app on that server. More than one match is an error.
-- A 400 means resending the same form can never succeed, and HQ won't retry it. A 500 or a timeout means it might, and HQ retries with backoff. A form for an app with no active opportunity gets a 200 and is ignored.
+- A 400 means resending the same form can't succeed until someone fixes its cause, such as a configuration error, so HQ doesn't retry it. A 500 or a timeout means a retry might succeed, and HQ retries with backoff. A form for an app with no active opportunity gets a 200 and is ignored, unless its HQ user isn't linked to a Connect user: the worker is looked up before the form is routed, so that form gets a 400 ([ADR-0012](0012-worker-identity-connectid-and-hq.md)).
 - Each form is processed in one transaction; any error rolls back every record created from it.
 - A resent form is identified by `xform_id`. Unique constraints that include `xform_id` turn a resend into a no-op 200 for visits and completed modules.
 

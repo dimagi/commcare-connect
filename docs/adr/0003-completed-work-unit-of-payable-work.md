@@ -24,7 +24,7 @@ We will record each deliver block as a `UserVisit` and pay for `CompletedWork`, 
 ## Consequences
 
 - Repeat services to one beneficiary accrue on the same `CompletedWork`, so its completed and approved counts can exceed one.
-- Approval and payment move per beneficiary, but a rejected visit doesn't reject its `CompletedWork`: it is left out of the work's approved count, and the work's other approved completions are still paid.
+- Approval and payment move per beneficiary, but a rejected visit doesn't reject its `CompletedWork`: it is left out of the work's approved count, and the work's other approved completions are still paid. A visit the program manager has agreed to can't be rejected ([ADR-0005](0005-visit-status-at-ingest.md)), so only visits that haven't been agreed to can leave the approved count.
 - A form is rejected if one of its deliver blocks has no `DeliverUnit` linked to a `PaymentUnit`, including blocks added to the app after the opportunity was set up.
 - Because deliver units belong to the opportunity, a later opportunity on the same app gets its own units, and configuring them doesn't change the earlier opportunity's payment units.
 - Counting completions needs every visit of the work, so the counts are cached rather than computed on read (see [ADR-0006](0006-cached-payment-accrual.md)).
