@@ -68,6 +68,7 @@ from commcare_connect.opportunity.tests.form_helpers import (
     OpportunityInitFormTestBase,
     change_form,
     mock_hq_app,
+    mock_hq_mobile_workers,
     request_for,
 )
 from commcare_connect.program.helpers import eligible_supervising_organizations
@@ -436,6 +437,8 @@ class TestOpportunityInitUpdateForm:
         """The current key may belong to a colleague, so pointing it at other apps needs HQ's say-so."""
         mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-learn-domain", "new-learn-id", status=403)
         mock_hq_app(httpx_mock, opportunity.api_key.hq_server, "new-deliver-domain", "new-deliver-id")
+        for domain in ("new-learn-domain", "new-deliver-domain"):
+            mock_hq_mobile_workers(httpx_mock, opportunity.api_key.hq_server, domain)
         data = self._build_form_data(
             opportunity,
             learn_payload={"id": "new-learn-id", "name": "new learn app"},
