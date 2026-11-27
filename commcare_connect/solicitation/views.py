@@ -357,7 +357,6 @@ class SolicitationParticipantsDeleteView(SolicitationParticipantsMixin, FormView
 class InvitationsMixin(SolicitationParticipantsMixin):
     url_name = "invitations"
     related_name = "invitations"
-    # Organizations are only invited while a solicitation is open: published and before its deadline.
     solicitations = Solicitation.objects.open()
 
 

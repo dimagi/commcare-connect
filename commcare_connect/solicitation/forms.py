@@ -335,7 +335,6 @@ class SolicitationInvitationForm(forms.Form):
 
     def __init__(self, *args, solicitation, **kwargs):
         super().__init__(*args, **kwargs)
-        # Already-invited orgs aren't offered, so each org is invited at most once.
         self.fields["organizations"].queryset = (
             Organization.objects.exclude(pk=solicitation.organization_id)
             .exclude(solicitation_invitations__solicitation=solicitation)
@@ -358,8 +357,6 @@ class SolicitationReviewerForm(forms.Form):
 
     def __init__(self, *args, solicitation, **kwargs):
         super().__init__(*args, **kwargs)
-        # Only the posting organization's members can be assigned. Those already assigned aren't offered,
-        # so each member holds one role per solicitation.
         self.fields["users"].queryset = solicitation.organization.members.exclude(
             solicitationreviewer__solicitation=solicitation
         ).order_by("name", "email")
