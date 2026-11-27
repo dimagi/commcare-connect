@@ -77,6 +77,7 @@ class Solicitation(BaseModel):
     solicitation_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     title = models.CharField(max_length=255)
     type = models.CharField(max_length=10, choices=Type.choices)
+    # Updated by the hourly task after go_live_date or application_deadline passes, so read effective_status instead.
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     public = models.BooleanField(default=False)
 
