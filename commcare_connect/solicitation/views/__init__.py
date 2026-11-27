@@ -1,4 +1,5 @@
 from commcare_connect.solicitation.views.applications import ReceivedApplicationsView
+from commcare_connect.solicitation.views.apply import SolicitationApplyView
 from commcare_connect.solicitation.views.management import (
     SolicitationCancelView,
     SolicitationCloseView,
@@ -23,6 +24,7 @@ __all__ = [
     "MarketplaceDetailView",
     "MarketplaceListView",
     "ReceivedApplicationsView",
+    "SolicitationApplyView",
     "SolicitationCancelView",
     "SolicitationCloseView",
     "SolicitationCriteriaView",

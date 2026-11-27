@@ -1,51 +1,64 @@
 {% load i18n %}
-<article class="card_bg card-link flex h-full flex-col gap-3">
-  <div class="flex flex-wrap items-center gap-2">
-    {% include "solicitation/partials/type_badge.html" %}
-    {% if solicitation.closes_soon %}
-      <span class="badge badge-sm badge-amber">
-        <i class="fa-regular fa-clock mr-1"></i>
-        {% with days=solicitation.days_until_deadline %}
-          {% if days == 0 %}
-            {% translate "Closes today" %}
-          {% else %}
-            {% blocktranslate count counter=days %}Closes in {{ counter }} day{% plural %}Closes in {{ counter }} days{% endblocktranslate %}
-          {% endif %}
-        {% endwith %}
-      </span>
+{# own_applications is set on the marketplace list: the application of the organization the user is in. #}
+{% with application=solicitation.own_applications.0 %}
+  <article class="card_bg card-link flex h-full flex-col gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      {% include "solicitation/partials/type_badge.html" %}
+      {% if application %}
+        {% include "solicitation/partials/application_status_badge.html" with record=application %}
+      {% endif %}
+      {% if solicitation.closes_soon %}
+        <span class="badge badge-sm badge-amber">
+          <i class="fa-regular fa-clock mr-1"></i>
+          {% with days=solicitation.days_until_deadline %}
+            {% if days == 0 %}
+              {% translate "Closes today" %}
+            {% else %}
+              {% blocktranslate count counter=days %}Closes in {{ counter }} day{% plural %}Closes in {{ counter }} days{% endblocktranslate %}
+            {% endif %}
+          {% endwith %}
+        </span>
+      {% endif %}
+    </div>
+    <div class="flex flex-col gap-1">
+      <p class="card_description">
+        <i class="fa-solid fa-building mr-1 text-gray-400"></i>
+        {% blocktranslate with name=solicitation.organization.name %}Posted by <strong class="text-gray-900">{{ name }}</strong>{% endblocktranslate %}
+      </p>
+      <h2 class="card_title">
+        <a class="card-link-target"
+           href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{{ solicitation.title }}</a>
+      </h2>
+    </div>
+    <p class="card_description line-clamp-2">{{ solicitation.description|truncatechars:300 }}</p>
+    {% if solicitation.country or solicitation.delivery_type %}
+      <ul class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700">
+        {% if solicitation.country %}
+          <li>
+            <i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ solicitation.country.name }}
+          </li>
+        {% endif %}
+        {% if solicitation.delivery_type %}
+          <li>
+            <i class="fa-solid fa-briefcase-medical mr-1 text-gray-400"></i>{{ solicitation.delivery_type.name }}
+          </li>
+        {% endif %}
+      </ul>
     {% endif %}
-  </div>
-  <div class="flex flex-col gap-1">
-    <p class="card_description">
-      <i class="fa-solid fa-building mr-1 text-gray-400"></i>
-      {% blocktranslate with name=solicitation.organization.name %}Posted by <strong class="text-gray-900">{{ name }}</strong>{% endblocktranslate %}
-    </p>
-    <h2 class="card_title">
-      <a class="card-link-target"
-         href="{% url 'marketplace:detail' solicitation.solicitation_id %}">{{ solicitation.title }}</a>
-    </h2>
-  </div>
-  <p class="card_description line-clamp-2">{{ solicitation.description|truncatechars:300 }}</p>
-  {% if solicitation.country or solicitation.delivery_type %}
-    <ul class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700">
-      {% if solicitation.country %}
-        <li>
-          <i class="fa-solid fa-earth-africa mr-1 text-gray-400"></i>{{ solicitation.country.name }}
-        </li>
-      {% endif %}
-      {% if solicitation.delivery_type %}
-        <li>
-          <i class="fa-solid fa-briefcase-medical mr-1 text-gray-400"></i>{{ solicitation.delivery_type.name }}
-        </li>
-      {% endif %}
-    </ul>
-  {% endif %}
-  <dl class="facts-row card-facts">
-    {% include "solicitation/partials/budget.html" %}
-    <dt>{% translate "Deadline" %}</dt>
-    <dd>
-      <time datetime="{{ solicitation.application_deadline|date:'c' }}"
-            title="{{ solicitation.application_deadline|date:'j M Y, H:i T' }}">{{ solicitation.application_deadline|date:"j M Y" }}</time>
-    </dd>
-  </dl>
-</article>
+    <dl class="facts-row card-facts">
+      {% include "solicitation/partials/budget.html" %}
+      <dt>{% translate "Deadline" %}</dt>
+      <dd>
+        <time datetime="{{ solicitation.application_deadline|date:'c' }}"
+              title="{{ solicitation.application_deadline|date:'j M Y, H:i T' }}">{{ solicitation.application_deadline|date:"j M Y" }}</time>
+      </dd>
+    </dl>
+    {% if application %}
+      {# Raised above the link that covers the card, so it can be clicked on its own. #}
+      <div>
+        <a class="relative z-10 button button-sm primary-dark"
+           href="{{ application.applicant_url }}">{% translate "View application" %}</a>
+      </div>
+    {% endif %}
+  </article>
+{% endwith %}

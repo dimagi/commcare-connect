@@ -1,6 +1,7 @@
 """RFPs and EOIs in every state the marketplace and the program manager's list tell apart: public and open (across
 countries, delivery types and deadlines), private with an invited organization, a draft, one past its deadline that
-the hourly task hasn't closed yet, and one it has closed."""
+the hourly task hasn't closed yet, and one it has closed. The network manager has saved a draft for the first public
+one and submitted an application to the second."""
 
 from django.urls import reverse
 
@@ -76,7 +77,9 @@ def build(sim, *, small):
                 # changed here.
                 program=program if index == 0 else None,
             )
-            sim.solicitation(pm_org, spec)
+            solicitation = sim.solicitation(pm_org, spec)
+            if index < 2:
+                sim.apply_to_solicitation(solicitation, nm_org, submit=index == 1)
         private = sim.solicitation(
             pm_org, SolicitationSpec(title="Private: immunization partners", public=False, deadline=open_deadline)
         )

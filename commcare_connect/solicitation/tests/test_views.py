@@ -1,5 +1,4 @@
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 from allauth.utils import build_absolute_uri
@@ -359,11 +358,6 @@ class TestSolicitationClosure:
 
 @pytest.mark.django_db
 class TestSolicitationInvitations:
-    @pytest.fixture
-    def mock_send_mail(self):
-        with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-            yield mock
-
     @pytest.mark.parametrize("public", [True, False])
     def test_invite_creates_rows_and_emails_each_org(
         self,

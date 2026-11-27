@@ -8,6 +8,12 @@
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-2">
             {% include "solicitation/partials/type_badge.html" %}
+            {% for application in applications %}
+              {% if applications|length > 1 %}
+                <span class="text-xs text-indigo-100">{{ application.organization.name }}:</span>
+              {% endif %}
+              {% include "solicitation/partials/application_status_badge.html" with record=application %}
+            {% endfor %}
             {% if solicitation.delivery_type %}
               <span class="badge badge-sm badge-amber">
                 <i class="fa-solid fa-briefcase-medical mr-1"></i>{{ solicitation.delivery_type.name }}
@@ -36,13 +42,21 @@
               <time datetime="{{ solicitation.application_deadline|date:'c' }}">{{ solicitation.application_deadline|date:"j M Y, H:i T" }}</time>
             </p>
           </div>
-          {# Disabled until the apply flow exists. #}
-          <div class="flex flex-col items-center gap-1">
-            <button type="button"
-                    class="button button-md primary-dark"
-                    disabled
-                    aria-describedby="apply-coming-soon">{{ solicitation.apply_label }}</button>
-            <p id="apply-coming-soon" class="text-xs text-indigo-200">{% translate "Online applications coming soon" %}</p>
+          <div class="flex flex-col items-stretch gap-2">
+            {% for application in applications %}
+              <a class="button button-md outline-style"
+                 href="{{ application.applicant_url }}">
+                {% if applications|length > 1 %}
+                  {% blocktranslate with organization=application.organization.name %}View {{ organization }}'s application{% endblocktranslate %}
+                {% else %}
+                  {% translate "View application" %}
+                {% endif %}
+              </a>
+            {% endfor %}
+            {# Logged-out visitors log in or sign up first, then come back to the application. #}
+            {% if apply_url %}
+              <a class="button button-md primary-dark" href="{{ apply_url }}">{{ solicitation.apply_label }}</a>
+            {% endif %}
           </div>
         </div>
       </div>

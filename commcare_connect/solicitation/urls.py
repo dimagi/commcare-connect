@@ -5,6 +5,7 @@ from commcare_connect.solicitation.views import (
     MarketplaceDetailView,
     MarketplaceListView,
     ReceivedApplicationsView,
+    SolicitationApplyView,
     SolicitationCancelView,
     SolicitationCloseView,
     SolicitationCriteriaView,
@@ -38,6 +39,7 @@ urlpatterns = [
 marketplace_urlpatterns = [
     path("", view=MarketplaceListView.as_view(), name="list"),
     path("<uuid:solicitation_id>/", view=MarketplaceDetailView.as_view(), name="detail"),
+    path("<uuid:solicitation_id>/apply/", view=SolicitationApplyView.as_view(), name="apply"),
     path(
         "<uuid:solicitation_id>/attachments/<int:attachment_id>/",
         view=MarketplaceAttachmentView.as_view(),
