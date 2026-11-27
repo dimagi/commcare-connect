@@ -1,10 +1,12 @@
+from collections.abc import Collection, Iterable
 from enum import IntEnum
 
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from django.http import Http404
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
@@ -76,8 +78,14 @@ def programs_accessible_to_org(org):
     if not org:
         return Program.objects.none()
 
-    watched = Program.objects.filter(id__in=org.watched_programs.values("id"))
-    return programs_administered_by([org.id]) | watched
+    return programs_accessible_to_orgs([org])
+
+
+def programs_accessible_to_orgs(orgs: Iterable[Organization]) -> QuerySet[Program]:
+    """Programs that any of `orgs` runs, funds or watches. `org_access_for_program` says which of them."""
+    org_ids = [org.id for org in orgs]
+    watched = Program.objects.filter(id__in=Program.objects.filter(watchers__in=org_ids).values("id"))
+    return programs_administered_by(org_ids) | watched
 
 
 def _resource_access_level(request, resource, org_access_fn) -> AccessLevel:
@@ -113,13 +121,16 @@ def org_opportunity_access(org, opportunity) -> AccessLevel:
 def opportunities_accessible_to_org(org):
     if not org:
         return Opportunity.objects.none()
+    return opportunities_accessible_to_orgs([org])
 
+
+def opportunities_accessible_to_orgs(orgs: Collection[Organization]) -> QuerySet[Opportunity]:
+    """Opportunities that any of `orgs` can see. `org_opportunity_access` says which of them can see each one."""
+    org_ids = [org.id for org in orgs]
     return Opportunity.objects.filter(
-        Q(organization=org)
-        | Q(supervising_organization=org)
-        | Q(program__organization=org)
-        | Q(program__funder=org)
-        | Q(program__in=org.watched_programs.values("id"))
+        Q(organization__in=org_ids)
+        | Q(supervising_organization__in=org_ids)
+        | Q(program__in=programs_accessible_to_orgs(orgs))
     )
 
 

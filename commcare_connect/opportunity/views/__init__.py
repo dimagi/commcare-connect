@@ -147,6 +147,7 @@ from commcare_connect.organization.decorators import (
     opportunity_required,
     org_view_access_required,
 )
+from commcare_connect.program.models import Program
 from commcare_connect.program.utils import (
     AccessLevel,
     is_opportunity_pm,
@@ -228,6 +229,22 @@ class OpportunityList(FilterMixin, SingleTableView):
     def can_act_as_program_manager(self):
         org = self.request.org
         return org.program_manager or org.funder or org.watched_programs.exists()
+
+    def get(self, request, *args, **kwargs):
+        if program := self.filtered_program():
+            # The header's context selector shows this program as the page's.
+            request.program = program
+        return super().get(request, *args, **kwargs)
+
+    def filtered_program(self) -> Program | None:
+        """The program the list is filtered to, when it is filtered to exactly one.
+
+        The filter only accepts programs the org can see.
+        """
+        slugs = self.get_filter_values().get("program") or []
+        if len(slugs) != 1:
+            return None
+        return Program.objects.filter(slug=slugs[0]).first()
 
     def get_template_names(self):
         # A history restore re-requests a searched URL over htmx but needs the whole page back.

@@ -207,12 +207,15 @@ def test_receiver_deliver_form(mobile_user_with_connect_link: User, api_client: 
     )
     assert UserVisit.objects.filter(user=mobile_user_with_connect_link).count() == 0
 
-    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+    with patch("commcare_connect.form_receiver.processor.clear_visit_stats_cache") as clear_visit_stats_cache:
+        make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=mobile_user_with_connect_link).count() == 1
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.deliver_unit == deliver_unit
     assert visit.entity_id == stub.entity_id
     assert visit.entity_name == stub.entity_name
+    # The header selector's visit totals include the new visit on its next load.
+    clear_visit_stats_cache.assert_called_once_with(opportunity.id)
 
 
 def _create_opp_and_form_json(
