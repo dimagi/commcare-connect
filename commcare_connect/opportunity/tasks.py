@@ -116,6 +116,8 @@ def create_learn_modules_and_deliver_units(opportunity_id):
 # so on /users/fetch_users, which always exists, a 404 means ConnectID is unavailable, not that a resource is missing.
 CONNECTID_TRANSIENT_STATUS_CODES = frozenset({404, 502, 503, 504})
 ADD_CONNECT_USERS_MAX_RETRIES = 5
+ADD_CONNECT_USERS_RETRY_BASE_SECONDS = 30
+ADD_CONNECT_USERS_RETRY_MAX_SECONDS = 300
 
 
 def _is_transient_connectid_error(exc: Exception) -> bool:
@@ -144,7 +146,14 @@ def _fetch_users_or_retry(task, user_list: list[str], opportunity_id) -> list[Co
             task.request.retries + 1,
             exc,
         )
-        raise task.retry(exc=exc, countdown=min(300, 30 * 2**task.request.retries))
+        # A task run inline (CELERY_TASK_ALWAYS_EAGER) can't wait out a retry countdown; it would only raise
+        # Celery's Retry into the request that queued it, so raise the original error instead.
+        if task.request.is_eager:
+            raise
+        countdown = min(
+            ADD_CONNECT_USERS_RETRY_MAX_SECONDS, ADD_CONNECT_USERS_RETRY_BASE_SECONDS * 2**task.request.retries
+        )
+        raise task.retry(exc=exc, countdown=countdown)
 
 
 @celery_app.task(bind=True, max_retries=ADD_CONNECT_USERS_MAX_RETRIES)

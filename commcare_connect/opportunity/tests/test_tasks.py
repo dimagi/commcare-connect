@@ -123,6 +123,20 @@ class TestConnectUserCreation:
         assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
 
     @pytest.mark.django_db
+    def test_add_connect_users_raises_original_error_when_run_eagerly(self):
+        opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
+        error = httpx.ConnectError("connection refused")
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.fetch_users", side_effect=error),
+            mock.patch.object(add_connect_users, "retry") as retry,
+        ):
+            with pytest.raises(httpx.ConnectError):
+                add_connect_users.apply(args=(["+15555555555"], opportunity.id), throw=True)
+
+        retry.assert_not_called()
+
+    @pytest.mark.django_db
     def test_add_connect_users_does_not_retry_non_transient_error(self):
         opportunity = OpportunityFactory()
         PaymentUnitFactory(opportunity=opportunity)
