@@ -83,8 +83,9 @@ class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
         """The applications the user's organizations have started or sent, and where Apply leads, or None to hide it.
 
         Logged-out visitors and users who can't apply see Apply; the apply page explains what to do. A logged-in
-        user applies as the organization they are in when it has no application yet, and otherwise picks one there.
-        An organization with a draft reaches it through its application page.
+        user applies as the organization they are in when it has no application yet. Once it has one, Apply is
+        hidden; switching to another organization that can still apply brings it back. An organization with a
+        draft reaches it through its application page.
         """
         user = self.request.user
         if not user.is_authenticated:
@@ -103,9 +104,12 @@ class MarketplaceDetailView(WaffleSwitchMixin, DetailView):
                 pk__in=[application.organization_id for application in applications]
             )
         )
+        current_org_applied = any(
+            application.organization_id == getattr(self.request.org, "pk", None) for application in applications
+        )
         if self.request.org in still_open:
             apply_url = self.object.apply_url(self.request.org)
-        elif applications and not still_open:
+        elif current_org_applied or (applications and not still_open):
             apply_url = None
         else:
             apply_url = self.object.apply_url()

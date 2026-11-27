@@ -23,6 +23,7 @@ from commcare_connect.solicitation.tests.factories import (
     SolicitationQuestionFactory,
 )
 from commcare_connect.solicitation.tests.test_solicitation_statuses import DEADLINE_CASES
+from commcare_connect.users.helpers import CURRENT_ORG_SESSION_KEY
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
 
 pytestmark = pytest.mark.django_db
@@ -403,23 +404,41 @@ def apply_href(solicitation, **params):
 
 
 @pytest.mark.usefixtures("solicitations_on")
-@pytest.mark.parametrize("has_applied", [False, True])
-def test_apply_uses_the_organization_the_user_is_in_until_it_has_applied(
-    client, org_user_admin, organization, has_applied
-):
-    """Once the current organization has applied, Apply leads to picking another of the user's organizations."""
+def test_apply_uses_the_organization_the_user_is_in(client, org_user_admin, organization):
     solicitation = listed()
-    if has_applied:
-        SolicitationApplicationFactory(
-            solicitation=solicitation, organization=organization, status=SolicitationApplication.Status.SUBMITTED
-        )
     MembershipFactory(user=org_user_admin, role="admin")
     client.force_login(org_user_admin)
+    remember(client, organization)
 
     content = client.get(detail_url(solicitation)).content.decode()
 
-    expected = apply_href(solicitation) if has_applied else apply_href(solicitation, organization=organization.slug)
-    assert expected in content
+    assert apply_href(solicitation, organization=organization.slug) in content
+
+
+@pytest.mark.usefixtures("solicitations_on")
+def test_apply_is_hidden_until_the_user_switches_to_an_organization_that_has_not_applied(
+    client, org_user_admin, organization
+):
+    solicitation = listed()
+    SolicitationApplicationFactory(
+        solicitation=solicitation, organization=organization, status=SolicitationApplication.Status.SUBMITTED
+    )
+    other = MembershipFactory(user=org_user_admin, role="admin").organization
+    client.force_login(org_user_admin)
+    remember(client, organization)
+
+    assert ">Submit proposal</a>" not in client.get(detail_url(solicitation)).content.decode()
+
+    remember(client, other)
+
+    assert apply_href(solicitation, organization=other.slug) in client.get(detail_url(solicitation)).content.decode()
+
+
+def remember(client, organization):
+    """Makes `organization` the one the user is working in, as opening one of its pages does."""
+    session = client.session
+    session[CURRENT_ORG_SESSION_KEY] = organization.slug
+    session.save()
 
 
 @pytest.mark.usefixtures("solicitations_on")
