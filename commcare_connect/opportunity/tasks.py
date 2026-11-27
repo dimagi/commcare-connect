@@ -126,6 +126,27 @@ def _is_transient_connectid_error(exc: Exception) -> bool:
     return False
 
 
+def _fetch_users_or_retry(task, user_list: list[str], opportunity_id) -> list[ConnectIdUser]:
+    """Fetch users from ConnectID, retrying ``task`` while ConnectID is unavailable.
+
+    Nothing has been written when this runs, so a retry is safe. Once retries run out, ``task.retry``
+    re-raises the original error and Sentry reports it as before. Other errors are raised straight away.
+    """
+    try:
+        return fetch_users(user_list)
+    except httpx.HTTPError as exc:
+        if not _is_transient_connectid_error(exc):
+            raise
+        logger.warning(
+            "ConnectID unavailable while inviting %d users to opportunity %s (attempt %d): %s",
+            len(user_list),
+            opportunity_id,
+            task.request.retries + 1,
+            exc,
+        )
+        raise task.retry(exc=exc, countdown=min(300, 30 * 2**task.request.retries))
+
+
 @celery_app.task(bind=True, max_retries=ADD_CONNECT_USERS_MAX_RETRIES)
 def add_connect_users(self, user_list: list[str], opportunity_id: str):
     opportunity = Opportunity.objects.get(pk=opportunity_id)
@@ -137,21 +158,7 @@ def add_connect_users(self, user_list: list[str], opportunity_id: str):
             "Skipping invite for opportunity %s with incomplete setup (%d users)", opportunity_id, len(user_list)
         )
         return
-    try:
-        found_users = fetch_users(user_list)
-    except httpx.HTTPError as exc:
-        if not _is_transient_connectid_error(exc):
-            raise
-        # Nothing has been written yet, so retrying is safe. Once retries run out, self.retry re-raises exc
-        # and Sentry reports it as before.
-        logger.warning(
-            "ConnectID unavailable while inviting %d users to opportunity %s (attempt %d): %s",
-            len(user_list),
-            opportunity_id,
-            self.request.retries + 1,
-            exc,
-        )
-        raise self.retry(exc=exc, countdown=min(300, 30 * 2**self.request.retries))
+    found_users = _fetch_users_or_retry(self, user_list, opportunity_id)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
         UserInvite.objects.get_or_create(
