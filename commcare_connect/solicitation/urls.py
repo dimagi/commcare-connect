@@ -16,6 +16,7 @@ from commcare_connect.solicitation.views import (
     SolicitationQuestionsView,
     SolicitationReviewerDeleteView,
     SolicitationReviewersView,
+    SolicitationUnscheduleView,
 )
 
 app_name = "solicitation"
@@ -26,6 +27,7 @@ urlpatterns = [
     path("<uuid:solicitation_id>/criteria/", view=SolicitationCriteriaView.as_view(), name="criteria"),
     path("<uuid:solicitation_id>/questions/", view=SolicitationQuestionsView.as_view(), name="questions"),
     path("<uuid:solicitation_id>/publish/", view=SolicitationPublishView.as_view(), name="publish"),
+    path("<uuid:solicitation_id>/unschedule/", view=SolicitationUnscheduleView.as_view(), name="unschedule"),
     path("<uuid:solicitation_id>/close/", view=SolicitationCloseView.as_view(), name="close"),
     path("<uuid:solicitation_id>/cancel/", view=SolicitationCancelView.as_view(), name="cancel"),
     path("<uuid:solicitation_id>/invitations/", view=SolicitationInvitationsView.as_view(), name="invitations"),

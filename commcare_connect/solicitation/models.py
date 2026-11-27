@@ -15,17 +15,27 @@ from commcare_connect.utils.db import BaseModel
 
 
 class SolicitationQuerySet(models.QuerySet):
-    """A solicitation closes at its deadline even before the sweep task updates its stored status,
-    so check openness through open() / Solicitation.is_open, never by comparing status directly."""
+    """A solicitation goes live at its go-live date and closes at its deadline even before the sweep task updates
+    its stored status, so check openness through open() / Solicitation.is_open, never by comparing status directly."""
 
-    def _active(self):
-        return self.filter(status=Solicitation.Status.ACTIVE)
+    def _live(self):
+        return self.filter(
+            Q(status=Solicitation.Status.ACTIVE) | Q(status=Solicitation.Status.SCHEDULED, go_live_date__lte=Now())
+        )
 
     def open(self):
-        return self._active().filter(application_deadline__gt=Now())
+        return self._live().filter(application_deadline__gt=Now())
 
     def expired(self):
-        return self._active().filter(application_deadline__lte=Now())
+        return self._live().filter(application_deadline__lte=Now())
+
+    def scheduled(self):
+        """Scheduled solicitations that haven't gone live yet."""
+        return self.filter(status=Solicitation.Status.SCHEDULED, go_live_date__gt=Now())
+
+    def invitable(self):
+        """Organizations can be invited from when a solicitation is scheduled or published until its deadline."""
+        return self.open() | self.scheduled()
 
     def public(self):
         """Public and still open for applications: what the marketplace shows to everyone."""
@@ -59,6 +69,7 @@ class Solicitation(BaseModel):
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")
+        SCHEDULED = "scheduled", _("Scheduled")
         ACTIVE = "active", _("Active")
         CLOSED = "closed", _("Closed")
         CANCELLED = "cancelled", _("Cancelled")
@@ -66,6 +77,7 @@ class Solicitation(BaseModel):
     solicitation_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     title = models.CharField(max_length=255)
     type = models.CharField(max_length=10, choices=Type.choices)
+    # Updated by the hourly task after go_live_date or application_deadline passes, so read effective_status instead.
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     public = models.BooleanField(default=False)
 
@@ -83,6 +95,8 @@ class Solicitation(BaseModel):
     expected_start_date = models.DateField(null=True, blank=True)
     expected_end_date = models.DateField(null=True, blank=True)
     application_deadline = models.DateTimeField()
+    # When a scheduled solicitation goes live; empty when it was published straight away.
+    go_live_date = models.DateTimeField(null=True, blank=True)
     estimated_scale = models.CharField(max_length=255, blank=True)  # e.g. "5,000 households, 3 districts"
     contact_email = models.EmailField()
 
@@ -93,18 +107,43 @@ class Solicitation(BaseModel):
     hide_scores_until_submit = models.BooleanField(default=True)
     closure_reason = models.TextField(blank=True)  # given when a PM closes early or cancels
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(status="scheduled") | Q(go_live_date__isnull=False), name="scheduled_has_go_live_date"
+            )
+        ]
+
     def __str__(self):
         return self.title
 
     @property
     def effective_status(self):
-        if self.status == self.Status.ACTIVE and self.application_deadline <= now():
+        status = self.Status(self.status)
+        if status == self.Status.SCHEDULED and self.go_live_date <= now():
+            status = self.Status.ACTIVE
+        if status == self.Status.ACTIVE and self.application_deadline <= now():
             return self.Status.CLOSED
-        return self.Status(self.status)
+        return status
 
     @property
     def is_open(self):
         return self.effective_status == self.Status.ACTIVE
+
+    @property
+    def is_scheduled(self):
+        """Scheduled and not yet live: hidden from other organizations, and back to draft is still possible."""
+        return self.effective_status == self.Status.SCHEDULED
+
+    @property
+    def is_invitable(self):
+        """Organizations can be invited from when it's scheduled or published until its deadline."""
+        return self.is_open or self.is_scheduled
+
+    @property
+    def is_publishable(self):
+        """Not live yet, so the PM still decides when it goes live: a draft, or scheduled before its go-live date."""
+        return self.status == self.Status.DRAFT or self.is_scheduled
 
     @property
     def closes_soon(self):

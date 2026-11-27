@@ -14,6 +14,9 @@ from commcare_connect.utils.tables import DMYTColumn, IndexColumn, order_empty_l
 def details_url(record, table):
     if record.is_editable:
         return reverse("solicitation:details", args=(table.request.org.slug, record.solicitation_id))
+    # A scheduled solicitation can't be edited; its review page shows when it goes live and moves it back to draft.
+    if record.is_scheduled:
+        return reverse("solicitation:publish", args=(table.request.org.slug, record.solicitation_id))
     return None
 
 
@@ -23,8 +26,7 @@ def applications_url(record, table):
 
 
 def invitations_url(record, table):
-    # Invitations are only managed while a solicitation is open.
-    if record.is_open:
+    if record.is_invitable:
         return reverse("solicitation:invitations", args=(table.request.org.slug, record.solicitation_id))
     return None
 

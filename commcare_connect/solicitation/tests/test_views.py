@@ -1,10 +1,11 @@
 import re
+from datetime import timedelta
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 from allauth.utils import build_absolute_uri
 from django.urls import reverse
+from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
@@ -17,6 +18,7 @@ from commcare_connect.solicitation.models import (
 )
 from commcare_connect.solicitation.tables import SolicitationTable
 from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails, send_solicitation_invite_emails
+from commcare_connect.solicitation.tests.conftest import deadline
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
@@ -204,6 +206,55 @@ class TestSolicitationSteps:
         assert (draft.status == Solicitation.Status.ACTIVE) is published
         assert response.status_code == (HTTPStatus.FOUND if published else HTTPStatus.OK)
 
+    @pytest.mark.parametrize("scheduled", [False, True])
+    @pytest.mark.parametrize(
+        "go_live_days, expected_status", [(None, Solicitation.Status.ACTIVE), (2, Solicitation.Status.SCHEDULED)]
+    )
+    def test_publish_now_or_reschedule(
+        self,
+        pm_client,
+        program_manager_org,
+        mock_send_mail,
+        django_capture_on_commit_callbacks,
+        scheduled,
+        go_live_days,
+        expected_status,
+    ):
+        """Until it goes live, a draft or scheduled solicitation can be published now or (re)scheduled.
+
+        Organizations invited while it was scheduled are emailed once it's published.
+        """
+        solicitation = SolicitationFactory(
+            organization=program_manager_org, country=_get_default_country(), scheduled=scheduled
+        )
+        SolicitationEvaluationCriterionFactory(solicitation=solicitation, weight=100)
+        invited_org = MembershipFactory().organization
+        SolicitationInvitationFactory(solicitation=solicitation, organization=invited_org)
+        data = {} if go_live_days is None else {"schedule": "on", "go_live_date": deadline(go_live_days)}
+
+        with django_capture_on_commit_callbacks(execute=True):
+            response = pm_client.post(step_url("publish", solicitation), data)
+
+        assert response.status_code == HTTPStatus.FOUND
+        solicitation.refresh_from_db()
+        saved_go_live = solicitation.go_live_date and solicitation.go_live_date.strftime("%Y-%m-%dT%H:%M")
+        assert (solicitation.status, saved_go_live) == (expected_status, data.get("go_live_date"))
+        assert sent_to(mock_send_mail) == (
+            [invited_org.get_member_emails()] if expected_status == Solicitation.Status.ACTIVE else []
+        )
+
+    @pytest.mark.parametrize("step", STEPS)
+    def test_scheduled_solicitation_opens_only_its_review_page(self, pm_client, program_manager_org, step):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.get(step_url(step, solicitation))
+
+        if step == "publish":
+            assert response.status_code == HTTPStatus.OK
+            assert step_url("unschedule", solicitation) in response.content.decode()
+        else:
+            assert response.status_code == HTTPStatus.NOT_FOUND
+
     @pytest.mark.parametrize("step", ["criteria", "questions"])
     def test_active_solicitation_locks_criteria_and_questions(self, pm_client, program_manager_org, step):
         solicitation = SolicitationFactory(organization=program_manager_org, status=Solicitation.Status.ACTIVE)
@@ -272,41 +323,80 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, is_editable, is_open, reviewers_linked",
+        "factory_kwargs, linked",
         [
-            (Solicitation.Status.DRAFT, False, False, True, False, True),
-            (Solicitation.Status.ACTIVE, False, False, True, True, True),
-            (Solicitation.Status.ACTIVE, True, False, True, True, True),
+            ({"status": Solicitation.Status.DRAFT}, {"details", "cancel", "reviewers"}),
+            ({"status": Solicitation.Status.ACTIVE}, {"details", "cancel", "invitations", "close", "reviewers"}),
+            (
+                {"status": Solicitation.Status.ACTIVE, "public": True},
+                {"details", "cancel", "invitations", "close", "reviewers"},
+            ),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, False, False, True),
-            (Solicitation.Status.CLOSED, False, False, False, False, True),
-            (Solicitation.Status.CANCELLED, False, False, False, False, False),
+            ({"status": Solicitation.Status.ACTIVE, "deadline_passed": True}, {"reviewers"}),
+            ({"status": Solicitation.Status.CLOSED}, {"reviewers"}),
+            ({"status": Solicitation.Status.CANCELLED}, set()),
+            # Not editable until its review page moves it back to draft, but organizations can already be invited.
+            ({"scheduled": True}, {"publish", "invitations", "reviewers"}),
         ],
     )
-    def test_list_links(
-        self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open, reviewers_linked
-    ):
-        solicitation = SolicitationFactory(
-            organization=program_manager_org,
-            status=status,
-            public=public,
-            deadline_passed=deadline_passed,
-        )
+    def test_list_links(self, pm_client, program_manager_org, factory_kwargs, linked):
+        solicitation = SolicitationFactory(organization=program_manager_org, **factory_kwargs)
 
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         content = response.content.decode()
-        assert (step_url("details", solicitation) in content) is is_editable
-        assert (step_url("cancel", solicitation) in content) is is_editable
-        assert (step_url("invitations", solicitation) in content) is is_open
-        assert (step_url("close", solicitation) in content) is is_open
-        assert (step_url("reviewers", solicitation) in content) is reviewers_linked
+        steps = ("details", "publish", "invitations", "cancel", "close", "reviewers")
+        assert {step for step in steps if step_url(step, solicitation) in content} == linked
+
+    def test_list_shows_the_go_live_date(self, pm_client, program_manager_org):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
+
+        assert f"Goes live {solicitation.go_live_date:%d %b %Y, %H:%M} UTC" in response.content.decode()
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
 
         assert response.status_code == HTTPStatus.OK
         assert response.context["path"][-1] == {"title": "New solicitation"}
+
+
+@pytest.mark.django_db
+class TestSolicitationUnschedule:
+    def test_moves_back_to_draft(self, pm_client, program_manager_org, program_manager_org_user_admin):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.post(step_url("unschedule", solicitation))
+
+        solicitation.refresh_from_db()
+        assert response.url == step_url("details", solicitation)
+        assert (solicitation.status, solicitation.go_live_date, solicitation.modified_by) == (
+            Solicitation.Status.DRAFT,
+            None,
+            program_manager_org_user_admin.email,
+        )
+        assert pm_client.get(step_url("criteria", solicitation)).status_code == HTTPStatus.OK
+
+    @pytest.mark.parametrize(
+        "factory_kwargs, own_org",
+        [
+            ({"status": Solicitation.Status.DRAFT}, True),
+            ({"status": Solicitation.Status.ACTIVE}, True),
+            # Its go-live date has passed, so it's live even before update_solicitation_statuses runs.
+            ({"scheduled": True, "go_live_date": now() - timedelta(hours=1)}, True),
+            ({"scheduled": True}, False),
+        ],
+    )
+    def test_only_own_solicitations_not_yet_live(self, pm_client, program_manager_org, factory_kwargs, own_org):
+        organization = program_manager_org if own_org else OrganizationFactory(program_manager=True)
+        solicitation = SolicitationFactory(organization=organization, **factory_kwargs)
+        # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
+        url = reverse("solicitation:unschedule", args=(program_manager_org.slug, solicitation.solicitation_id))
+
+        assert pm_client.post(url).status_code == HTTPStatus.NOT_FOUND
+        solicitation.refresh_from_db()
+        assert solicitation.status == factory_kwargs.get("status", Solicitation.Status.SCHEDULED)
 
 
 PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory, "reviewers": SolicitationReviewerFactory}
@@ -405,12 +495,6 @@ class TestSolicitationClosure:
 
 
 @pytest.fixture
-def mock_send_mail():
-    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-        yield mock
-
-
-@pytest.fixture
 def member(program_manager_org):
     return MembershipFactory(organization=program_manager_org, role="viewer").user
 
@@ -430,6 +514,7 @@ def assert_add_rejected(response, participants, expected_count, mock_send_mail):
 @pytest.mark.django_db
 class TestSolicitationInvitations:
     @pytest.mark.parametrize("public", [True, False])
+    @pytest.mark.parametrize("scheduled", [False, True])
     def test_invite_creates_rows_and_emails_each_org(
         self,
         pm_client,
@@ -438,8 +523,12 @@ class TestSolicitationInvitations:
         mock_send_mail,
         django_capture_on_commit_callbacks,
         public,
+        scheduled,
     ):
         solicitation.public = public
+        if scheduled:
+            solicitation.status = Solicitation.Status.SCHEDULED
+            solicitation.go_live_date = now() + timedelta(days=1)
         solicitation.save()
         invited_orgs = [MembershipFactory().organization for _ in range(2)]
 
@@ -453,7 +542,30 @@ class TestSolicitationInvitations:
         assert {(i.organization, i.invited_by) for i in invitations} == {
             (org, program_manager_org_user_admin) for org in invited_orgs
         }
-        assert sent_to(mock_send_mail) == sorted(org.get_member_emails() for org in invited_orgs)
+        # A scheduled solicitation's invitations are emailed when update_solicitation_statuses takes it live.
+        assert sent_to(mock_send_mail) == (
+            [] if scheduled else sorted(org.get_member_emails() for org in invited_orgs)
+        )
+
+    def test_hint_says_when_a_scheduled_solicitations_emails_go_out(self, pm_client, program_manager_org):
+        solicitation = SolicitationFactory(organization=program_manager_org, scheduled=True)
+
+        response = pm_client.get(step_url("invitations", solicitation))
+
+        assert f"It goes live on {solicitation.go_live_date:%d %b %Y, %H:%M} UTC" in response.content.decode()
+
+    @pytest.mark.parametrize(
+        "factory_kwargs, linked_step",
+        [({"status": Solicitation.Status.ACTIVE}, "details"), ({"scheduled": True}, "publish")],
+    )
+    def test_breadcrumb_links_to_the_solicitations_page(
+        self, pm_client, program_manager_org, factory_kwargs, linked_step
+    ):
+        solicitation = SolicitationFactory(organization=program_manager_org, **factory_kwargs)
+
+        response = pm_client.get(step_url("invitations", solicitation))
+
+        assert response.context["path"][1]["url"] == step_url(linked_step, solicitation)
 
     def test_invite_email_links_to_the_solicitation(self, solicitation, mock_send_mail):
         invitation = SolicitationInvitationFactory(

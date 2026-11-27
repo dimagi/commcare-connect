@@ -1,6 +1,7 @@
 import logging
 
 from allauth.utils import build_absolute_uri
+from django.db import transaction
 from django.template.loader import render_to_string
 from django.urls import reverse
 
@@ -61,3 +62,25 @@ def update_solicitation_statuses():
     closed = Solicitation.objects.expired().update(status=Solicitation.Status.CLOSED)
     if closed:
         logger.info("Closed %s expired solicitation(s)", closed)
+    _take_scheduled_solicitations_live()
+
+
+def _take_scheduled_solicitations_live():
+    """Activates scheduled solicitations whose go-live date has passed and sends the invitation emails held back
+    while they were scheduled."""
+    with transaction.atomic():
+        # Locked so an organization invited meanwhile is either saved first, and emailed here, or finds the
+        # solicitation live once this commits and is emailed straight away (see SolicitationInvitationsView).
+        live_ids = list(
+            Solicitation.objects.open()
+            .filter(status=Solicitation.Status.SCHEDULED)
+            .select_for_update()
+            .values_list("pk", flat=True)
+        )
+        held_invitation_ids = list(
+            SolicitationInvitation.objects.filter(solicitation__in=live_ids).values_list("pk", flat=True)
+        )
+        Solicitation.objects.filter(pk__in=live_ids).update(status=Solicitation.Status.ACTIVE)
+    if live_ids:
+        logger.info("Took %s scheduled solicitation(s) live", len(live_ids))
+    send_solicitation_invite_emails(held_invitation_ids)

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.utils.timezone import now
@@ -21,6 +22,12 @@ def draft_data(db):
         "currency": _get_default_currency().pk,
         "application_deadline": deadline(),
     }
+
+
+@pytest.fixture
+def mock_send_mail():
+    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
+        yield mock
 
 
 @pytest.fixture
