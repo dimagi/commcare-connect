@@ -112,8 +112,22 @@ def create_learn_modules_and_deliver_units(opportunity_id):
     sync_learn_modules_and_deliver_units(opportunity)
 
 
-@celery_app.task()
-def add_connect_users(user_list: list[str], opportunity_id: str):
+# ConnectID answers 404 for every path while kamal-proxy has no healthy container (e.g. a failed deploy),
+# so on /users/fetch_users, which always exists, a 404 means ConnectID is unavailable, not that a resource is missing.
+CONNECTID_TRANSIENT_STATUS_CODES = frozenset({404, 502, 503, 504})
+ADD_CONNECT_USERS_MAX_RETRIES = 5
+
+
+def _is_transient_connectid_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in CONNECTID_TRANSIENT_STATUS_CODES
+    return False
+
+
+@celery_app.task(bind=True, max_retries=ADD_CONNECT_USERS_MAX_RETRIES)
+def add_connect_users(self, user_list: list[str], opportunity_id: str):
     opportunity = Opportunity.objects.get(pk=opportunity_id)
     if opportunity.has_ended:
         logger.warning("Skipping invite for ended opportunity %s (%d users)", opportunity_id, len(user_list))
@@ -123,7 +137,21 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
             "Skipping invite for opportunity %s with incomplete setup (%d users)", opportunity_id, len(user_list)
         )
         return
-    found_users = fetch_users(user_list)
+    try:
+        found_users = fetch_users(user_list)
+    except httpx.HTTPError as exc:
+        if not _is_transient_connectid_error(exc):
+            raise
+        # Nothing has been written yet, so retrying is safe. Once retries run out, self.retry re-raises exc
+        # and Sentry reports it as before.
+        logger.warning(
+            "ConnectID unavailable while inviting %d users to opportunity %s (attempt %d): %s",
+            len(user_list),
+            opportunity_id,
+            self.request.retries + 1,
+            exc,
+        )
+        raise self.retry(exc=exc, countdown=min(300, 30 * 2**self.request.retries))
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
         UserInvite.objects.get_or_create(
