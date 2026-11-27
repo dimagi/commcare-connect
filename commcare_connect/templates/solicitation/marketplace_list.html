@@ -1,11 +1,5 @@
-{% extends "base.html" %}
+{% extends "solicitation/marketplace_base.html" %}
 {% load static i18n %}
-{% block has_sidebar %}
-  {{ request.user.is_authenticated|yesno:"true,false" }}
-{% endblock has_sidebar %}
-{% block sidenav %}
-  {% if request.user.is_authenticated %}{{ block.super }}{% endif %}
-{% endblock sidenav %}
 {% block css %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
@@ -16,13 +10,14 @@
 {% endblock javascript %}
 {% block content %}
   <div class="flex flex-col gap-4 w-full pb-10">
-    <div>
-      <h1 class="title">{% translate "Marketplace" %}</h1>
-      <p class="hint">{% translate "Requests for proposals and expressions of interest open to applications." %}</p>
+    <div class="flex flex-col gap-1">
+      <h1 class="page-title">{% translate "Marketplace" %}</h1>
+      <p class="card_description">
+        {% translate "Requests for proposals and expressions of interest open to applications." %}
+      </p>
     </div>
     <form method="get" class="card_bg flex flex-col gap-3">
-      {% for error in filter.form.non_field_errors %}<p class="text-sm text-red-600">{{ error }}</p>{% endfor %}
-      <div class="flex flex-wrap items-start gap-3">
+      <div class="flex flex-wrap items-end gap-3">
         {% for field in filter.form %}
           <div class="min-w-48">
             <label class="title-sm"
@@ -31,15 +26,18 @@
             {% for error in field.errors %}<p class="text-sm text-red-600">{{ error }}</p>{% endfor %}
           </div>
         {% endfor %}
-      </div>
-      <div class="flex items-center gap-3">
-        <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
-        {% if filters_applied %}
-          <a href="{{ request.path }}" class="underline text-sm text-gray-500">{% translate "Clear filters" %}</a>
-        {% endif %}
+        <div class="flex items-center gap-3">
+          <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
+          {% if filters_applied %}
+            <a href="{{ request.path }}" class="underline text-sm text-gray-500">{% translate "Clear filters" %}</a>
+          {% endif %}
+        </div>
       </div>
     </form>
     {% if solicitations %}
+      <p class="title-sm">
+        {% blocktranslate count counter=page_obj.paginator.count %}{{ counter }} open solicitation{% plural %}{{ counter }} open solicitations{% endblocktranslate %}
+      </p>
       <ul class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {% for solicitation in solicitations %}
           <li>{% include "solicitation/partials/marketplace_card.html" %}</li>
