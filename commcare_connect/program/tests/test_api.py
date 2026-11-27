@@ -51,7 +51,7 @@ def accepted_application(program, organization):
 def mock_hq_apps(monkeypatch):
     """Mock get_applications_for_user_by_domain to return both test app IDs."""
 
-    def fake_get_apps(api_key, domain):
+    def fake_get_apps(api_key, domain, *, timeout):
         return [
             {"id": "learn-app-123", "name": "Test Learn App"},
             {"id": "deliver-app-456", "name": "Test Deliver App"},

@@ -15,46 +15,44 @@ class CommCareTokenException(CommCareHQAPIException):
 
 
 class CommCareHQAccessDenied(CommCareHQAPIException):
-    """HQ refused the request because the API key cannot see the resource (401, 403 or 404)."""
+    """HQ refused the request because the API key cannot see the resource (401 or 403, or 404 for a resource in a
+    domain)."""
 
 
-ACCESS_DENIED_STATUS_CODES = (401, 403, 404)
-# The access check runs inside a web request, so it must answer before the load balancer gives up on it.
-APP_ACCESS_TIMEOUT = 50
+ACCESS_DENIED_STATUS_CODES = (401, 403)
+# HQ answers 404 for a domain the key's user can't see. The domain list doesn't name a domain, so a 404 there means
+# the server URL is wrong, which is ours to fix.
+DOMAIN_ACCESS_DENIED_STATUS_CODES = (*ACCESS_DENIED_STATUS_CODES, 404)
+# The setup selects load the domain and app lists inside a web request, so they must answer before the proxies in
+# front of Connect give up on it. Production has CloudFront in front of the load balancer, and its origin timeout
+# defaults to 30s. Callers that can wait longer pass their own timeout.
+HQ_LIST_TIMEOUT = 25
+# The access check also runs inside a web request (the opportunity form's validation), behind the same proxies.
+APP_ACCESS_TIMEOUT = 25
+# HQ can answer an error with a whole HTML page; keep enough of it to tell what went wrong.
+ERROR_BODY_LIMIT = 500
 
 
-def get_domains_for_user(api_key):
-    response = httpx.get(
-        f"{api_key.hq_server.url}/api/v0.5/user_domains/?limit=100",
-        headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+def get_domains_for_user(api_key, *, timeout=HQ_LIST_TIMEOUT):
+    return _fetch_hq_list(
+        api_key,
+        "/api/v0.5/user_domains/?limit=100",
+        action="Failed to fetch domains",
+        parse_item=lambda domain: domain["domain_name"],
+        timeout=timeout,
+        denied_status_codes=ACCESS_DENIED_STATUS_CODES,
     )
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError:
-        raise CommCareHQAPIException(f"Failed to fetch domains: {response.text}")
-    data = response.json()
-    domains = [domain["domain_name"] for domain in data["objects"]]
-    return domains
 
 
-def get_applications_for_user_by_domain(api_key: HQApiKey, domain):
-    user_email = api_key.user.email
-    hq_server_url = api_key.hq_server.url
-    api_key = api_key.api_key
-    return _get_applications_for_domain(user_email, api_key, domain, hq_server_url)
-
-
-@async_to_sync
-async def _get_applications_for_domain(user_email, api_key, domain, hq_server_url):
-    async with httpx.AsyncClient(
-        timeout=300,
-        headers={
-            "Authorization": f"ApiKey {user_email}:{api_key}",
-        },
-        base_url=hq_server_url,
-    ) as client:
-        applications = await _get_commcare_app_json(client, domain)
-    return applications
+def get_applications_for_user_by_domain(api_key: HQApiKey, domain, *, timeout=HQ_LIST_TIMEOUT):
+    return _fetch_hq_list(
+        api_key,
+        f"/a/{domain}/api/v0.5/application/",
+        action="Failed to fetch applications",
+        parse_item=_application_option,
+        timeout=timeout,
+        denied_status_codes=DOMAIN_ACCESS_DENIED_STATUS_CODES,
+    )
 
 
 def get_app_structure(api_key, app):
@@ -113,10 +111,7 @@ async def _app_access_error(client, url):
 
 
 def _app_fetch_error(response) -> CommCareHQAPIException:
-    message = f"Failed to fetch app structure ({response.status_code}): {response.text}"
-    if response.status_code in ACCESS_DENIED_STATUS_CODES:
-        return CommCareHQAccessDenied(message)
-    return CommCareHQAPIException(message)
+    return _response_error(response, "Failed to fetch app structure", DOMAIN_ACCESS_DENIED_STATUS_CODES)
 
 
 def _app_path(cc_domain, cc_app_id):
@@ -127,22 +122,62 @@ def _auth_header(api_key):
     return f"ApiKey {api_key.user.email}:{api_key.api_key}"
 
 
-async def _get_commcare_app_json(client, domain):
-    applications = []
-    response = await client.get(f"/a/{domain}/api/v0.5/application/")
+def _fetch_hq_list(api_key, path, *, action, parse_item, timeout, denied_status_codes):
+    """GET an HQ list endpoint and return `parse_item` of each of its `objects`. Every failure raises
+    CommCareHQAPIException, including an answer that isn't the list HQ's API gives, such as a maintenance page
+    served with a 200. A status in `denied_status_codes` raises CommCareHQAccessDenied."""
+    response = _get_within_deadline(api_key.hq_server.url, _auth_header(api_key), path, action, timeout)
+    if not response.is_success:
+        raise _response_error(response, action, denied_status_codes)
     try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError:
-        raise CommCareHQAPIException(f"Failed to fetch applications: {response.text}")
-    data = response.json()
+        objects = response.json()["objects"]
+        if not isinstance(objects, list):
+            raise TypeError
+    except (ValueError, KeyError, TypeError):
+        raise CommCareHQAPIException(f"{action}: HQ's answer has no list of objects: {_error_body(response)}")
+    try:
+        return [parse_item(item) for item in objects]
+    except (KeyError, TypeError, AttributeError) as e:
+        raise CommCareHQAPIException(f"{action}: unexpected item in HQ's answer ({e!r})")
 
-    for application in data.get("objects", []):
-        app_name = application.get("name")
-        # The top-level app object is always a draft (is_released=False).
-        # Released builds are nested inside 'versions', so we check there.
-        versions = application.get("versions", [])
-        is_released = any(v.get("is_released") for v in versions)
-        if not is_released:
-            app_name = f"Unreleased - {app_name}"
-        applications.append({"id": application.get("id"), "name": app_name})
-    return applications
+
+@async_to_sync
+async def _get_within_deadline(hq_server_url, auth_header, path, action, timeout):
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, headers={"Authorization": auth_header}, base_url=hq_server_url
+        ) as client:
+            # httpx's timeout applies to each phase (connect, then each read) separately, so a slow server that
+            # keeps trickling data in would outlast the proxies. This bounds the whole request.
+            async with asyncio.timeout(timeout):
+                return await client.get(path)
+    # A malformed server URL fails outside RequestError: InvalidURL for a bad host (raised as the client parses
+    # it), OverflowError for a port out of range.
+    except (httpx.RequestError, httpx.InvalidURL, OverflowError) as e:
+        raise CommCareHQAPIException(f"{action}: {e}")
+    except TimeoutError:
+        raise CommCareHQAPIException(f"{action}: no answer within {timeout}s")
+
+
+def _application_option(application):
+    app_id = application["id"]
+    # HQ can list an app with no name; its id is the next best thing to show.
+    app_name = application.get("name") or app_id
+    # The top-level app object is always a draft (is_released=False).
+    # Released builds are nested inside 'versions', so we check there.
+    versions = application.get("versions", [])
+    is_released = any(v.get("is_released") for v in versions)
+    if not is_released:
+        app_name = f"Unreleased - {app_name}"
+    return {"id": app_id, "name": app_name}
+
+
+def _response_error(response, action, denied_status_codes) -> CommCareHQAPIException:
+    message = f"{action} ({response.status_code}): {_error_body(response)}"
+    if response.status_code in denied_status_codes:
+        return CommCareHQAccessDenied(message)
+    return CommCareHQAPIException(message)
+
+
+def _error_body(response):
+    return response.text[:ERROR_BODY_LIMIT]
