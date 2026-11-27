@@ -34,7 +34,9 @@ from commcare_connect.solicitation.models import (
     SolicitationApplication,
     SolicitationAttachment,
     SolicitationEvaluationCriterion,
+    SolicitationInvitation,
     SolicitationQuestion,
+    SolicitationReviewer,
 )
 from commcare_connect.solicitation.tables import (
     SolicitationInvitationTable,
@@ -262,7 +264,7 @@ class SolicitationParticipantsMixin(WaffleSwitchMixin):
 
     waffle_switch = SOLICITATIONS
     url_name = None  # the page listing the participants; its delete endpoint is named delete_<url_name>
-    related_name = None  # the participants' accessor on the solicitation
+    participant_model = None  # SolicitationInvitation or SolicitationReviewer
     solicitations = None  # the solicitations whose participants can be managed
 
     @cached_property
@@ -272,7 +274,7 @@ class SolicitationParticipantsMixin(WaffleSwitchMixin):
         )
 
     def get_participants(self):
-        return getattr(self.solicitation, self.related_name).all()
+        return self.participant_model.objects.filter(solicitation=self.solicitation)
 
     def get_success_url(self):
         return self.solicitation_url(self.url_name)
@@ -326,7 +328,7 @@ class SolicitationParticipantsView(SolicitationParticipantsMixin, SingleTableMix
             participant.solicitation = self.solicitation
             participant.invited_by = self.request.user
             participant.created_by = participant.modified_by = self.request.user.email
-        self.get_participants().bulk_create(participants)
+        self.participant_model.objects.bulk_create(participants)
         transaction.on_commit(partial(self.send_emails, [participant.pk for participant in participants]))
         messages.success(self.request, self.added_message % {"count": len(participants)})
         return redirect(self.get_success_url())
@@ -356,7 +358,7 @@ class SolicitationParticipantsDeleteView(SolicitationParticipantsMixin, FormView
 
 class InvitationsMixin(SolicitationParticipantsMixin):
     url_name = "invitations"
-    related_name = "invitations"
+    participant_model = SolicitationInvitation
     solicitations = Solicitation.objects.open()
 
 
@@ -393,7 +395,7 @@ class SolicitationInvitationDeleteView(InvitationsMixin, SolicitationParticipant
 
 class ReviewersMixin(SolicitationParticipantsMixin):
     url_name = "reviewers"
-    related_name = "reviewer_assignments"
+    participant_model = SolicitationReviewer
     # Reviewers are lined up while drafting and keep scoring after the solicitation closes, so only
     # a cancelled solicitation has no use for them.
     solicitations = Solicitation.objects.exclude(status=Solicitation.Status.CANCELLED)
