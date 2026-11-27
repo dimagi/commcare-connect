@@ -18,8 +18,8 @@
 {% endblock title %}
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto">
-    <form action="{% url 'organization_create' %}"
-          method="post"
+    {# No action: posts back to this URL, keeping any ?next= another flow sent the user here with. #}
+    <form method="post"
           novalidate
           x-data="organizationWizard()"
           @submit="onSubmit">
