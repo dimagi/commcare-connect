@@ -1,3 +1,4 @@
+import re
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -8,17 +9,24 @@ from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
 from commcare_connect.program.tests.factories import _get_default_country
-from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
-from commcare_connect.solicitation.tasks import send_solicitation_invite_emails
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationApplication,
+    SolicitationInvitation,
+    SolicitationReviewer,
+)
+from commcare_connect.solicitation.tables import SolicitationTable
+from commcare_connect.solicitation.tasks import send_reviewer_assignment_emails, send_solicitation_invite_emails
 from commcare_connect.solicitation.tests.factories import (
     SolicitationApplicationFactory,
     SolicitationEvaluationCriterionFactory,
     SolicitationFactory,
     SolicitationInvitationFactory,
     SolicitationQuestionFactory,
+    SolicitationReviewerFactory,
 )
 from commcare_connect.solicitation.views import SolicitationListView
-from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 Status = SolicitationApplication.Status
 
@@ -29,6 +37,7 @@ def test_queryset_counts(rf, program_manager_org):
     for status in Status:
         SolicitationApplicationFactory(solicitation=solicitation, status=status)
     SolicitationInvitationFactory.create_batch(3, solicitation=solicitation)
+    SolicitationReviewerFactory.create_batch(2, solicitation=solicitation)
     empty = SolicitationFactory(organization=program_manager_org)
     SolicitationApplicationFactory(status=Status.SUBMITTED)  # another org's solicitation
 
@@ -37,10 +46,42 @@ def test_queryset_counts(rf, program_manager_org):
     view = SolicitationListView()
     view.setup(request)
 
-    counts = {s.pk: (s.response_count, s.invited_count) for s in view.get_queryset()}
+    counts = {s.pk: (s.response_count, s.invited_count, s.reviewer_count) for s in view.get_queryset()}
 
-    # Every status except draft and withdrawn counts as a response; invitations don't inflate that count.
-    assert counts == {solicitation.pk: (len(Status) - 2, 3), empty.pk: (0, 0)}
+    # Every status except draft and withdrawn counts as a response; the counts don't inflate each other.
+    assert counts == {solicitation.pk: (len(Status) - 2, 3, 2), empty.pk: (0, 0, 0)}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, deadline_passed, items",
+    [
+        (Solicitation.Status.DRAFT, False, ["Manage Review Team", "Cancel"]),
+        (Solicitation.Status.ACTIVE, False, ["Manage Review Team", "Close", "Cancel"]),
+        # Past its deadline but not yet closed by update_solicitation_statuses.
+        (Solicitation.Status.ACTIVE, True, ["Manage Review Team"]),
+        (Solicitation.Status.CLOSED, False, ["Manage Review Team"]),
+        (Solicitation.Status.CANCELLED, False, []),
+    ],
+)
+def test_row_menu(rf, program_manager_org, status, deadline_passed, items):
+    request = rf.get("/")
+    request.org = program_manager_org
+    solicitation = SolicitationFactory(
+        organization=program_manager_org, status=status, deadline_passed=deadline_passed
+    )
+    table = SolicitationTable([solicitation])
+    table.request = request
+
+    links = re.findall(
+        r'<a href="([^"]+)"\s*(hx-boost="false")?[^>]*>\s*(.+?)\s*</a>', table.render_actions(solicitation)
+    )
+
+    assert [title for _url, _boost, title in links] == items
+    # Only the reviewers page navigates; close and cancel load their form into the list page's modal.
+    assert [(url, boost) for url, boost, title in links if boost] == (
+        [(step_url("reviewers", solicitation), 'hx-boost="false"')] if items else []
+    )
 
 
 @pytest.mark.django_db
@@ -231,18 +272,20 @@ class TestSolicitationSteps:
         assert response.context.get("previous_step_url") == (previous_step and step_url(previous_step, draft))
 
     @pytest.mark.parametrize(
-        "status, public, deadline_passed, is_editable, is_open",
+        "status, public, deadline_passed, is_editable, is_open, reviewers_linked",
         [
-            (Solicitation.Status.DRAFT, False, False, True, False),
-            (Solicitation.Status.ACTIVE, False, False, True, True),
-            (Solicitation.Status.ACTIVE, True, False, True, True),
+            (Solicitation.Status.DRAFT, False, False, True, False, True),
+            (Solicitation.Status.ACTIVE, False, False, True, True, True),
+            (Solicitation.Status.ACTIVE, True, False, True, True, True),
             # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, False, False),
-            (Solicitation.Status.CLOSED, False, False, False, False),
-            (Solicitation.Status.CANCELLED, False, False, False, False),
+            (Solicitation.Status.ACTIVE, False, True, False, False, True),
+            (Solicitation.Status.CLOSED, False, False, False, False, True),
+            (Solicitation.Status.CANCELLED, False, False, False, False, False),
         ],
     )
-    def test_list_links(self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open):
+    def test_list_links(
+        self, pm_client, program_manager_org, status, public, deadline_passed, is_editable, is_open, reviewers_linked
+    ):
         solicitation = SolicitationFactory(
             organization=program_manager_org,
             status=status,
@@ -257,12 +300,16 @@ class TestSolicitationSteps:
         assert (step_url("cancel", solicitation) in content) is is_editable
         assert (step_url("invitations", solicitation) in content) is is_open
         assert (step_url("close", solicitation) in content) is is_open
+        assert (step_url("reviewers", solicitation) in content) is reviewers_linked
 
     def test_create_renders(self, pm_client, program_manager_org):
         response = pm_client.get(reverse("solicitation:create", args=(program_manager_org.slug,)))
 
         assert response.status_code == HTTPStatus.OK
         assert response.context["path"][-1] == {"title": "New solicitation"}
+
+
+PARTICIPANT_FACTORIES = {"invitations": SolicitationInvitationFactory, "reviewers": SolicitationReviewerFactory}
 
 
 @pytest.fixture
@@ -357,13 +404,31 @@ class TestSolicitationClosure:
         assert "Funding withdrawn" in response.content.decode()
 
 
+@pytest.fixture
+def mock_send_mail():
+    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
+        yield mock
+
+
+@pytest.fixture
+def member(program_manager_org):
+    return MembershipFactory(organization=program_manager_org, role="viewer").user
+
+
+def sent_to(mock_send_mail):
+    return sorted(call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list)
+
+
+def assert_add_rejected(response, participants, expected_count, mock_send_mail):
+    """The form came back with errors, and nothing was added or emailed."""
+    assert response.status_code == HTTPStatus.OK
+    assert response.context["form"].errors
+    assert participants.count() == expected_count
+    mock_send_mail.delay.assert_not_called()
+
+
 @pytest.mark.django_db
 class TestSolicitationInvitations:
-    @pytest.fixture
-    def mock_send_mail(self):
-        with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-            yield mock
-
     @pytest.mark.parametrize("public", [True, False])
     def test_invite_creates_rows_and_emails_each_org(
         self,
@@ -388,8 +453,7 @@ class TestSolicitationInvitations:
         assert {(i.organization, i.invited_by) for i in invitations} == {
             (org, program_manager_org_user_admin) for org in invited_orgs
         }
-        sent_to = [call.kwargs["recipient_list"] for call in mock_send_mail.delay.call_args_list]
-        assert sorted(sent_to) == sorted(org.get_member_emails() for org in invited_orgs)
+        assert sent_to(mock_send_mail) == sorted(org.get_member_emails() for org in invited_orgs)
 
     def test_invite_email_links_to_the_solicitation(self, solicitation, mock_send_mail):
         invitation = SolicitationInvitationFactory(
@@ -417,10 +481,7 @@ class TestSolicitationInvitations:
         data = {"organizations": [organization.pk, OrganizationFactory().pk]}
         response = pm_client.post(step_url("invitations", solicitation), data)
 
-        assert response.status_code == HTTPStatus.OK
-        assert response.context["form"].errors
-        assert solicitation.invitations.count() == int(already_invited)
-        mock_send_mail.delay.assert_not_called()
+        assert_add_rejected(response, solicitation.invitations, int(already_invited), mock_send_mail)
 
     def test_list_shows_invitations_by_org_name(self, pm_client, solicitation):
         invitation = SolicitationInvitationFactory(solicitation=solicitation)
@@ -433,54 +494,160 @@ class TestSolicitationInvitations:
         choices = dict(response.context["form"].fields["organizations"].choices)
         assert choices[uninvited.pk] == uninvited.name
 
-    def test_delete_removes_selected_invitations(self, pm_client, solicitation):
-        removed, kept = SolicitationInvitationFactory.create_batch(2, solicitation=solicitation)
 
-        response = pm_client.post(step_url("delete_invitations", solicitation), {"invitation_ids": [removed.pk]})
+@pytest.mark.django_db
+class TestSolicitationReviewers:
+    @pytest.mark.parametrize("role", SolicitationReviewer.Role.values)
+    def test_add_assigns_role_and_emails_each_person(
+        self,
+        pm_client,
+        solicitation,
+        program_manager_org_user_admin,
+        member,
+        mock_send_mail,
+        django_capture_on_commit_callbacks,
+        role,
+    ):
+        # The PM is a member too, so can take a role on their own solicitation.
+        users = [member, program_manager_org_user_admin]
 
-        assert response.url == step_url("invitations", solicitation)
-        assert list(solicitation.invitations.all()) == [kept]
+        with django_capture_on_commit_callbacks(execute=True):
+            response = pm_client.post(
+                step_url("reviewers", solicitation), {"users": [user.pk for user in users], "role": role}
+            )
 
-    @pytest.mark.parametrize("other_solicitation", [True, False])
-    def test_delete_rejects_invalid_selection(self, pm_client, solicitation, other_solicitation):
-        """Nothing selected, or an id from another solicitation, deletes nothing."""
-        other = SolicitationInvitationFactory()
-        data = {"invitation_ids": [other.pk]} if other_solicitation else {}
+        assert response.url == step_url("reviewers", solicitation)
+        assert {(a.user, a.role, a.invited_by) for a in solicitation.reviewer_assignments.all()} == {
+            (user, role, program_manager_org_user_admin) for user in users
+        }
+        assert sent_to(mock_send_mail) == sorted([user.email] for user in users)
 
-        response = pm_client.post(step_url("delete_invitations", solicitation), data)
+    @pytest.mark.parametrize("already_assigned", [True, False])
+    def test_add_rejects_assigned_members_and_non_members(
+        self, pm_client, solicitation, program_manager_org, member, mock_send_mail, already_assigned
+    ):
+        if already_assigned:
+            SolicitationReviewerFactory(solicitation=solicitation, user=member)
+            rejected = member
+        else:
+            rejected = MembershipFactory().user  # belongs to another organization
 
-        assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert SolicitationInvitation.objects.filter(pk=other.pk).exists()
+        # A valid member alongside the rejected one is not added either.
+        valid = MembershipFactory(organization=program_manager_org).user
+        data = {"users": [rejected.pk, valid.pk], "role": SolicitationReviewer.Role.REVIEWER}
+        response = pm_client.post(step_url("reviewers", solicitation), data)
+
+        assert_add_rejected(response, solicitation.reviewer_assignments, int(already_assigned), mock_send_mail)
+
+    def test_list_shows_assignments_and_offers_other_members(self, pm_client, solicitation, member):
+        assignment = SolicitationReviewerFactory(
+            solicitation=solicitation, user=member, role=SolicitationReviewer.Role.OBSERVER
+        )
+        # Assigned on another solicitation only, so still offered here.
+        unassigned = SolicitationReviewerFactory(
+            user=MembershipFactory(organization=solicitation.organization).user
+        ).user
+
+        response = pm_client.get(step_url("reviewers", solicitation))
+
+        [row] = response.context["table"].rows
+        assert (row.record, row.get_cell("name"), row.get_cell("role")) == (assignment, member.name, "Observer")
+        choices = dict(response.context["form"].fields["users"].choices)
+        assert member.pk not in choices
+        assert choices[unassigned.pk] == f"{unassigned.name} ({unassigned.email})"
 
     @pytest.mark.parametrize(
-        "status, public, own_org, deadline_passed",
+        "status, linked", [(Solicitation.Status.ACTIVE, True), (Solicitation.Status.CLOSED, False)]
+    )
+    def test_solicitation_crumb_links_to_details_only_while_editable(
+        self, pm_client, program_manager_org, status, linked
+    ):
+        solicitation = SolicitationFactory(organization=program_manager_org, status=status)
+
+        response = pm_client.get(step_url("reviewers", solicitation))
+
+        assert response.context["path"][1].get("url") == (step_url("details", solicitation) if linked else None)
+
+    @pytest.mark.parametrize(
+        "role, email, subject",
         [
-            (Solicitation.Status.DRAFT, False, True, False),
-            (Solicitation.Status.CLOSED, False, True, False),
-            (Solicitation.Status.CANCELLED, False, True, False),
-            (Solicitation.Status.ACTIVE, False, False, False),
-            # Past its deadline but not yet closed by update_solicitation_statuses.
-            (Solicitation.Status.ACTIVE, False, True, True),
+            (SolicitationReviewer.Role.REVIEWER, "reviewer@example.com", "Reviewer assignment: Malaria outreach"),
+            (SolicitationReviewer.Role.OBSERVER, "observer@example.com", "Observer assignment: Malaria outreach"),
+            # Nobody to write to.
+            (SolicitationReviewer.Role.REVIEWER, None, None),
+            (SolicitationReviewer.Role.REVIEWER, "", None),
         ],
     )
-    def test_only_own_open_solicitations(
-        self, pm_client, program_manager_org, status, public, own_org, deadline_passed
+    def test_assignment_email(self, mock_send_mail, role, email, subject):
+        assignment = SolicitationReviewerFactory(
+            solicitation__title="Malaria outreach", user=UserFactory(email=email), role=role
+        )
+
+        send_reviewer_assignment_emails([assignment.pk])
+
+        subjects = [call.kwargs["subject"] for call in mock_send_mail.delay.call_args_list]
+        assert subjects == ([subject] if subject else [])
+        assert sent_to(mock_send_mail) == ([[email]] if subject else [])
+
+
+@pytest.mark.django_db
+class TestSolicitationParticipants:
+    """Behaviour the invitations and reviewers pages share."""
+
+    @pytest.mark.parametrize("page", PARTICIPANT_FACTORIES)
+    def test_delete_removes_selected_participants(self, pm_client, solicitation, page):
+        removed, kept = PARTICIPANT_FACTORIES[page].create_batch(2, solicitation=solicitation)
+
+        response = pm_client.post(step_url(f"delete_{page}", solicitation), {"ids": [removed.pk]})
+
+        assert response.url == step_url(page, solicitation)
+        assert list(type(kept).objects.filter(solicitation=solicitation)) == [kept]
+
+    @pytest.mark.parametrize("page", PARTICIPANT_FACTORIES)
+    @pytest.mark.parametrize("other_solicitation", [True, False])
+    def test_delete_rejects_invalid_selection(self, pm_client, solicitation, page, other_solicitation):
+        """Nothing selected, or an id from another solicitation, deletes nothing."""
+        other = PARTICIPANT_FACTORIES[page]()
+        data = {"ids": [other.pk]} if other_solicitation else {}
+
+        response = pm_client.post(step_url(f"delete_{page}", solicitation), data)
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert type(other).objects.filter(pk=other.pk).exists()
+
+    @pytest.mark.parametrize(
+        "page, status, own_org, deadline_passed, found",
+        [
+            # Organizations are invited only while the solicitation is open.
+            ("invitations", Solicitation.Status.DRAFT, True, False, False),
+            ("invitations", Solicitation.Status.CLOSED, True, False, False),
+            ("invitations", Solicitation.Status.CANCELLED, True, False, False),
+            ("invitations", Solicitation.Status.ACTIVE, False, False, False),
+            # Past its deadline but not yet closed by update_solicitation_statuses.
+            ("invitations", Solicitation.Status.ACTIVE, True, True, False),
+            # Reviewers are managed until the solicitation is cancelled.
+            ("reviewers", Solicitation.Status.DRAFT, True, False, True),
+            ("reviewers", Solicitation.Status.ACTIVE, True, True, True),
+            ("reviewers", Solicitation.Status.CLOSED, True, False, True),
+            ("reviewers", Solicitation.Status.CANCELLED, True, False, False),
+            ("reviewers", Solicitation.Status.ACTIVE, False, False, False),
+        ],
+    )
+    def test_only_own_manageable_solicitations(
+        self, pm_client, program_manager_org, page, status, own_org, deadline_passed, found
     ):
         organization = program_manager_org if own_org else OrganizationFactory()
-        solicitation = SolicitationFactory(
-            organization=organization,
-            status=status,
-            public=public,
-            deadline_passed=deadline_passed,
-        )
-        invitation = SolicitationInvitationFactory(solicitation=solicitation)
+        solicitation = SolicitationFactory(organization=organization, status=status, deadline_passed=deadline_passed)
+        participant = PARTICIPANT_FACTORIES[page](solicitation=solicitation)
         # Always the PM's own org slug, so another org's solicitation is reached through this org's URLs.
         url_args = (program_manager_org.slug, solicitation.solicitation_id)
-        list_url = reverse("solicitation:invitations", args=url_args)
-        delete_url = reverse("solicitation:delete_invitations", args=url_args)
+        list_url = reverse(f"solicitation:{page}", args=url_args)
+        delete_url = reverse(f"solicitation:delete_{page}", args=url_args)
 
-        assert pm_client.get(list_url).status_code == HTTPStatus.NOT_FOUND
-        invite_response = pm_client.post(list_url, {"organizations": [OrganizationFactory().pk]})
-        assert invite_response.status_code == HTTPStatus.NOT_FOUND
-        assert pm_client.post(delete_url, {"invitation_ids": [invitation.pk]}).status_code == HTTPStatus.NOT_FOUND
-        assert solicitation.invitations.get() == invitation
+        # An empty add re-renders the page with its errors.
+        page_status = HTTPStatus.OK if found else HTTPStatus.NOT_FOUND
+        assert pm_client.get(list_url).status_code == page_status
+        assert pm_client.post(list_url, {}).status_code == page_status
+        delete_status = HTTPStatus.FOUND if found else HTTPStatus.NOT_FOUND
+        assert pm_client.post(delete_url, {"ids": [participant.pk]}).status_code == delete_status
+        assert type(participant).objects.filter(pk=participant.pk).exists() is not found

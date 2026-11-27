@@ -22,6 +22,13 @@ def invitations_url(record, table):
     return None
 
 
+def reviewers_url(record, table):
+    # Reviewers are managed until a solicitation is cancelled; scoring continues after it closes.
+    if record.status != Solicitation.Status.CANCELLED:
+        return reverse("solicitation:reviewers", args=(table.request.org.slug, record.solicitation_id))
+    return None
+
+
 class SolicitationTable(tables.Table):
     title = columns.Column(verbose_name=_("Title"), linkify=details_url, attrs={"a": {"class": "underline"}})
     type = columns.Column(verbose_name=_("Type"))
@@ -31,12 +38,24 @@ class SolicitationTable(tables.Table):
     invited_count = columns.Column(
         verbose_name=_("Invited"), linkify=invitations_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
     )
+    reviewer_count = columns.Column(
+        verbose_name=_("Review Team"), linkify=reviewers_url, attrs=STAT_COLUMN_ATTRS | {"a": {"class": "underline"}}
+    )
     response_count = columns.Column(verbose_name=_("Responses"), attrs=STAT_COLUMN_ATTRS)
     actions = columns.Column(verbose_name="", orderable=False, empty_values=())
 
     class Meta:
         model = Solicitation
-        fields = ("title", "type", "visibility", "status", "application_deadline", "invited_count", "response_count")
+        fields = (
+            "title",
+            "type",
+            "visibility",
+            "status",
+            "application_deadline",
+            "invited_count",
+            "reviewer_count",
+            "response_count",
+        )
         empty_text = _("No solicitations yet.")
 
     def render_visibility(self, value):
@@ -45,11 +64,14 @@ class SolicitationTable(tables.Table):
     def render_actions(self, record):
         url_args = (self.request.org.slug, record.solicitation_id)
         actions = []
+        if url := reviewers_url(record, self):
+            # A page of its own, so it opts out of the menu's boost into the list page's modal.
+            actions.append({"title": _("Manage Review Team"), "url": url, "hx_boost": "false"})
         if record.is_open:
             actions.append({"title": _("Close"), "url": reverse("solicitation:close", args=url_args)})
         if record.is_editable:
             actions.append({"title": _("Cancel"), "url": reverse("solicitation:cancel", args=url_args)})
-        # Closed and cancelled solicitations are finished, so they get no menu.
+        # Cancelled solicitations are finished, so they get no menu.
         return render_to_string("solicitation/row_actions.html", {"actions": actions}) if actions else ""
 
 
@@ -62,3 +84,16 @@ class SolicitationInvitationTable(tables.Table):
 
     class Meta:
         empty_text = _("No organizations invited yet.")
+
+
+class SolicitationReviewerTable(tables.Table):
+    select = select_column()
+    index = IndexColumn()
+    name = columns.Column(verbose_name=_("Name"), accessor="user__name")
+    email = columns.Column(verbose_name=_("Email"), accessor="user__email")
+    role = columns.Column(verbose_name=_("Role"))
+    invited_by = columns.Column(verbose_name=_("Added by"), orderable=False)
+    date_created = DMYTColumn(verbose_name=_("Added on"))
+
+    class Meta:
+        empty_text = _("No reviewers or observers yet.")

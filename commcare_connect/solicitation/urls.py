@@ -13,6 +13,8 @@ from commcare_connect.solicitation.views import (
     SolicitationListView,
     SolicitationPublishView,
     SolicitationQuestionsView,
+    SolicitationReviewerDeleteView,
+    SolicitationReviewersView,
 )
 
 app_name = "solicitation"
@@ -30,6 +32,12 @@ urlpatterns = [
         "<uuid:solicitation_id>/invitations/delete/",
         view=SolicitationInvitationDeleteView.as_view(),
         name="delete_invitations",
+    ),
+    path("<uuid:solicitation_id>/reviewers/", view=SolicitationReviewersView.as_view(), name="reviewers"),
+    path(
+        "<uuid:solicitation_id>/reviewers/delete/",
+        view=SolicitationReviewerDeleteView.as_view(),
+        name="delete_reviewers",
     ),
 ]
 
