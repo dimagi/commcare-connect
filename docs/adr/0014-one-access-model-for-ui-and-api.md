@@ -1,8 +1,10 @@
-# ADR-0003: One access model for UI and API
+# ADR-0014: One access model for UI and API
 
 **Status:** Proposed
 
 **Author:** Charl Smit · **Created:** 2026-11-19
+
+**Extends:** [ADR-0011](0011-organization-scoped-access-levels.md)
 
 ## Context
 
@@ -34,6 +36,7 @@ We will decide access in one place, with functions that take a user and a resour
 - API calls name no acting organization. When a call creates a resource, the owning organization is a field of the payload, and the caller needs the required access through that organization.
 - UI views, API views and services all check access through these functions.
 - An OAuth token's scopes cap that access: API writes also require the `write` scope, and reads the `read` or `export` scope.
+- This brings the organization-facing APIs into the access model, superseding ADR-0011's consequence that API endpoints are outside it. Worker-facing mobile endpoints, which authenticate the worker with a ConnectID token ([ADR-0012](0012-worker-identity-connectid-and-hq.md)), stay outside it.
 
 ## Consequences
 

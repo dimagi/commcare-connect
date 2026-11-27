@@ -1,10 +1,10 @@
-# ADR-0004: Shared service layer for UI and API
+# ADR-0015: Shared service layer for UI and API
 
 **Status:** Proposed
 
 **Author:** Charl Smit · **Created:** 2026-11-19
 
-**Extends:** [ADR-0003](0003-one-access-model-for-ui-and-api.md)
+**Extends:** [ADR-0014](0014-one-access-model-for-ui-and-api.md)
 
 ## Context
 
@@ -17,10 +17,10 @@ The API is to read every table and, later, do anything the UI can, starting with
 We will put each app's rules in one layer that the UI, the API, Celery tasks, management commands and other apps all call.
 
 - Every write to an app's data goes through a service in that app's `services`. A service takes the acting user and plain values, never a request.
-- A service checks access as ADR-0003 defines, enforces the business rules, runs the transaction, and dispatches follow-up work such as tasks, emails and CommCare HQ calls after commit.
+- A service checks access as ADR-0014 defines, enforces the business rules, runs the transaction, and dispatches follow-up work such as tasks, emails and CommCare HQ calls after commit. An external call whose result the operation needs runs inside the operation, and its failure fails the operation. Example: a claim creates the worker's HQ user before it commits ([ADR-0012](0012-worker-identity-connectid-and-hq.md)).
 - A service rejects bad input with one validation error type whose messages are keyed by field. Forms and API views translate that error into their own format.
 - Forms and serializers only parse and shape input. A rule that reads the database or states business policy belongs in the service.
-- Every model the API exposes has one function that returns the rows a user may see, built on ADR-0003. UI tables and API endpoints both start from it.
+- Every model the API exposes has one function that returns the rows a user may see, built on ADR-0014. UI tables and API endpoints both start from it.
 - API serializers list their fields explicitly. Secrets such as HQ API keys, OAuth tokens and credentials are never serialized. Internal tables such as sessions, scheduled tasks, feature flags and history events are exposed only behind a staff permission, if at all.
 - Where the UI and the API apply different rules today, the UI's rule is kept unless it is a bug.
 - New code follows this decision. Existing code moves to it when it is changed.

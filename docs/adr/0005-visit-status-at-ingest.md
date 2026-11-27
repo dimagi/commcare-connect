@@ -1,0 +1,44 @@
+# ADR-0005: Decide a visit's status when the form arrives, under a claim-limit row lock
+
+**Status:** Accepted
+
+**Author:** Charl Smit · **Created:** 2026-11-13
+
+**Extends:** [ADR-0004](0004-per-worker-claim-limits.md)
+
+## Context
+
+Every delivery form has to be checked against the worker's limits (ADR-0004), against earlier visits to the same beneficiary, and against the opportunity's verification rules before anyone reviews it. Workers often submit several forms at once when their phone syncs, so the forms for one worker arrive concurrently. A visit is judged twice. Verification decides whether it is valid, and the system decides it from the opportunity's verification flags. Older opportunities without automatic verification still have the delivering organization decide flagged visits by hand, and the program manager then reviews the visits the organization approved.
+
+## Decision
+
+We will set each `UserVisit`'s status synchronously while the form is received, and keep the program manager's review in a separate field.
+
+- `UserVisit.status` is one of `pending`, `approved`, `rejected`, `over_limit`, `duplicate` and `trial`. Form processing sets it in a fixed order: `trial` before the opportunity or payment unit starts, then `over_limit`, then `duplicate`, then verification flags, suspension and blocking tasks, then automatic rejection or approval.
+- `trial` and `over_limit` are statuses, not separate fields, and they are left out of every limit and duplicate count.
+- `UserVisit.over_limit_reasons` records every limit the visit breached.
+- A visit is a `duplicate` when the same worker already has a visit to the same deliver unit with the same `entity_id`. If the opportunity's `duplicate` verification flag is on, it keeps that status and is flagged; if it is off, it goes back to `pending` and is checked like any other visit. Under automatic verification the flag is always off and can't be turned on.
+- A `pending` visit with no flags is approved with `review_status=agree` (`Opportunity.auto_approve_visits`, on for every opportunity).
+- A flagged `pending` visit is rejected when `Opportunity.automatic_visit_verification` is on, and approving or rejecting visits by hand is disabled. Every new opportunity gets automatic verification while the `automatic_visit_verification` switch is on, and the product has no setting to turn it off.
+- Manual verification remains only on opportunities created without automatic verification: a flagged visit stays `pending` until the delivering organization approves it, with a justification, or rejects it.
+- `UserVisit.review_status` (`pending`, `agree`, `disagree`) holds the program manager's review of visits the delivering organization approved by hand, so it applies only under manual verification. A visit counts toward payment only when `status=approved` and `review_status=agree`.
+- A visit with `review_status=agree` can't be rejected afterwards, whether it was agreed to by hand or approved automatically. Invoicing relies on this ([ADR-0010](0010-invoice-billing-watermark.md)).
+- Counting visits and checking duplicates happens inside a transaction that holds a `select_for_update` lock on the worker's `OpportunityClaimLimit` row for that payment unit.
+
+## Consequences
+
+- A visit's limit and duplicate outcome is fixed when it arrives; later changes to limits don't re-evaluate it, and reviewers change it by hand.
+- Forms that arrive out of order are judged in arrival order, so the visit marked `over_limit` or `duplicate` may not be the later one by `visit_date`.
+- The claim-end checks compare against the server's date on arrival, and the daily limit uses the form's `timeStart` date, so a late-forwarded form can be over limit even though it was on time.
+- Concurrent forms for the same worker and payment unit are serialized, and forms for different payment units or workers are not.
+- Every check that counts visits must run inside the lock, or limits can be exceeded again.
+- Status changes by the delivering organization and the program manager don't overwrite each other, but every query for payable visits must filter on both fields.
+- Under automatic verification no visit needs a program manager review.
+- An approved duplicate can complete its payment unit again for the same beneficiary, so the `duplicate` flag is what stops repeat services being paid without a decision.
+- Under automatic verification nothing stops that: a duplicate with no other flags is approved and paid like any other visit.
+
+## Alternatives considered
+
+- A Redis lock keyed on `entity_id` — rejected because different beneficiaries took different locks, so the daily and total limits weren't protected, and its timeout could expire while the transaction was still running.
+- A separate field marking trial visits — rejected because a trial visit has no meaningful pending or over-limit state, so it is one more status.
+- Fold the program manager's review into `status` — rejected because the delivering organization and the program manager judge the same visit independently.
