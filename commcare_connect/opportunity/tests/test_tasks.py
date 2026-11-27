@@ -3,7 +3,9 @@ import uuid
 from decimal import Decimal
 from unittest import mock
 
+import httpx
 import pytest
+from celery.exceptions import Retry
 from django.utils.timezone import now
 from tablib import Dataset
 
@@ -88,6 +90,69 @@ class TestConnectUserCreation:
         user2 = User.objects.filter(username="test2")
         assert len(user2) == 1
         assert len(OpportunityAccess.objects.filter(user=user2.first(), opportunity=opportunity)) == 1
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "error",
+        [
+            httpx.HTTPStatusError(
+                "not found",
+                request=httpx.Request("GET", "https://connectid.test/users/fetch_users"),
+                response=httpx.Response(404),
+            ),
+            httpx.HTTPStatusError(
+                "unavailable",
+                request=httpx.Request("GET", "https://connectid.test/users/fetch_users"),
+                response=httpx.Response(503),
+            ),
+            httpx.ConnectError("connection refused"),
+        ],
+    )
+    def test_add_connect_users_retries_when_connectid_unavailable(self, error):
+        opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.fetch_users", side_effect=error),
+            mock.patch.object(add_connect_users, "retry", side_effect=Retry()) as retry,
+        ):
+            with pytest.raises(Retry):
+                add_connect_users(["+15555555555"], opportunity.id)
+
+        retry.assert_called_once()
+        assert retry.call_args.kwargs["exc"] is error
+        assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
+
+    @pytest.mark.django_db
+    def test_add_connect_users_raises_original_error_when_run_eagerly(self):
+        opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
+        error = httpx.ConnectError("connection refused")
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.fetch_users", side_effect=error),
+            mock.patch.object(add_connect_users, "retry") as retry,
+        ):
+            with pytest.raises(httpx.ConnectError):
+                add_connect_users.apply(args=(["+15555555555"], opportunity.id), throw=True)
+
+        retry.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_add_connect_users_does_not_retry_non_transient_error(self):
+        opportunity = OpportunityFactory()
+        PaymentUnitFactory(opportunity=opportunity)
+        error = httpx.HTTPStatusError(
+            "unauthorized",
+            request=httpx.Request("GET", "https://connectid.test/users/fetch_users"),
+            response=httpx.Response(401),
+        )
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.fetch_users", side_effect=error),
+            mock.patch.object(add_connect_users, "retry") as retry,
+        ):
+            with pytest.raises(httpx.HTTPStatusError):
+                add_connect_users(["+15555555555"], opportunity.id)
+
+        retry.assert_not_called()
 
     @pytest.mark.django_db
     def test_add_connect_users_skips_opportunity_without_valid_end_date(self, unusable_end_date):
