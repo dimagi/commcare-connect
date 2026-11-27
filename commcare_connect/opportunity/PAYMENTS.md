@@ -132,6 +132,8 @@ The claim limit row is locked with `select_for_update()` while this runs, so con
 
 Limits are counted **per deliver unit** and exclude `over_limit` and `trial` visits. Only auto-approved visits get `review_status=agree` here. Every other visit needs a PM to agree before it can be paid.
 
+The limit check runs only when the form arrives, so raising a limit later leaves earlier visits `over_limit`. An NM can approve them from the visit list's All tab or the visit status import. For many visits, or on opportunities with automatic visit verification (which have no PM review), run `./manage.py approve_over_limit_visits`. It is a dry run unless given `--commit`, and `--agree` marks the visits agreed so that they accrue payment without a PM.
+
 ### CompletedWork
 
 One row per `(opportunity_access, entity_id, payment_unit)`: everything a worker delivered for one beneficiary under one payment unit. It is the unit that gets approved, accrues payment, and is invoiced.
@@ -216,7 +218,7 @@ Accrual is cached, not calculated on read, so every action that can change a vis
 flowchart LR
     subgraph Triggers
         T1[Form received]
-        T2[Bulk approve visits]
+        T2[Bulk approve visits /<br/>approve_over_limit_visits command]
         T3[Reject visits]
         T4[PM review agree/disagree]
         T5[Visit status /<br/>review status imports]
@@ -235,14 +237,14 @@ flowchart LR
     B2 --> U
 ```
 
-| Trigger                              | Entry point                                                                             | Works recalculated                                                              |
-| ------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Form received                        | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)`            | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
-| Bulk approve visits                  | `utils.visit_approval.approve_user_visits` → `update_payment_accrued(incremental=True)` | Works not yet approved with`saved_approved_count=0`                             |
-| Reject visits                        | `views.reject_visits` → `update_payment_accrued()`                                      | All of the worker's works                                                       |
-| PM review                            | `views.user_visit_review` → `update_payment_accrued()`                                  | All of the worker's works                                                       |
-| Visit or review status imports       | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)                         | All works except`rejected`                                                      |
-| Nightly,`auto_approve_payments` only | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)                   | All works except`rejected`                                                      |
+| Trigger                                                  | Entry point                                                                             | Works recalculated                                                              |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Form received                                            | `process_deliver_unit` → `update_payment_accrued_for_user(incremental=True)`            | Works not yet approved with`saved_approved_count=0`, plus the work just touched |
+| Bulk approve visits, `approve_over_limit_visits` command | `utils.visit_approval.approve_user_visits` → `update_payment_accrued(incremental=True)` | Works not yet approved with`saved_approved_count=0`                             |
+| Reject visits                                            | `views.reject_visits` → `update_payment_accrued()`                                      | All of the worker's works                                                       |
+| PM review                                                | `views.user_visit_review` → `update_payment_accrued()`                                  | All of the worker's works                                                       |
+| Visit or review status imports                           | `visit_import.*` → `tasks.bulk_update_payment_accrued` (Celery)                         | All works except`rejected`                                                      |
+| Nightly,`auto_approve_payments` only                     | `tasks.bulk_approve_completed_work` (active, not-ended opportunities)                   | All works except`rejected`                                                      |
 
 **Incremental** skips works that are already processed (approved, or with `saved_approved_count > 0`), so only works still waiting on approval are recalculated. **Full** recalculates every one of the worker's works.
 

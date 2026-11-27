@@ -18,12 +18,15 @@ def approvable_visits(opportunity: Opportunity, visit_ids) -> QuerySet[UserVisit
     )
 
 
-def approve_user_visits(opportunity: Opportunity, visits, justification: str | None = None) -> int:
-    """Approve the visits for PM review, then recalculate the workers' accrual and the visits' work areas.
+def approve_user_visits(
+    opportunity: Opportunity, visits, justification: str | None = None, agree: bool = False
+) -> int:
+    """Approve the visits, then recalculate the workers' accrual and the visits' work areas.
 
-    Flagged visits get the justification, and MissingJustificationError is raised before anything is
-    written if one of them needs it and none is given. A visit the PM disagreed with goes back to pending
-    review. Returns the number of visits updated.
+    The visits go to PM review, and one the PM disagreed with goes back to pending review. With agree,
+    they are marked agreed instead, as form processing does for an auto-approved visit. Flagged visits
+    get the justification, and MissingJustificationError is raised before anything is written if one of
+    them needs it and none is given. Returns the number of visits updated.
     """
     visits = list(visits)
     if not justification and any(visit.flagged for visit in visits):
@@ -32,6 +35,9 @@ def approve_user_visits(opportunity: Opportunity, visits, justification: str | N
     approved_on = now()
     for visit in visits:
         _approve(visit, approved_on, justification)
+        if agree:
+            visit.review_status = VisitReviewStatus.agree
+            visit.review_status_modified_date = approved_on
 
     approved_count = UserVisit.objects.bulk_update(
         visits,
@@ -43,6 +49,7 @@ def approve_user_visits(opportunity: Opportunity, visits, justification: str | N
             "review_status_modified_date",
             "justification",
         ],
+        batch_size=100,
     )
     user_ids = list({visit.user_id for visit in visits})
     if user_ids:
