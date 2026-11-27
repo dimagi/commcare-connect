@@ -7,18 +7,23 @@ from unittest import mock
 from urllib.parse import urlparse
 
 import pytest
+import weasyprint
 from django.core.files.storage import default_storage
+from django.template.loader import render_to_string
 from django_weasyprint.utils import DjangoURLFetcher
+from pytest_django.asserts import assertInHTML
 
 from commcare_connect.opportunity.models import InvoiceStatus
 from commcare_connect.opportunity.tasks import generate_invoice_summary_export
 from commcare_connect.opportunity.tests.factories import (
+    BilledEntityFactory,
     ExchangeRateFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
 )
 from commcare_connect.opportunity.utils.invoice_export import (
     EXPORT_EXCLUDED_STATUSES,
+    PDF_BASE_URL,
     build_invoice_pdf_zip,
     build_invoice_summary_dataset,
     get_exportable_invoices,
@@ -90,6 +95,39 @@ class TestPdfExport:
     def test_render_invoice_pdf(self, opportunity):
         invoice = PaymentInvoiceFactory(opportunity=opportunity, service_delivery=False, description="Fuel")
         assert render_invoice_pdf(invoice).startswith(b"%PDF")
+
+    @pytest.mark.parametrize(
+        "entity_kwargs, expected",
+        [
+            # No choice: the seeded default must print exactly what the hardcoded DIMAGI_ADDRESS did.
+            (None, "<p>Dimagi, Inc.<br>245 Main Street, 2nd Floor<br>Cambridge, MA 02142, USA<br>+1 617.649.2214</p>"),
+            (
+                {"name": "Dimagi South Africa", "address": "1 Long St\nCape Town"},
+                "<p>Dimagi South Africa<br>1 Long St<br>Cape Town</p>",
+            ),
+        ],
+    )
+    def test_bill_to_section(self, opportunity, entity_kwargs, expected):
+        extra = {"bill_to": BilledEntityFactory(**entity_kwargs)} if entity_kwargs else {}
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, **extra)
+        html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
+        assertInHTML(expected, html)
+
+    @pytest.mark.parametrize("field", ["name", "address"])
+    def test_long_unbroken_bill_to_text_wraps_inside_the_page(self, opportunity, field):
+        entity = BilledEntityFactory(**{field: "X" * 150})
+        invoice = PaymentInvoiceFactory(opportunity=opportunity, bill_to=entity)
+        html = render_to_string("opportunity/invoice_download.html", get_invoice_pdf_context(invoice))
+        document = weasyprint.HTML(string=html, base_url=PDF_BASE_URL, url_fetcher=DjangoURLFetcher()).render()
+        page_box = document.pages[0]._page_box  # WeasyPrint has no public API for laid-out boxes.
+        content_right = page_box.content_box_x() + page_box.width
+        overflowing = [
+            box.text
+            for box in page_box.descendants()
+            if isinstance(box, weasyprint.formatting_structure.boxes.TextBox)
+            and box.position_x + box.width > content_right
+        ]
+        assert not overflowing
 
     def test_render_loads_static_assets_from_disk(self, opportunity):
         """Rendering runs outside a request, so the `file://` base URL is what lets the URL fetcher
