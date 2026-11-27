@@ -4,7 +4,12 @@ from allauth.utils import build_absolute_uri
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from commcare_connect.solicitation.models import Solicitation, SolicitationInvitation, SolicitationReviewer
+from commcare_connect.solicitation.models import (
+    Solicitation,
+    SolicitationApplication,
+    SolicitationInvitation,
+    SolicitationReviewer,
+)
 from commcare_connect.utils.tasks import send_mail_async
 from config import celery_app
 
@@ -61,3 +66,16 @@ def update_solicitation_statuses():
     closed = Solicitation.objects.expired().update(status=Solicitation.Status.CLOSED)
     if closed:
         logger.info("Closed %s expired solicitation(s)", closed)
+
+
+@celery_app.task()
+def send_application_submitted_email(application_id):
+    """Confirms a submitted application to the person who submitted it."""
+    application = SolicitationApplication.objects.select_related("solicitation", "organization").get(pk=application_id)
+    context = {"application": application, "application_url": build_absolute_uri(None, application.applicant_url)}
+    send_mail_async.delay(
+        subject=f"Application submitted: {application.solicitation.title}",
+        message=render_to_string("solicitation/email/application_submitted.txt", context),
+        recipient_list=[application.submitter_email],
+        html_message=render_to_string("solicitation/email/application_submitted.html", context),
+    )

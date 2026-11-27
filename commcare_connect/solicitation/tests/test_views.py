@@ -1,6 +1,5 @@
 import re
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 from allauth.utils import build_absolute_uri
@@ -27,6 +26,7 @@ from commcare_connect.solicitation.tests.factories import (
 )
 from commcare_connect.solicitation.views import SolicitationListView
 from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
+from commcare_connect.utils.test_utils import grant_all_org_access
 
 Status = SolicitationApplication.Status
 
@@ -126,6 +126,31 @@ class TestSolicitationNavItem:
             response = client.get(reverse("opportunity:list", args=(org.slug,)))
 
         assert (reverse("solicitation:list", args=(org.slug,)) in response.content.decode()) is shown
+
+    @pytest.mark.parametrize("program_manager", [True, False])
+    def test_staff_see_it_only_in_program_manager_orgs(self, client, program_manager):
+        # Only program manager orgs post solicitations, so staff who can open any org don't get it in the others.
+        org = OrganizationFactory(program_manager=program_manager)
+        client.force_login(grant_all_org_access(UserFactory()))
+
+        with override_switch(SOLICITATIONS, active=True):
+            content = client.get(reverse("opportunity:list", args=(org.slug,))).content.decode()
+
+        assert (reverse("solicitation:list", args=(org.slug,)) in content) is program_manager
+        assert (reverse("received_applications:list", args=(org.slug,)) in content) is program_manager
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["solicitation:list", "solicitation:create", "received_applications:list"])
+@pytest.mark.parametrize("program_manager, status", [(True, HTTPStatus.OK), (False, HTTPStatus.NOT_FOUND)])
+def test_staff_manage_solicitations_only_in_program_manager_orgs(client, url_name, program_manager, status):
+    org = OrganizationFactory(program_manager=program_manager)
+    client.force_login(grant_all_org_access(UserFactory()))
+
+    with override_switch(SOLICITATIONS, active=True):
+        response = client.get(reverse(url_name, args=(org.slug,)))
+
+    assert response.status_code == status
 
 
 STEPS = ("details", "criteria", "questions", "publish")
@@ -402,12 +427,6 @@ class TestSolicitationClosure:
         response = pm_client.get(reverse("solicitation:list", args=(program_manager_org.slug,)))
 
         assert "Funding withdrawn" in response.content.decode()
-
-
-@pytest.fixture
-def mock_send_mail():
-    with patch("commcare_connect.solicitation.tasks.send_mail_async") as mock:
-        yield mock
 
 
 @pytest.fixture

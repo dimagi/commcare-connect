@@ -1,10 +1,14 @@
 import json
+import os
+from datetime import date
+from decimal import Decimal
 from operator import attrgetter
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Div, Field, Layout, Row
 from django import forms
 from django.contrib.postgres.forms import SimpleArrayField
+from django.db import transaction
 from django.db.models import Sum
 from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.utils.text import capfirst
@@ -18,6 +22,7 @@ from commcare_connect.program.forms import DATE_INPUT
 from commcare_connect.program.models import Program
 from commcare_connect.solicitation.models import (
     Solicitation,
+    SolicitationApplicationAnswer,
     SolicitationEvaluationCriterion,
     SolicitationInvitation,
     SolicitationQuestion,
@@ -376,3 +381,119 @@ class SelectedParticipantsForm(forms.Form):
     """The participants a PM selected to remove. The view sets which ones can be picked."""
 
     ids = forms.ModelMultipleChoiceField(queryset=None)
+
+
+MAX_ANSWER_FILE_SIZE_MB = 25
+
+
+class ApplicationAnswersForm(forms.Form):
+    """One field per question on the solicitation, filled in from the application's saved answers.
+
+    `application` may be unsaved, for an organization that hasn't saved one yet. A draft may be saved with answers
+    missing, so required questions are only enforced with `require_answers`. Fields are named after the question's
+    pk; `question_fields` pairs each question with its bound field.
+    """
+
+    def __init__(self, *args, application, require_answers=True, **kwargs):
+        self.questions = list(application.solicitation.questions.order_by("display_order", "pk"))
+        self.saved_answers = (
+            {answer.question_id: answer for answer in application.answers.all()} if application.pk else {}
+        )
+        super().__init__(*args, initial=self._initial(), **kwargs)
+        for question in self.questions:
+            saved_file = self._saved_file(question)
+            # A file uploaded with an earlier save stays unless a new one replaces it.
+            required = require_answers and question.required and not saved_file
+            field = _answer_field(question, required=required, saved_file=saved_file)
+            _style_widget(field.widget)
+            self.fields[answer_field_name(question)] = field
+
+    def question_fields(self):
+        return [(question, self[answer_field_name(question)]) for question in self.questions]
+
+    def save(self, *, application, user_email):
+        """Writes the answers to `application`, the saved row of the application the form was built for."""
+        for question in self.questions:
+            value = self.cleaned_data[answer_field_name(question)]
+            if question.question_type == SolicitationQuestion.QuestionType.FILE:
+                if value:
+                    self._save_file(application, question, user_email, value)
+            elif value in (None, ""):
+                if question.pk in self.saved_answers:
+                    application.answers.filter(question=question).delete()
+            else:
+                self._save_answer(application, question, user_email, answer=_to_json(value))
+
+    def _save_file(self, application, question, user_email, file):
+        previous = application.answers.filter(question=question).first()
+        previous_name = previous.file.name if previous and previous.file else None
+        self._save_answer(application, question, user_email, file=file)
+        if previous_name:
+            # Only once committed, so a rolled-back save keeps the file its answer still points to.
+            storage = SolicitationApplicationAnswer.file.field.storage
+            transaction.on_commit(lambda: storage.delete(previous_name))
+
+    def _save_answer(self, application, question, user_email, **values):
+        SolicitationApplicationAnswer.objects.update_or_create(
+            application=application,
+            question=question,
+            defaults={**values, "modified_by": user_email},
+            create_defaults={**values, "created_by": user_email, "modified_by": user_email},
+        )
+
+    def _initial(self):
+        return {
+            answer_field_name(question): self.saved_answers[question.pk].answer
+            for question in self.questions
+            if question.pk in self.saved_answers
+        }
+
+    def _saved_file(self, question):
+        answer = self.saved_answers.get(question.pk)
+        return answer.file if answer and answer.file else None
+
+
+def answer_field_name(question):
+    return f"question_{question.pk}"
+
+
+def _answer_field(question, *, required, saved_file):
+    common = {"label": question.text, "help_text": question.help_text, "required": required}
+    QuestionType = SolicitationQuestion.QuestionType
+    match question.question_type:
+        case QuestionType.NUMBER:
+            return forms.DecimalField(**common)
+        case QuestionType.CHOICE:
+            choices = [(option, option) for option in question.choice_options or []]
+            return forms.ChoiceField(choices=choices, widget=forms.RadioSelect, **common)
+        case QuestionType.DATE:
+            return forms.DateField(widget=DATE_INPUT, **common)
+        case QuestionType.FILE:
+            field = forms.FileField(validators=[validate_answer_file_size], **common)
+            field.saved_file_name = os.path.basename(saved_file.name) if saved_file else None
+            return field
+        case _:
+            return forms.CharField(widget=forms.Textarea(attrs={"rows": 4}), **common)
+
+
+def validate_answer_file_size(file):
+    # Applicants include outside, unvetted organizations, so their uploads are capped.
+    if file.size > MAX_ANSWER_FILE_SIZE_MB * 1024 * 1024:
+        raise forms.ValidationError(
+            _("Files can be at most %(size)s MB."), code="file_too_large", params={"size": MAX_ANSWER_FILE_SIZE_MB}
+        )
+
+
+def _style_widget(widget):
+    """The app's input styles: text areas get their own, radio buttons keep the template pack's."""
+    if isinstance(widget, forms.RadioSelect):
+        return
+    css_class = "base-textarea" if isinstance(widget, forms.Textarea) else "base-input"
+    widget.attrs["class"] = css_class
+
+
+def _to_json(value):
+    """Answers are stored as JSON, so numbers and dates are kept as their text."""
+    if isinstance(value, Decimal | date):
+        return str(value)
+    return value

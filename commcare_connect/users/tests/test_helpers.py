@@ -2,13 +2,14 @@ import pytest
 from django.test import RequestFactory
 
 from commcare_connect.users.helpers import (
+    CURRENT_ORG_SESSION_KEY,
     build_hq_user_payload,
     create_hq_user_and_link,
     fetch_hq_user_uuid,
     get_organization_for_request,
 )
 from commcare_connect.users.models import ConnectIDUserLink
-from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory
+from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MembershipFactory, OrganizationFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -195,3 +196,38 @@ class TestGetOrganizationForRequest:
         request = rf.get("/fake-url/")
         request.user = user
         assert get_organization_for_request(request, {}) is None
+
+
+@pytest.mark.django_db
+class TestCurrentOrganizationInSession:
+    def request(self, rf, user, session):
+        request = rf.get("/fake-url/")
+        request.user = user
+        request.session = session
+        return request
+
+    @pytest.mark.parametrize("member, remembered", [(True, True), (False, False)])
+    def test_org_page_remembers_the_organization_if_the_user_is_in_it(
+        self, rf: RequestFactory, user, organization, member, remembered
+    ):
+        # Staff can open organizations they aren't in; those would only hide the post-login picker.
+        if member:
+            MembershipFactory(user=user, organization=organization)
+        session = {}
+
+        get_organization_for_request(self.request(rf, user, session), {"org_slug": organization.slug})
+
+        assert session == ({CURRENT_ORG_SESSION_KEY: organization.slug} if remembered else {})
+
+    def test_page_without_org_uses_the_remembered_organization(self, rf: RequestFactory, org_user_member):
+        second = MembershipFactory(user=org_user_member).organization
+        session = {CURRENT_ORG_SESSION_KEY: second.slug}
+
+        assert get_organization_for_request(self.request(rf, org_user_member, session), {}) == second
+
+    def test_remembered_organization_the_user_left_falls_back_to_the_first(
+        self, rf: RequestFactory, org_user_member, organization
+    ):
+        session = {CURRENT_ORG_SESSION_KEY: OrganizationFactory().slug}
+
+        assert get_organization_for_request(self.request(rf, org_user_member, session), {}) == organization

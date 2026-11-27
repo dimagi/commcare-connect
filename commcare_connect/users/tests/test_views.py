@@ -16,8 +16,9 @@ from commcare_connect.opportunity.models import UserInviteStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserInviteFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
+from commcare_connect.users.helpers import CURRENT_ORG_SESSION_KEY
 from commcare_connect.users.models import ConnectIDUserLink, User
-from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
 from commcare_connect.users.views import (
     UpdateUserProfileView,
     UserRedirectView,
@@ -101,6 +102,44 @@ class TestUserRedirectView:
 
         view.request = request
         assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/"
+
+
+class TestChoosingAnOrganizationAfterLogin:
+    @pytest.fixture
+    def second_organization(self, org_user_member):
+        return MembershipFactory(user=org_user_member, organization__name="Zebra Org").organization
+
+    def test_someone_in_several_organizations_is_asked_to_pick_one(self, second_organization, org_user_member, client):
+        client.force_login(org_user_member)
+        response = client.get(reverse("users:redirect"))
+        assert response.url == reverse("users:select_organization")
+
+    def test_the_organization_they_last_opened_is_kept(self, second_organization, org_user_member, client):
+        client.force_login(org_user_member)
+        session = client.session
+        session[CURRENT_ORG_SESSION_KEY] = second_organization.slug
+        session.save()
+        response = client.get(reverse("users:redirect"))
+        assert response.url == reverse("opportunity:list", kwargs={"org_slug": second_organization.slug})
+
+    def test_picking_an_organization_opens_it(self, second_organization, org_user_member, client):
+        client.force_login(org_user_member)
+        response = client.get(reverse("users:select_organization"), {"organization": second_organization.slug})
+        assert response.url == reverse("opportunity:list", kwargs={"org_slug": second_organization.slug})
+
+    def test_an_organization_they_are_not_in_is_not_opened(self, second_organization, org_user_member, client):
+        other = MembershipFactory().organization
+        client.force_login(org_user_member)
+        response = client.get(reverse("users:select_organization"), {"organization": other.slug})
+        assert response.status_code == 200
+        assert [org.name for org in response.context["organizations"]] == sorted(
+            org.name for org in Organization.objects.filter(members=org_user_member)
+        )
+
+    def test_someone_in_one_organization_is_not_asked(self, organization, org_user_member, client):
+        client.force_login(org_user_member)
+        response = client.get(reverse("users:select_organization"))
+        assert response.url == reverse("users:redirect")
 
 
 class TestCreateUserLinkView:

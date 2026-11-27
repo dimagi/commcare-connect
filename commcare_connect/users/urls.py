@@ -7,6 +7,7 @@ from commcare_connect.users.views import (
     InviteRedirectView,
     ResendInvitesView,
     RetrieveUserOTPView,
+    SelectOrganizationView,
     SMSStatusCallbackView,
     UpdateUserProfileView,
     UserToggleView,
@@ -20,6 +21,7 @@ from commcare_connect.users.views import (
 app_name = "users"
 urlpatterns = [
     path("redirect/", view=user_redirect_view, name="redirect"),
+    path("select_organization/", view=SelectOrganizationView.as_view(), name="select_organization"),
     path("update/", view=user_update_view, name="update"),
     path("create_user_link/", view=create_user_link_view, name="create_user_link"),
     path("start_learn_app/", view=start_learn_app, name="start_learn_app"),

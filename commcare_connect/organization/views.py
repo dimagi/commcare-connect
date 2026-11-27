@@ -50,6 +50,7 @@ from commcare_connect.program.utils import AccessLevel, org_access_level_from_re
 from commcare_connect.solicitation.models import SolicitationReviewer
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.middleware import is_safe_redirect_url
 from commcare_connect.utils.tables import get_validated_page_size
 
 MANAGING_API_KEYS_URL = (
@@ -67,6 +68,10 @@ def organization_create(request):
         if form.cleaned_data.get("skip_membership"):
             return redirect("organization:home", org.slug)
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        # Set when another flow sent the user here to create an organization, such as applying to a solicitation.
+        next_url = request.GET.get("next", "")
+        if is_safe_redirect_url(request, next_url):
+            return redirect(next_url)
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})

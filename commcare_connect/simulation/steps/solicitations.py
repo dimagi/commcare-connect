@@ -3,7 +3,8 @@ from django.utils.timezone import localtime
 from waffle import switch_is_active
 
 from commcare_connect.flags.switch_names import SOLICITATIONS
-from commcare_connect.solicitation.models import Solicitation, SolicitationInvitation
+from commcare_connect.solicitation.forms import answer_field_name
+from commcare_connect.solicitation.models import Solicitation, SolicitationApplication, SolicitationInvitation
 from commcare_connect.solicitation.tasks import update_solicitation_statuses
 
 from .form_data import management_form
@@ -53,6 +54,22 @@ class SolicitationSteps:
             self.browser(self.pm_admin).post(url, {"organizations": [org.pk for org in orgs]})
             self.log(f"Invited {', '.join(org.slug for org in orgs)} to {solicitation.title}")
         return list(SolicitationInvitation.objects.filter(solicitation=solicitation, organization__in=orgs))
+
+    def apply_to_solicitation(self, solicitation, org, *, submit=True):
+        """Apply to ``solicitation`` as ``org`` on its Apply page, as ``nm_admin``, who must be an admin of ``org``.
+
+        Answers every question; ``submit`` presses Submit, otherwise Save draft. Returns the application.
+        """
+        require_solicitations_switch()
+        url = solicitation.apply_url(org)
+        data = _answers_data(solicitation) | {"submit" if submit else "save": ""}
+        with self.step():
+            self.browser(self.nm_admin).post(url, data)
+            application = SolicitationApplication.objects.get(solicitation=solicitation, organization=org)
+            self.log(
+                f"{org.slug} {'submitted' if submit else 'saved a draft of'} its application to {solicitation.title}"
+            )
+        return application
 
     def close_expired_solicitations(self):
         """Run the hourly task that closes solicitations whose deadline has passed, as Celery beat would.
@@ -120,3 +137,9 @@ def _questions_data(solicitation):
             f"questions-{index}-criterion": criterion.pk,
         }
     return data
+
+
+def _answers_data(solicitation):
+    """An answer to each question, of the kind its type asks for."""
+    answers = {"text": "Our team has delivered similar work in three districts.", "number": "40"}
+    return {answer_field_name(question): answers[question.question_type] for question in solicitation.questions.all()}
