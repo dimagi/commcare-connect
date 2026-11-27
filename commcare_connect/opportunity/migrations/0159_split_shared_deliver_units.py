@@ -153,12 +153,12 @@ def _detach_other_opportunities_payment_units(apps):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0156_deliverunit_opportunity"),
+        ("opportunity", "0158_deliverunit_opportunity_required"),
     ]
 
     operations = [
-        # The secondary database receives the changed rows by replication.
-        migrations.RunPython(
-            split_shared_deliver_units, migrations.RunPython.noop, hints={"run_on_secondary": False}
-        ),
+        # # The secondary database receives the changed rows by replication.
+        # migrations.RunPython(
+        #     split_shared_deliver_units, migrations.RunPython.noop, hints={"run_on_secondary": False}
+        # ),
     ]
