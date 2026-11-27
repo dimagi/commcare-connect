@@ -112,8 +112,52 @@ def create_learn_modules_and_deliver_units(opportunity_id):
     sync_learn_modules_and_deliver_units(opportunity)
 
 
-@celery_app.task()
-def add_connect_users(user_list: list[str], opportunity_id: str):
+# ConnectID answers 404 for every path while kamal-proxy has no healthy container (e.g. a failed deploy),
+# so on /users/fetch_users, which always exists, a 404 means ConnectID is unavailable, not that a resource is missing.
+CONNECTID_TRANSIENT_STATUS_CODES = frozenset({404, 502, 503, 504})
+ADD_CONNECT_USERS_MAX_RETRIES = 5
+ADD_CONNECT_USERS_RETRY_BASE_SECONDS = 30
+ADD_CONNECT_USERS_RETRY_MAX_SECONDS = 300
+
+
+def _is_transient_connectid_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in CONNECTID_TRANSIENT_STATUS_CODES
+    return False
+
+
+def _fetch_users_or_retry(task, user_list: list[str], opportunity_id) -> list[ConnectIdUser]:
+    """Fetch users from ConnectID, retrying ``task`` while ConnectID is unavailable.
+
+    Nothing has been written when this runs, so a retry is safe. Once retries run out, ``task.retry``
+    re-raises the original error and Sentry reports it as before. Other errors are raised straight away.
+    """
+    try:
+        return fetch_users(user_list)
+    except httpx.HTTPError as exc:
+        if not _is_transient_connectid_error(exc):
+            raise
+        logger.warning(
+            "ConnectID unavailable while inviting %d users to opportunity %s (attempt %d): %s",
+            len(user_list),
+            opportunity_id,
+            task.request.retries + 1,
+            exc,
+        )
+        # A task run inline (CELERY_TASK_ALWAYS_EAGER) can't wait out a retry countdown; it would only raise
+        # Celery's Retry into the request that queued it, so raise the original error instead.
+        if task.request.is_eager:
+            raise
+        countdown = min(
+            ADD_CONNECT_USERS_RETRY_MAX_SECONDS, ADD_CONNECT_USERS_RETRY_BASE_SECONDS * 2**task.request.retries
+        )
+        raise task.retry(exc=exc, countdown=countdown)
+
+
+@celery_app.task(bind=True, max_retries=ADD_CONNECT_USERS_MAX_RETRIES)
+def add_connect_users(self, user_list: list[str], opportunity_id: str):
     opportunity = Opportunity.objects.get(pk=opportunity_id)
     if opportunity.has_ended:
         logger.warning("Skipping invite for ended opportunity %s (%d users)", opportunity_id, len(user_list))
@@ -123,7 +167,7 @@ def add_connect_users(user_list: list[str], opportunity_id: str):
             "Skipping invite for opportunity %s with incomplete setup (%d users)", opportunity_id, len(user_list)
         )
         return
-    found_users = fetch_users(user_list)
+    found_users = _fetch_users_or_retry(self, user_list, opportunity_id)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
         UserInvite.objects.get_or_create(

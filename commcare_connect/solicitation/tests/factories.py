@@ -54,6 +54,7 @@ class SolicitationInvitationFactory(DjangoModelFactory):
 
 class SolicitationReviewerFactory(DjangoModelFactory):
     solicitation = SubFactory(SolicitationFactory)
+    # Reviewers are picked from the posting organization's members.
     user = LazyAttribute(lambda o: MembershipFactory(organization=o.solicitation.organization).user)
 
     class Meta:

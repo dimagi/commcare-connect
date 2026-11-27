@@ -17,6 +17,8 @@ from commcare_connect.solicitation.views.marketplace import (
 from commcare_connect.solicitation.views.participants import (
     SolicitationInvitationDeleteView,
     SolicitationInvitationsView,
+    SolicitationReviewerDeleteView,
+    SolicitationReviewersView,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "SolicitationListView",
     "SolicitationPublishView",
     "SolicitationQuestionsView",
+    "SolicitationReviewerDeleteView",
+    "SolicitationReviewersView",
 ]

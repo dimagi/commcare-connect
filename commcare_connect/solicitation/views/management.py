@@ -27,7 +27,9 @@ from commcare_connect.solicitation.models import (
     SolicitationQuestion,
 )
 from commcare_connect.solicitation.permissions import solicitation_manager_required
-from commcare_connect.solicitation.tables import SolicitationTable
+from commcare_connect.solicitation.tables import (
+    SolicitationTable,
+)
 from commcare_connect.utils.tables import get_validated_page_size
 from commcare_connect.utils.views import HtmxModalFormMixin
 
@@ -51,7 +53,7 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
     def get_queryset(self):
         return (
             Solicitation.objects.filter(organization=self.request.org)
-            # distinct, since counting two relations joins both and would multiply each count by the other.
+            # distinct, since counting several relations joins them all and would multiply the counts together.
             .annotate(
                 response_count=Count(
                     "applications",
@@ -59,6 +61,7 @@ class SolicitationListView(WaffleSwitchMixin, SingleTableView):
                     distinct=True,
                 ),
                 invited_count=Count("invitations", distinct=True),
+                reviewer_count=Count("reviewer_assignments", distinct=True),
             )
             .order_by("-date_created")
         )

@@ -47,6 +47,7 @@ from commcare_connect.organization.tables import (
 )
 from commcare_connect.organization.tasks import export_contacts, send_org_invite
 from commcare_connect.program.utils import AccessLevel, org_access_level_from_request
+from commcare_connect.solicitation.models import SolicitationReviewer
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.middleware import is_safe_redirect_url
@@ -167,6 +168,10 @@ def remove_members(request, org_slug):
         return redirect(redirect_url)
 
     if membership_ids:
+        # Reviewers are picked from the organization's members, so a removed member leaves its review teams.
+        SolicitationReviewer.objects.filter(
+            solicitation__organization=request.org, user__in=memberships.values("user")
+        ).delete()
         memberships.delete()
         messages.success(request, message=gettext("Selected members have been removed from the organization."))
 
